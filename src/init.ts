@@ -13,10 +13,12 @@ import type { Pin } from "./pin.ts";
 import type { Conflict } from "./plan.ts";
 import { syncAndPush } from "./push.ts";
 import { hostNames } from "./recipients.ts";
+import { parseOs, schedulerFor } from "./scheduler.ts";
+import type { Os } from "./scheduler.ts";
 import { namesIn } from "./secrets.ts";
 import { secrets } from "./secretscli.ts";
 import { ageKeyPath, parseSopsVersion, SOPS_VERSION_ARGS, sopsVersionProblem } from "./sops.ts";
-import { findTool } from "./tools.ts";
+import { findTool, SHELL_NODE_CANDIDATES, SHELL_PROBE_PATH } from "./tools.ts";
 import { parseFile } from "./yamlfile.ts";
 
 /**
@@ -52,6 +54,8 @@ type Ctx = {
   /** The fleet clone on the host, as a shell word. */
   tool: string;
   machine: Machine;
+  /** The host's OS, read from the host by the first step, which no step before it needs. */
+  os: Os;
   steps: StepRecord[];
   messages: string[];
   checklist: string[];
@@ -75,7 +79,7 @@ const invalid = (...problems: string[]): Result => ({ code: "invalid", messages:
 const q = (text: string) => `'${text.replaceAll("'", `'\\''`)}'`;
 
 /** Tools are found as `findTool` does, but by a shell that may be non-interactive. */
-const PRELUDE = 'PATH="$HOME/.local/bin:$HOME/.opencode/bin:/usr/bin:/usr/local/bin:$PATH"; export PATH\nGIT_TERMINAL_PROMPT=0; export GIT_TERMINAL_PROMPT\n';
+const PRELUDE = `PATH="${SHELL_PROBE_PATH}:$PATH"; export PATH\nGIT_TERMINAL_PROMPT=0; export GIT_TERMINAL_PROMPT\n`;
 const script = (step: string, body: string) => `# fleet init: ${step}\n${PRELUDE}${body}`;
 
 const here = (home: string): Machine => (body) => {
@@ -90,7 +94,7 @@ const there = (ssh: string, dest: string): Machine => (body) => {
   return { status: r.status, stdout: r.stdout ?? "", stderr: r.stderr ?? "" };
 };
 
-type Prepared = Omit<Ctx, "steps" | "messages" | "checklist" | "backup" | "recipient" | "missingSecrets" | "conflicts">;
+type Prepared = Omit<Ctx, "os" | "steps" | "messages" | "checklist" | "backup" | "recipient" | "missingSecrets" | "conflicts">;
 
 function prepare(configDir: string, name: string | undefined, home: string): Prepared | Result {
   if (name === undefined) return invalid("usage: fleet init <host>");
@@ -142,20 +146,22 @@ function prepare(configDir: string, name: string | undefined, home: string): Pre
 
 const CHECKLIST = {
   ssh: (dest: string) => `SSH as the agent user: add this machine's SSH key to ~/.ssh/authorized_keys of ${dest} (ssh-copy-id ${dest}), then check that 'ssh ${dest} true' works without a prompt`,
-  node: "Node 22.18 or newer: with fnm 'fnm install 22 && fnm default 22', or a Node at ~/.local/bin/node",
-  git: "git: install it (sudo pacman -S git, sudo apt install git)",
+  node: (os: Os) => `Node 22.18 or newer: ${os === "darwin" ? "'brew install node', or " : ""}with fnm 'fnm install 22 && fnm default 22', or a Node at ~/.local/bin/node`,
+  git: (os: Os) => `git: install it (${os === "darwin" ? "xcode-select --install, or brew install git" : "sudo pacman -S git, sudo apt install git"})`,
   toolRepo: (url: string) => `git must read the tool at ${url}: it is the \`tool.repo\` in the config's fleet.yaml, so check that URL and your access to it`,
   repo: (url: string) => `git and GitHub: git must read and push ${url}. With an SSH key: git config --global url."git@github.com:".insteadOf "https://github.com/". With a token: gh auth setup-git`,
-  sops: "sops 3.11 or newer: sudo pacman -S sops age, or the static binary from the release page in ~/.local/bin, its sha256 checked",
-  age: "age-keygen: sudo pacman -S age, sudo apt install age, or the static tarball in ~/.local/bin",
+  sops: (os: Os) => `sops 3.11 or newer: ${os === "darwin" ? "brew install sops age" : "sudo pacman -S sops age"}, or the static binary from the release page in ~/.local/bin, its sha256 checked`,
+  age: (os: Os) => `age-keygen: ${os === "darwin" ? "brew install age" : "sudo pacman -S age, sudo apt install age"}, or the static tarball in ~/.local/bin`,
+  os: (name: string) => `an OS fleet supports: it runs on Linux and macOS, and this host reports '${name}'`,
 };
 
 function prerequisites(ctx: Ctx): Outcome {
   // Mirrors the probe in bin/fleet, which is not on a new host yet.
   const body = `
 have() { command -v "$1" >/dev/null 2>&1; }
+echo "os=$(uname -s 2>/dev/null)"
 node=
-for c in "\${FLEET_NODE:-}" "$HOME/.local/share/fnm/aliases/default/bin/node" "$HOME/.local/bin/node" "$(command -v node 2>/dev/null || true)"; do
+for c in "\${FLEET_NODE:-}" "$HOME/.local/share/fnm/aliases/default/bin/node" "$HOME/.local/bin/node" "$(command -v node 2>/dev/null || true)" ${SHELL_NODE_CANDIDATES.join(" ")}; do
   if [ -n "$c" ] && [ -x "$c" ] && "$c" -e 'process.exit(process.features.typescript ? 0 : 1)' 2>/dev/null; then node=$c; break; fi
 done
 [ -n "$node" ] && echo node=ok
@@ -184,19 +190,26 @@ exit 0
     return { stop: { code: "unreachable", messages: [`fleet: ${error.message}`] } };
   }
 
+  const os = parseOs(facts.get("os") ?? "");
+  if (os === null) {
+    ctx.checklist.push(CHECKLIST.os(facts.get("os") || "unknown"));
+    return { stop: { code: "missing-prerequisite", messages: [`fleet: ${ctx.host} is not Linux or macOS; nothing was changed there`] } };
+  }
+  ctx.os = os;
+
   const items: string[] = [];
-  if (!facts.has("node")) items.push(CHECKLIST.node);
-  if (!facts.has("git")) items.push(CHECKLIST.git);
+  if (!facts.has("node")) items.push(CHECKLIST.node(os));
+  if (!facts.has("git")) items.push(CHECKLIST.git(os));
   else {
     if (!facts.has("repo")) items.push(CHECKLIST.repo(ctx.url));
     if (!facts.has("tool_repo")) items.push(CHECKLIST.toolRepo(ctx.pin.repo));
   }
-  if (!facts.has("sops")) items.push(CHECKLIST.sops);
+  if (!facts.has("sops")) items.push(CHECKLIST.sops(os));
   else {
     const problem = sopsVersionProblem(parseSopsVersion(facts.get("sops_version") ?? ""));
-    if (problem !== null) items.push(`${CHECKLIST.sops} (${problem})`);
+    if (problem !== null) items.push(`${CHECKLIST.sops(os)} (${problem})`);
   }
-  if (!facts.has("age-keygen")) items.push(CHECKLIST.age);
+  if (!facts.has("age-keygen")) items.push(CHECKLIST.age(os));
   if (items.length === 0) {
     if (!facts.has("claude") && !facts.has("opencode")) ctx.messages.push(`fleet: ${ctx.host} has neither Claude Code nor opencode yet; fleet sets up their files, so install one to use them`);
     return { changed: false };
@@ -261,7 +274,7 @@ else
   ln "$t/key" "$k"
   echo generated
 fi
-echo "mode=$(stat -c %a "$k")"
+echo "mode=$(stat -c %a "$k" 2>/dev/null || stat -f %Lp "$k")"
 r=$(age-keygen -y "$k" 2>&1) || { echo "$r" >&2; exit 31; }
 echo "recipient=$r"
 `;
@@ -442,36 +455,11 @@ function firstApply(ctx: Ctx): Outcome {
 
 // Step 8
 
-const SERVICE = "[Service]\nType=oneshot\nExecStart=%h/.local/bin/fleet apply";
-const TIMER = "[Timer]\nOnBootSec=2min\nOnUnitActiveSec=30min\nPersistent=true\n[Install]\nWantedBy=timers.target";
-
 function timer(ctx: Ctx): Outcome {
-  const body = `
-d="$HOME/.config/systemd/user"
-mkdir -p "$d"
-wrote=0
-put() {
-  if [ -f "$d/$1" ] && [ "$(cat "$d/$1")" = "$2" ]; then return 0; fi
-  printf '%s\\n' "$2" > "$d/$1.tmp" && mv "$d/$1.tmp" "$d/$1" && wrote=1 && echo "wrote $1"
-}
-put fleet.service ${q(SERVICE)} || exit 41
-put fleet.timer ${q(TIMER)} || exit 41
-command -v systemctl >/dev/null 2>&1 || { echo "systemctl is not installed" >&2; exit 40; }
-was=0
-systemctl --user is-active --quiet fleet.timer && was=1
-if [ "$was" = 1 ] && [ "$wrote" = 0 ]; then exit 0; fi
-systemctl --user daemon-reload || exit 41
-systemctl --user enable --now fleet.timer || exit 41
-if [ "$was" = 1 ]; then systemctl --user restart fleet.timer || exit 41; fi
-systemctl --user is-active --quiet fleet.timer || exit 42
-echo enabled
-`;
-  const r = ctx.machine(script("timer", body));
-  if (r.status === 40) return { stop: { code: "error", messages: [`fleet: ${ctx.host}: systemctl is not installed, so the timer could not be installed; run 'fleet apply' by hand or from cron`] } };
-  if (r.status === 41) {
-    return { stop: { code: "error", messages: [`fleet: ${ctx.host}: systemctl --user failed (${firstLine(r.stderr) || "no message"}); the units are in ~/.config/systemd/user. On a server the agent user needs a user session: sudo loginctl enable-linger <user>. Then run 'fleet init ${ctx.host}' again`] } };
-  }
-  if (r.status === 42) return { stop: { code: "error", messages: [`fleet: ${ctx.host}: fleet.timer is not active after enabling it; see systemctl --user status fleet.timer`] } };
+  const scheduler = schedulerFor(ctx.os);
+  const r = ctx.machine(script("timer", scheduler.install(q)));
+  const said = scheduler.explain(ctx.host, r.status, firstLine(r.stderr));
+  if (said !== null) return { stop: { code: "error", messages: [said] } };
   if (r.status !== 0) return { stop: { code: "error", messages: [`fleet: ${ctx.host}: installing the timer failed (exit ${r.status ?? "none"}): ${firstLine(r.stderr)}`] } };
   return { changed: r.stdout.trim() !== "" };
 }
@@ -522,7 +510,7 @@ export async function init(configDir: string, name: string | undefined, color: b
   try {
     const prepared = prepare(configDir, name, home);
     if ("code" in prepared) return prepared;
-    ctx = { ...prepared, steps: [], messages: [], checklist: [], backup: null, recipient: null, missingSecrets: [], conflicts: [] };
+    ctx = { ...prepared, os: "linux", steps: [], messages: [], checklist: [], backup: null, recipient: null, missingSecrets: [], conflicts: [] };
 
     for (const [i, step] of STEPS.entries()) {
       current = i;
@@ -533,7 +521,7 @@ export async function init(configDir: string, name: string | undefined, color: b
       }
       ctx.steps.push({ step: i + 1, name: step.name, state: outcome.changed ? "done" : "unchanged", ...(outcome.detail ? { detail: outcome.detail } : {}) });
     }
-    return finish(ctx, color, { code: "ok", text: `${ctx.host} is on fleet: fleet.timer runs 'fleet apply' every 30 minutes (journalctl --user -u fleet).` });
+    return finish(ctx, color, { code: "ok", text: schedulerFor(ctx.os).done(ctx.host) });
   } catch (error) {
     const result = failure(error) ?? { code: "error" as const, messages: [`fleet: ${(error as Error).message}`] };
     if (ctx === null) return result;

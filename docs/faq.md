@@ -27,3 +27,7 @@ Your machines run the tool commit pinned in `fleet.yaml`, so a new version reach
 ## Should I work in `~/.local/share/fleet/fleet`?
 
 No. That is the copy your machine runs, and fleet moves it to the pinned commit. To work on the tool, use a separate checkout and run its own `bin/fleet`.
+
+## Does it run on macOS?
+
+Experimentally. The timer is a LaunchAgent instead of a systemd timer, and the scripts and tool search know Homebrew. See [macOS](setting-up-machines.md#macos-experimental). It has been tested only against fakes so far.

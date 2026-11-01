@@ -8,6 +8,7 @@ import type { RepoState } from "./git.ts";
 import { readHostName } from "./host.ts";
 import { paint } from "./output.ts";
 import type { Result } from "./output.ts";
+import { statusOs, timerWord } from "./scheduler.ts";
 import { SOPS_VERSION_ARGS } from "./sops.ts";
 import { readState } from "./state.ts";
 import { hostTargets } from "./targets.ts";
@@ -22,7 +23,7 @@ export type ToolVersions = { claude: string | null; opencode: string | null; sop
 export type StatusFields = {
   repos: { fleet: RepoState };
   applied: { at: string | null; ageSeconds: number | null };
-  /** What `systemctl --user is-active fleet.timer` printed. */
+  /** What `systemctl --user is-active fleet.timer` printed, or `active` or `inactive` for the LaunchAgent on macOS. */
   timer: string | null;
   /** Links and keys apply would create, update or remove. */
   pending: number | null;
@@ -70,13 +71,16 @@ function t3Version(home: string): string | null {
   return entries.filter((e) => e.isDirectory() && VERSION_DIR.test(e.name)).map((e) => e.name).sort(byVersion).at(-1) ?? null;
 }
 
+/** What the host's scheduler says about the timer: `systemctl --user is-active` on Linux, whether the LaunchAgent is loaded on macOS. */
 export function timerState(home: string): string | null {
-  const path = findTool("systemctl", process.env, home);
-  if (path === null) return null;
-  const r = spawnSync(path, ["--user", "is-active", "fleet.timer"], { encoding: "utf8", timeout: TIMEOUT_MS, stdio: ["ignore", "pipe", "ignore"] });
-  if (r.error) return null;
-  const word = (r.stdout ?? "").trim().split("\n")[0] ?? "";
-  return /^[a-z-]+$/.test(word) ? word : null;
+  return timerWord(
+    statusOs(home),
+    (path, args) => {
+      const r = spawnSync(path, args, { encoding: "utf8", timeout: TIMEOUT_MS, stdio: ["ignore", "pipe", "ignore"] });
+      return r.error ? null : { status: r.status, stdout: r.stdout ?? "" };
+    },
+    (name) => findTool(name, process.env, home),
+  );
 }
 
 function appliedAge(home: string, messages: string[]): StatusFields["applied"] {

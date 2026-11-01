@@ -80,7 +80,7 @@ Add `--json` to any command for output a script can read.
 
 ## Requirements
 
-- Linux with systemd
+- Linux with systemd, or macOS 12.3 or newer with Homebrew (macOS is experimental, see [Setting up machines](docs/setting-up-machines.md#macos-experimental))
 - Claude Code or opencode
 - Node 22.18 or newer
 - git
