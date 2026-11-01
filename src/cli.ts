@@ -5,6 +5,7 @@ import { adopt } from "./adopt.ts";
 import { agent } from "./agent.ts";
 import { apply, diff, failure } from "./apply.ts";
 import { InvalidConfigError } from "./config.ts";
+import { doctor, doctorAll, DEFAULT_TIMEOUT_SECONDS } from "./doctor.ts";
 import { findConfigDir } from "./dirs.ts";
 import { readHostName } from "./host.ts";
 import { init } from "./init.ts";
@@ -37,14 +38,15 @@ type Command = {
   /** The command line `fleet agent` shows after `fleet`. */
   usage: string;
   summary: string;
-  /** `read` commands change nothing; `change` ones write to this host, the config repo or other hosts. */
+  /** `read` commands change nothing; `change` ones write to this host, the config repo or other hosts, or run code the catalog names (`doctor`). */
   effect: "read" | "change";
   args: number;
-  run?: (ctx: { color: boolean; json: boolean; args: string[]; message: string | undefined; all: boolean; found: FoundConfig }) => Result | Relayed | Promise<Result | Relayed>;
+  run?: (ctx: { color: boolean; json: boolean; args: string[]; message: string | undefined; all: boolean; timeout: number | undefined; found: FoundConfig }) => Result | Relayed | Promise<Result | Relayed>;
 };
 
 const commands: Command[] = [
   { name: "status", usage: "status [--all]", summary: "Report this host: fleet clone, applied state, timer, pending changes, conflicts and tool versions (--all asks every host over ssh)", effect: "read", args: 0, run: ({ color, all, found }) => (all ? statusAll(toolDir, configOf(found), color) : status(toolDir, configOf(found), color)) },
+  { name: "doctor", usage: "doctor [--all] [--timeout <seconds>]", summary: "Start this host's MCP servers and ask each what it offers, plus cheap local checks (--all asks every host over ssh). It runs the catalog's commands with real credentials and may make npx download packages, so it runs only when you ask for it, never from the timer", effect: "change", args: 0, run: ({ color, all, timeout, found }) => (all ? doctorAll(configOf(found), color, timeout) : doctor(configOf(found), color, timeout)) },
   { name: "diff", usage: "diff", summary: "Show what apply would change, without changing anything", effect: "read", args: 0, run: ({ color, found }) => diff(configOf(found), color) },
   { name: "apply", usage: "apply", summary: "Make this host match its config", effect: "change", args: 0, run: ({ color, json, found }) => apply(toolDir, configOf(found), color, undefined, json ? ["apply", "--json"] : ["apply"]) },
   { name: "push", usage: "push [-m <message>]", summary: "Publish changes to GitHub, then apply on every host (-m sets the commit message)", effect: "change", args: 0, run: ({ color, message, found }) => push(toolDir, configOf(found), message, color) },
@@ -93,7 +95,7 @@ function dispatch(argv: string[]): { result: Promise<Result | Relayed> | Result 
   try {
     parsed = parseArgs({
       args: argv,
-      options: { json: { type: "boolean" }, help: { type: "boolean" }, all: { type: "boolean" }, message: { type: "string", short: "m" } },
+      options: { json: { type: "boolean" }, help: { type: "boolean" }, all: { type: "boolean" }, timeout: { type: "string" }, message: { type: "string", short: "m" } },
       allowPositionals: true,
       strict: true,
     });
@@ -110,11 +112,14 @@ function dispatch(argv: string[]): { result: Promise<Result | Relayed> | Result 
   if (!command) return { result: invalid(`unknown command '${name}'`), json };
   if (rest.length > command.args) return { result: invalid(`unexpected argument '${rest[command.args]}'`), json };
   if (parsed.values.message !== undefined && command.name !== "push") return { result: invalid(`-m is only for 'push'`), json };
-  if (parsed.values.all && command.name !== "status") return { result: invalid(`--all is only for 'status'`), json };
+  if (parsed.values.all && command.name !== "status" && command.name !== "doctor") return { result: invalid(`--all is only for 'status' and 'doctor'`), json };
+  if (parsed.values.timeout !== undefined && command.name !== "doctor") return { result: invalid(`--timeout is only for 'doctor'`), json };
+  const timeout = parsed.values.timeout === undefined ? undefined : Number(parsed.values.timeout);
+  if (timeout !== undefined && !(/^\d+(\.\d+)?$/.test(parsed.values.timeout!) && timeout > 0 && timeout <= 600)) return { result: invalid(`--timeout must be a number of seconds from just above 0 to 600 (default ${DEFAULT_TIMEOUT_SECONDS})`), json };
   if (parsed.values.message === "") return { result: invalid("the commit message after -m cannot be empty"), json };
   if (command.name === "help") return { result: helpResult(), json };
   if (!command.run) return { result: { code: "error", messages: [`fleet: '${name}' is not implemented yet`] }, json };
-  return { result: command.run({ color: !json && useColor(process.env, process.stdout.isTTY === true), json, args: rest, message: parsed.values.message, all: parsed.values.all === true, found: findConfigDir() }), json };
+  return { result: command.run({ color: !json && useColor(process.env, process.stdout.isTTY === true), json, args: rest, message: parsed.values.message, all: parsed.values.all === true, timeout, found: findConfigDir() }), json };
 }
 
 export async function main(argv: string[], sink: Sink): Promise<number> {

@@ -70,7 +70,7 @@ function t3Version(home: string): string | null {
   return entries.filter((e) => e.isDirectory() && VERSION_DIR.test(e.name)).map((e) => e.name).sort(byVersion).at(-1) ?? null;
 }
 
-function timerState(home: string): string | null {
+export function timerState(home: string): string | null {
   const path = findTool("systemctl", process.env, home);
   if (path === null) return null;
   const r = spawnSync(path, ["--user", "is-active", "fleet.timer"], { encoding: "utf8", timeout: TIMEOUT_MS, stdio: ["ignore", "pipe", "ignore"] });
@@ -183,8 +183,8 @@ type HostStatus = {
   detail?: string;
 };
 
-const printable = (value: unknown): string | null => (typeof value === "string" ? value.slice(0, 200).replace(/[^\x20-\x7e]/g, "?") : null);
-const count = (value: unknown): number | null => (typeof value === "number" && Number.isInteger(value) && value >= 0 ? value : null);
+export const printable = (value: unknown): string | null => (typeof value === "string" ? value.slice(0, 200).replace(/[^\x20-\x7e]/g, "?") : null);
+export const count = (value: unknown): number | null => (typeof value === "number" && Number.isInteger(value) && value >= 0 ? value : null);
 
 /**
  * A remote host's status, cut down to the fields fleet knows and to printable text, because it is shown on a
