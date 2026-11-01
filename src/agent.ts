@@ -86,7 +86,7 @@ ${list(commands.filter((c) => c.effect === "read"))}
 
 ### Changes things
 
-These write to this host, to the config repo or to other hosts. Run one only when the user asked for it.
+These write to this host, to the config repo or to other hosts, or (\`doctor\`) start the MCP servers the catalog defines, with their real credentials. Run one only when the user asked for it.
 
 ${list(commands.filter((c) => c.effect === "change"))}
 

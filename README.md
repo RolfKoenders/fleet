@@ -65,6 +65,7 @@ fleet push -m "Add a skill"
 | Command | What it does |
 |---|---|
 | `fleet status` | Report this machine; `--all` asks every machine over ssh |
+| `fleet doctor` | Start this machine's MCP servers and check each answers; `--all` asks every machine over ssh. Runs commands with real credentials and may download packages, so it runs only when you ask |
 | `fleet diff` | Show what an apply would change |
 | `fleet apply` | Make this machine match its config |
 | `fleet push` | Publish the config and apply it |
