@@ -7,6 +7,7 @@ import { apply, diff, failure } from "./apply.ts";
 import { bridge } from "./tui/bridge.ts";
 import { InvalidConfigError } from "./config.ts";
 import { demo } from "./demo/run.ts";
+import { eventsOn, ignoreBrokenStderr } from "./events.ts";
 import { doctor, doctorAll, DEFAULT_TIMEOUT_SECONDS } from "./doctor.ts";
 import { findConfigDir } from "./dirs.ts";
 import { readHostName } from "./host.ts";
@@ -127,11 +128,12 @@ function dispatch(argv: string[]): { result: Promise<Result | Relayed> | Result 
 }
 
 export async function main(argv: string[], sink: Sink): Promise<number> {
+  if (eventsOn()) ignoreBrokenStderr();
   const json = argv.includes("--json");
   const host = readHostName();
   try {
-    return emit(await dispatch(argv).result, host, json, sink);
+    return emit(await dispatch(argv).result, host, json, sink, eventsOn());
   } catch (error) {
-    return emit(failure(error) ?? { code: "error", messages: [`fleet: ${(error as Error).message}`] }, host, json, sink);
+    return emit(failure(error) ?? { code: "error", messages: [`fleet: ${(error as Error).message}`] }, host, json, sink, eventsOn());
   }
 }
