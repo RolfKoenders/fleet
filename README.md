@@ -11,6 +11,14 @@ Fleet keeps the setup of your coding agents the same on every machine. You keep 
 
 If a machine holds something different, fleet stops and reports a conflict instead of overwriting it.
 
+## Try it first
+
+```sh
+fleet demo
+```
+
+This builds a throwaway fleet in a temporary directory: three made-up hosts, a config repo, and local folders standing in for GitHub. It opens a shell in it with a short list of commands to try, including a conflict to clear. It needs only git and Node, touches nothing outside that directory, and deletes it when you exit. Without a terminal it runs the same walk-through itself and exits.
+
 ## Getting started
 
 Install fleet and create your config:
@@ -64,6 +72,7 @@ fleet push -m "Add a skill"
 | `fleet secrets` | Edit, set or rekey encrypted secrets |
 | `fleet skills update` | Move pinned skill sources to their latest commit |
 | `fleet update` | Move the pinned tool version to the latest commit |
+| `fleet demo` | Try fleet in a throwaway sandbox of made-up hosts |
 | `fleet agent` | Print what an agent needs to know, including task recipes |
 
 Add `--json` to any command for output a script can read.

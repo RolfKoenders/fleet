@@ -5,6 +5,7 @@ import { adopt } from "./adopt.ts";
 import { agent } from "./agent.ts";
 import { apply, diff, failure } from "./apply.ts";
 import { InvalidConfigError } from "./config.ts";
+import { demo } from "./demo/run.ts";
 import { findConfigDir } from "./dirs.ts";
 import { readHostName } from "./host.ts";
 import { init } from "./init.ts";
@@ -55,6 +56,7 @@ const commands: Command[] = [
   { name: "update", usage: "update", summary: "Move the pinned tool commit in fleet.yaml to the head of its branch (nothing is committed or applied)", effect: "change", args: 0, run: ({ found }) => update(configOf(found)) },
   { name: "new", usage: "new <dir>", summary: "Start a config repo in <dir> from the examples, pinned to this tool commit", effect: "change", args: 1, run: ({ args }) => newConfig(toolDir, args[0]) },
   { name: "init", usage: "init <host>", summary: "Bootstrap a host and install its timer", effect: "change", args: 1, run: ({ color, args, found }) => init(configOf(orCurrentFolder(found)), args[0], color) },
+  { name: "demo", usage: "demo", summary: "Try fleet in a throwaway sandbox of made-up hosts; nothing real is touched", effect: "read", args: 0, run: ({ json }) => demo(toolDir, json) },
   { name: "agent", usage: "agent", summary: "Print what an agent needs to know about fleet", effect: "read", args: 0, run: ({ found }) => agent(toolDir, "dir" in found ? found.dir : null, commands) },
   { name: "help", usage: "help", summary: "List the commands", effect: "read", args: 0 },
 ];
