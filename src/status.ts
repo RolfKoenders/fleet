@@ -175,7 +175,7 @@ export function status(toolDir: string, configDir: string, color: boolean, home:
 }
 
 /** One host's answer. `timer` is a host with no `ssh` destination, which applies on its own schedule. */
-type HostStatus = {
+export type HostStatus = {
   host: string;
   result: "ok" | "unreachable" | "timer" | "error";
   status: StatusFields | null;
@@ -183,7 +183,7 @@ type HostStatus = {
   detail?: string;
 };
 
-const printable = (value: unknown): string | null => (typeof value === "string" ? value.slice(0, 200).replace(/[^\x20-\x7e]/g, "?") : null);
+export const printable = (value: unknown): string | null => (typeof value === "string" ? value.slice(0, 200).replace(/[^\x20-\x7e]/g, "?") : null);
 const count = (value: unknown): number | null => (typeof value === "number" && Number.isInteger(value) && value >= 0 ? value : null);
 
 /**
@@ -206,16 +206,17 @@ function fromDocument(doc: Obj): StatusFields | null {
   };
 }
 
-const REMOTE_COMMAND = "~/.local/bin/fleet status --json";
+export const REMOTE_COMMAND = "~/.local/bin/fleet status --json";
 
-/** Runs `fleet status --json` on one host, as `push` runs `apply` there. ssh exiting 255 is unreachable. */
-function ask(ssh: string, dest: string, host: string, notes: string[]): HostStatus {
-  const r = spawnSync(ssh, ["-o", "BatchMode=yes", "-o", "ConnectTimeout=10", dest, REMOTE_COMMAND], {
-    encoding: "utf8",
-    stdio: ["ignore", "pipe", "pipe"],
-    timeout: 60_000,
-  });
-  const firstLine = (r.stderr ?? "").trim().split("\n")[0] ?? "";
+/** The arguments `ssh` is run with to ask `dest` for its status. */
+export const sshArguments = (dest: string): string[] => ["-o", "BatchMode=yes", "-o", "ConnectTimeout=10", dest, REMOTE_COMMAND];
+
+/** What running `ssh` came to, from either the blocking or the async way of running it. */
+export type SshOutcome = { error?: Error | undefined; status: number | null; stdout: string; stderr: string };
+
+/** Reads one host's answer to `fleet status --json`. ssh exiting 255 is unreachable. */
+export function hostStatusFrom(host: string, r: SshOutcome, notes: string[]): HostStatus {
+  const firstLine = r.stderr.trim().split("\n")[0] ?? "";
   if (r.error || r.status === 255) {
     notes.push(`fleet: ${host}: unreachable over ssh (${r.error?.message ?? (firstLine || "no reason given")})`);
     return { host, result: "unreachable", status: null };
@@ -235,6 +236,16 @@ function ask(ssh: string, dest: string, host: string, notes: string[]): HostStat
       : `its output was not a fleet status document (exit ${r.status ?? "none"})`;
   notes.push(`fleet: ${host}: ${detail}`);
   return { host, result: "error", status: null, detail };
+}
+
+/** Runs `fleet status --json` on one host, as `push` runs `apply` there. */
+function ask(ssh: string, dest: string, host: string, notes: string[]): HostStatus {
+  const r = spawnSync(ssh, sshArguments(dest), {
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+    timeout: 60_000,
+  });
+  return hostStatusFrom(host, { error: r.error, status: r.status, stdout: r.stdout ?? "", stderr: r.stderr ?? "" }, notes);
 }
 
 const EXIT_ORDER = ["unreachable", "error"] as const;
