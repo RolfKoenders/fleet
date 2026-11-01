@@ -1,0 +1,36 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node: ["22.18", "24"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - name: Install sops and age
+        run: |
+          set -eu
+          mkdir -p "$HOME/.local/bin" "$RUNNER_TEMP/dl"
+          cd "$RUNNER_TEMP/dl"
+          curl -fsSLO https://github.com/getsops/sops/releases/download/v3.13.3/sops-v3.13.3.linux.amd64
+          curl -fsSLO https://github.com/FiloSottile/age/releases/download/v1.3.2/age-v1.3.2-linux-amd64.tar.gz
+          cat > sums <<'EOF'
+          e5bec3346a873ae91d871550f3e698c1aad962aff462a080e40f25fde17fef6b  sops-v3.13.3.linux.amd64
+          cbe24006683f8eb669266162894b9a522a1af52f2665fbc63a4bb032ed26ac10  age-v1.3.2-linux-amd64.tar.gz
+          EOF
+          sha256sum -c sums
+          install -m 755 sops-v3.13.3.linux.amd64 "$HOME/.local/bin/sops"
+          tar -xzf age-v1.3.2-linux-amd64.tar.gz age/age-keygen
+          install -m 755 age/age-keygen "$HOME/.local/bin/age-keygen"
+      - run: npm ci
+      - run: npx tsc --noEmit
+      - run: npm test

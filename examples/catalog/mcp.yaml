@@ -1,0 +1,35 @@
+# MCP servers, defined once and rendered for both Claude Code and opencode.
+#
+# A server has either `command` (it runs on the machine, over stdio) or `transport` (it is a
+# URL you connect to). A host file picks servers by name under `mcp.include`.
+#
+# Values may use two kinds of placeholder:
+#   {{ vars.NAME }}   replaced from the `vars` of the defaults or the host file. `vars.HOME`
+#                     is built in.
+#   secret:NAME       replaced from the encrypted files in secrets/. A secret can appear in
+#                     `env`, `headers` and `url`, never in `command`, because a command line
+#                     can be read by every user on the machine.
+
+servers:
+  # A stdio server. A first element of `npx` is rewritten to the npx beside the Node fleet
+  # runs under, so it works from the timer, which has no shell profile. Pin the version.
+  docs:
+    command: [npx, -y, "@example/docs-mcp@1.0.0"]
+    env:
+      DOCS_BASE_URL: "{{ vars.DOCS_URL }}"
+
+  # A network server. `transport` is http or sse. Servers that need a browser login, like
+  # this one, are logged in once by hand with /mcp in each tool; fleet only writes the entry.
+  tracker:
+    transport: http
+    url: https://tracker.example.com/mcp
+
+  # A server with a secret. Nothing picks it in this example. To use it, add `tracker-local`
+  # to `mcp.include` in a host file, then store the value on the admin host with
+  #   fleet secrets set <host> TRACKER_API_KEY
+  # and `fleet push`. `only` limits it to one tool; leave it out for both.
+  tracker-local:
+    command: [npx, -y, "@example/tracker-mcp@2.0.0"]
+    env:
+      TRACKER_API_KEY: secret:TRACKER_API_KEY
+    only: [claude]

@@ -1,0 +1,29 @@
+#!/bin/sh
+# Non-interactive SSH and systemd user units do not load fnm or ~/.profile, so Node is found by
+# absolute path, not by trusting PATH. Override with FLEET_NODE=/path/to/node.
+set -eu
+
+self=$(readlink -f -- "$0")
+root=$(dirname -- "$(dirname -- "$self")")
+
+# A Node is usable when it strips types with no flags (22.18+, 23.6+, 24+).
+usable() {
+  [ -n "$1" ] && [ -x "$1" ] &&
+    "$1" -e 'process.exit(process.features.typescript ? 0 : 1)' 2>/dev/null
+}
+
+for node in \
+  "${FLEET_NODE:-}" \
+  "$HOME/.local/share/fnm/aliases/default/bin/node" \
+  "$HOME/.local/bin/node" \
+  "$(command -v node 2>/dev/null || true)"
+do
+  if usable "$node"; then
+    # The probed path, not a resolved one, so the fnm alias survives upgrades.
+    export FLEET_NODE_PATH="$node"
+    exec "$node" "$root/src/main.ts" "$@"
+  fi
+done
+
+echo "fleet: no Node with type stripping found (need 22.18+); set FLEET_NODE" >&2
+exit 127

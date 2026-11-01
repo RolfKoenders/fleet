@@ -1,0 +1,22 @@
+# One file per host. The file's name is the host's name: `fleet init laptop` sets up the
+# machine this describes, and `fleet init` writes the name to ~/.config/fleet/host on it.
+
+# Exactly one host is the admin: the one you work from. Its key can read every secrets file,
+# and it is the only host that runs `fleet init` for the others. `fleet init laptop` runs on
+# this machine itself, with no ssh.
+admin: true
+
+# This host's age public key, which encrypts its secrets. Leave it empty: `fleet init` makes
+# the key on the machine, writes the public half here, and re-encrypts the secrets files.
+age: ""
+
+# Add a bundle to the defaults.
+bundles: [extra]
+
+# Add a server to the defaults.
+mcp:
+  include: [tracker]
+
+# A link only this host has. This one gives the machine a note about itself.
+files:
+  - { source: config/rules/host/laptop.md, target: ~/.claude/rules/host.md }

@@ -1,0 +1,16 @@
+# The fleet tool version every machine runs.
+#
+# Fleet does not run whatever is newest. Each `fleet apply` checks out `commit` in the
+# machine's fleet clone (~/.local/share/fleet/fleet) and runs that code, so a change to the
+# tool reaches your machines only after you have moved this line and pushed.
+#
+# `fleet new` filled in the three values below. To take a newer tool, run `fleet update`: it
+# moves `commit` to the latest commit of `track` and changes nothing else. Read the change
+# with `git diff`, then `fleet push`.
+tool:
+  # Where machines clone the tool from. A plain URL: no password in it.
+  repo: https://github.com/example/fleet.git
+  # The full 40-character commit that machines run.
+  commit: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+  # The branch `fleet update` follows.
+  track: main

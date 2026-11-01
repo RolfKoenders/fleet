@@ -1,0 +1,21 @@
+# A host the laptop reaches over ssh. `fleet push` applies on it right away, and
+# `fleet init server` sets it up from the admin host.
+
+# How to reach it. Any destination ssh accepts, with the agent user the config is for.
+# Leave this out and the host applies only on its own 30-minute timer.
+ssh: me@server
+
+# Empty until `fleet init server` fills it in. See hosts/laptop.yaml.
+age: ""
+
+# Variables win over the defaults at the same name.
+vars:
+  DOCS_URL: https://docs.internal.example.com
+
+# Take a skill bundle or a server away, even though the defaults add it:
+# exclude: [core]
+# mcp:
+#   exclude: [docs]
+
+files:
+  - { source: config/rules/host/server.md, target: ~/.claude/rules/host.md }

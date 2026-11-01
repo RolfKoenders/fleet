@@ -1,0 +1,36 @@
+# Where skills come from, and how they are grouped.
+#
+# A skill is a directory named after the skill with a SKILL.md in it. A source is a git repo
+# that holds skills. A bundle is a named list of skills that a host file picks as one unit.
+# Fleet links each picked skill into ~/.claude/skills/<name>.
+#
+# Fleet always installs its own `fleet` skill, from the tool. Do not list it here: the names
+# `fleet`, `synced` and `.trash` are reserved.
+
+sources:
+  # A pinned source: you decide when it changes. `commit` is the full sha fleet checks out,
+  # and `track` is the branch `fleet skills update` reads to find a newer one. Use this for
+  # skills other people write, so a change upstream cannot reach your machines unreviewed.
+  example-skills:
+    repo: https://github.com/example/skills.git
+    commit: 1234567890abcdef1234567890abcdef12345678
+    track: main
+    # The directory in the repo to search. Skills are found at any depth below it.
+    # Use "." for the whole repo. A path that is itself a skill (it has a SKILL.md) offers
+    # just that one skill.
+    path: skills
+
+  # A followed source: fleet keeps it on the newest commit of `branch` and fast-forwards it
+  # at every apply. Use this for skills you write yourself. It is left as a comment here
+  # because the repo is yours to make. `fleet push` also commits and pushes it.
+  #
+  # my-skills:
+  #   repo: https://github.com/you/my-skills.git
+  #   branch: main
+  #   path: .
+
+bundles:
+  # Each host file picks bundles by name. A skill can be in only one bundle, and its name
+  # must resolve to exactly one directory in exactly one source.
+  core: [review, debug]
+  extra: [notes]

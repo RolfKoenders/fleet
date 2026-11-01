@@ -1,0 +1,40 @@
+# What every host gets. A host file (hosts/<name>.yaml) adds to this or takes from it.
+#
+# How the two combine:
+#   bundles, mcp.include   the host's list is added to this one
+#   exclude, mcp.exclude   taken off after everything is added
+#   settings, vars         merged key by key; the host's value wins at the same key
+#   files                  a host record with the same `target` replaces this one
+
+# Variables for {{ vars.NAME }} in the catalog. A host file can set its own value.
+vars:
+  DOCS_URL: https://docs.example.com
+
+# Skill bundles from catalog/skills.yaml.
+bundles: [core]
+
+# MCP servers from catalog/mcp.yaml.
+mcp:
+  include: [docs]
+
+# Settings fleet owns inside the files the tools also write. Each value you give here is
+# owned by fleet: it is set at every apply, and a change made by hand is a conflict. Keys you
+# do not list are never read or touched. Nested maps are followed down to the leaves, and a
+# list is a leaf that replaces the whole list.
+settings:
+  claude:
+    # ~/.claude/settings.json
+    attribution:
+      commit: ""
+      pr: ""
+  opencode:
+    # ~/.config/opencode/opencode.jsonc
+    autoupdate: false
+
+# Files linked into place. `source` is a path inside this repo, `target` starts with ~/.
+# The target becomes a symlink to the file here, so this repo holds the only copy. An existing
+# real file at the target is a conflict: fleet will not overwrite it. Directories work too.
+files:
+  - { source: config/AGENTS.md, target: ~/.claude/CLAUDE.md }
+  - { source: config/AGENTS.md, target: ~/.config/opencode/AGENTS.md }
+  - { source: config/rules/claude.md, target: ~/.claude/rules/claude.md }
