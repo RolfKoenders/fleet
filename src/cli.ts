@@ -4,6 +4,7 @@ import { parseArgs } from "node:util";
 import { adopt } from "./adopt.ts";
 import { agent } from "./agent.ts";
 import { apply, diff, failure } from "./apply.ts";
+import { bridge } from "./tui/bridge.ts";
 import { InvalidConfigError } from "./config.ts";
 import { findConfigDir } from "./dirs.ts";
 import { readHostName } from "./host.ts";
@@ -46,6 +47,7 @@ type Command = {
 const commands: Command[] = [
   { name: "status", usage: "status [--all]", summary: "Report this host: fleet clone, applied state, timer, pending changes, conflicts and tool versions (--all asks every host over ssh)", effect: "read", args: 0, run: ({ color, all, found }) => (all ? statusAll(toolDir, configOf(found), color) : status(toolDir, configOf(found), color)) },
   { name: "diff", usage: "diff", summary: "Show what apply would change, without changing anything", effect: "read", args: 0, run: ({ color, found }) => diff(configOf(found), color) },
+  { name: "bridge", usage: "bridge", summary: "Open the full-screen view of every host, the matrix of what each gets, and conflicts (read-only; needs a terminal)", effect: "read", args: 0, run: ({ json, found }) => bridge(toolDir, configOf(found), json) },
   { name: "apply", usage: "apply", summary: "Make this host match its config", effect: "change", args: 0, run: ({ color, json, found }) => apply(toolDir, configOf(found), color, undefined, json ? ["apply", "--json"] : ["apply"]) },
   { name: "push", usage: "push [-m <message>]", summary: "Publish changes to GitHub, then apply on every host (-m sets the commit message)", effect: "change", args: 0, run: ({ color, message, found }) => push(toolDir, configOf(found), message, color) },
   { name: "adopt", usage: "adopt mcp|skill <name>", summary: "Record an existing MCP server or skill as fleet's", effect: "change", args: 2, run: ({ color, args, found }) => adopt(configOf(found), args, color) },
