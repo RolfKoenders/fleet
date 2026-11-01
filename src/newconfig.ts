@@ -7,7 +7,7 @@ import { PIN_FILE, readPin, urlProblem } from "./pin.ts";
 const invalid = (...messages: string[]): Result => ({ code: "invalid", messages: messages.map((m) => `fleet: ${m}`) });
 
 /** Sets the value of a top-level-indented `key:` line under `tool:` in the example pin, keeping its comments. */
-function setPinValue(text: string, key: string, value: string): string | null {
+export function setPinValue(text: string, key: string, value: string): string | null {
   const line = new RegExp(`^( +${key}:[ \\t]*)[^\\s#]+`, "m");
   return line.test(text) ? text.replace(line, (_, head: string) => `${head}${value}`) : null;
 }
