@@ -1,0 +1,258 @@
+import type { App, Cmd, Core } from "./runtime.ts";
+import type { Conflict } from "../plan.ts";
+import type { ConflictsResult, HostResult, Probe } from "./probe.ts";
+import { homeLayout } from "./layout.ts";
+import { items, search } from "./palette.ts";
+import type { Action, Screen } from "./palette.ts";
+import { SCREENS } from "./palette.ts";
+import type { Key } from "./input.ts";
+import type { Model } from "./model.ts";
+import { visibleRows } from "./model.ts";
+import type { Size } from "./terminal.ts";
+import { drawApp } from "./views/index.ts";
+
+export type HostLive = {
+  phase: "loading" | "done";
+  /** Bumped at each refresh, so an answer to an old question is ignored. */
+  gen: number;
+  since: number;
+  /** When the answer arrived, on the runtime's clock. */
+  at: number | null;
+  result: HostResult | null;
+};
+
+export type ConflictsLive = { phase: "loading" | "done"; items: Conflict[]; detail: string | null; selected: number };
+
+export type Overlay = null | { kind: "help" } | { kind: "palette"; query: string; selected: number };
+
+export type State = {
+  size: Size;
+  now: number;
+  motion: boolean;
+  model: Model;
+  screen: Screen;
+  overlay: Overlay;
+  /** Start time of the boot animation on the runtime's clock, or null before the first tick; `done` once over or skipped. */
+  boot: { start: number | null; done: boolean };
+  live: Record<string, HostLive>;
+  conflicts: ConflictsLive;
+  home: { selected: number };
+  matrix: { row: number; col: number; expanded: string[] };
+  fault: string | null;
+};
+
+export type Msg =
+  | { type: "host"; host: string; gen: number; result: HostResult }
+  | { type: "conflicts"; result: ConflictsResult }
+  | { type: "fault"; text: string };
+
+export type Options = { model: Model; probe: Probe; motion: boolean; boot: boolean };
+
+export const BOOT_MS = 1700;
+/** A tick this far behind means the terminal or the link cannot keep up with the animation. */
+const LAG_MS = 150;
+
+const clamp = (n: number, lo: number, hi: number): number => Math.max(lo, Math.min(hi, n));
+
+export function createApp(options: Options): App<State, Msg> {
+  const { model, probe } = options;
+  const palette = items(model);
+
+  const askHost = (name: string, gen: number): Cmd<Msg> => async ({ send, signal }) => {
+    const host = model.hosts.find((h) => h.name === name)!;
+    const result = await probe.host(host, signal);
+    send({ type: "host", host: name, gen, result });
+  };
+  const askConflicts: Cmd<Msg> = async ({ send, signal }) => {
+    send({ type: "conflicts", result: await probe.conflicts(signal) });
+  };
+
+  /** Starts asking every host at once; each answers on its own time. */
+  function refresh(state: State): [State, Cmd<Msg>[]] {
+    const live = { ...state.live };
+    const cmds: Cmd<Msg>[] = [];
+    for (const h of model.hosts) {
+      const gen = (live[h.name]?.gen ?? 0) + 1;
+      // A host with no ssh destination cannot be asked, so there is nothing to wait for.
+      if (!h.self && h.ssh === null) {
+        live[h.name] = { phase: "done", gen, since: state.now, at: state.now, result: { result: "timer", status: null } };
+        continue;
+      }
+      live[h.name] = { phase: "loading", gen, since: state.now, at: live[h.name]?.at ?? null, result: live[h.name]?.result ?? null };
+      cmds.push(askHost(h.name, gen));
+    }
+    const hasSelf = model.self !== null;
+    const conflicts: ConflictsLive = { ...state.conflicts, phase: hasSelf ? "loading" : "done", detail: hasSelf ? null : "this host has no name yet, so its own conflicts cannot be planned" };
+    if (hasSelf) cmds.push(askConflicts);
+    return [{ ...state, live, conflicts }, cmds];
+  }
+
+  function go(state: State, action: Action): [State, Cmd<Msg>[]] {
+    const closed: State = { ...state, overlay: null };
+    switch (action.do) {
+      case "screen":
+        return [{ ...closed, screen: action.screen }, []];
+      case "host": {
+        const i = model.hosts.findIndex((h) => h.name === action.name);
+        return [{ ...closed, screen: "home", home: { selected: Math.max(0, i) } }, []];
+      }
+      case "row": {
+        const rows = visibleRows(model, new Set(state.matrix.expanded));
+        const row = Math.max(0, rows.findIndex((r) => r.name === action.name && r.kind === action.kind));
+        return [{ ...closed, screen: "matrix", matrix: { ...state.matrix, row } }, []];
+      }
+      case "refresh":
+        return refresh(closed);
+      case "help":
+        return [{ ...closed, overlay: { kind: "help" } }, []];
+      case "quit":
+        return [closed, [({ quit }) => quit(0)]];
+    }
+  }
+
+  function moveHome(state: State, key: Key): State {
+    const n = model.hosts.length;
+    if (n === 0) return state;
+    const layout = homeLayout(state.size);
+    const step = layout.mode === "cards" ? layout.cols : 1;
+    const horizontal = layout.mode === "cards" ? 1 : 0;
+    const d = key.name === "left" || key.text === "h" ? -horizontal : key.name === "right" || key.text === "l" ? horizontal : key.name === "up" || key.text === "k" ? -step : key.name === "down" || key.text === "j" ? step : 0;
+    return { ...state, home: { selected: clamp(state.home.selected + d, 0, n - 1) } };
+  }
+
+  function moveMatrix(state: State, key: Key): State {
+    const rows = visibleRows(model, new Set(state.matrix.expanded));
+    const m = state.matrix;
+    const d = (a: string, b: string) => (key.name === a || key.text === b ? 1 : 0);
+    const dr = d("down", "j") - d("up", "k") + (key.name === "pagedown" ? 8 : 0) - (key.name === "pageup" ? 8 : 0);
+    const dc = d("right", "l") - d("left", "h");
+    let { row, col } = m;
+    row = clamp(row + dr, 0, Math.max(0, rows.length - 1));
+    col = clamp(col + dc, 0, Math.max(0, model.hosts.length - 1));
+    if (key.name === "home" || key.text === "g") row = 0;
+    if (key.name === "end" || key.text === "G") row = Math.max(0, rows.length - 1);
+    let expanded = m.expanded;
+    if (key.name === "enter" || key.text === " ") {
+      const at = rows[row];
+      const bundle = at?.kind === "bundle" ? at.name : at?.kind === "skill" ? at.bundle! : null;
+      if (bundle !== null) {
+        expanded = expanded.includes(bundle) ? expanded.filter((b) => b !== bundle) : [...expanded, bundle];
+        if (at!.kind === "skill") row = visibleRows(model, new Set(expanded)).findIndex((r) => r.kind === "bundle" && r.name === bundle);
+      }
+    }
+    return { ...state, matrix: { row, col, expanded } };
+  }
+
+  function moveConflicts(state: State, key: Key): State {
+    const n = state.conflicts.items.length;
+    const d = key.name === "down" || key.text === "j" ? 1 : key.name === "up" || key.text === "k" ? -1 : 0;
+    return { ...state, conflicts: { ...state.conflicts, selected: clamp(state.conflicts.selected + d, 0, Math.max(0, n - 1)) } };
+  }
+
+  function onPalette(state: State, key: Key): [State, Cmd<Msg>[]] {
+    const o = state.overlay as Extract<Overlay, { kind: "palette" }>;
+    const matches = search(palette, o.query);
+    const set = (query: string, selected: number): [State, Cmd<Msg>[]] => [{ ...state, overlay: { kind: "palette", query, selected: clamp(selected, 0, Math.max(0, search(palette, query).length - 1)) } }, []];
+    if (key.name === "escape" || (key.ctrl && (key.text === "k" || key.text === "c"))) return [{ ...state, overlay: null }, []];
+    if (key.name === "enter") {
+      const m = matches[o.selected];
+      return m ? go(state, m.item.action) : [{ ...state, overlay: null }, []];
+    }
+    if (key.name === "down" || key.name === "tab" || (key.ctrl && (key.text === "n" || key.text === "j"))) return set(o.query, (o.selected + 1) % Math.max(1, matches.length));
+    if (key.name === "up" || key.name === "backtab" || (key.ctrl && (key.text === "p" || key.text === "k"))) return set(o.query, (o.selected - 1 + matches.length) % Math.max(1, matches.length));
+    if (key.name === "backspace") return set([...o.query].slice(0, -1).join(""), 0);
+    if (key.ctrl && key.text === "u") return set("", 0);
+    if (key.name === "char" && !key.ctrl && !key.alt && key.text) return set(o.query + key.text, 0);
+    return [state, []];
+  }
+
+  function onKey(state: State, key: Key): [State, Cmd<Msg>[]] {
+    if (!state.boot.done) return [{ ...state, boot: { ...state.boot, done: true } }, []];
+    if (state.overlay?.kind === "palette") return onPalette(state, key);
+    if (state.overlay?.kind === "help") {
+      if (key.name === "escape" || key.text === "?" || key.text === "q" || key.name === "enter") return [{ ...state, overlay: null }, []];
+      return [state, []];
+    }
+    const ch = key.ctrl || key.alt ? undefined : key.text;
+    if (key.ctrl && key.text === "c") return [state, [({ quit }) => quit(0)]];
+    if (key.ctrl && key.text === "k") return [{ ...state, overlay: { kind: "palette", query: "", selected: 0 } }, []];
+    if (ch === ":" || ch === "/") return [{ ...state, overlay: { kind: "palette", query: "", selected: 0 } }, []];
+    if (ch === "q") return [state, [({ quit }) => quit(0)]];
+    if (ch === "?") return [{ ...state, overlay: { kind: "help" } }, []];
+    if (ch === "r") return refresh(state);
+    const tab = SCREENS.find((s) => s.key === ch);
+    if (tab) return [{ ...state, screen: tab.id }, []];
+    if (key.name === "tab" || key.name === "backtab") {
+      const i = SCREENS.findIndex((s) => s.id === state.screen);
+      return [{ ...state, screen: SCREENS[(i + (key.name === "tab" ? 1 : SCREENS.length - 1)) % SCREENS.length]!.id }, []];
+    }
+    if (key.name === "escape") return [{ ...state, screen: "home" }, []];
+    if (state.screen === "home") {
+      if (key.name === "enter") return [{ ...state, screen: "matrix", matrix: { ...state.matrix, col: state.home.selected } }, []];
+      if (ch === "c") return [{ ...state, screen: "conflicts" }, []];
+      return [moveHome(state, key), []];
+    }
+    if (state.screen === "matrix") return [moveMatrix(state, key), []];
+    return [moveConflicts(state, key), []];
+  }
+
+  return {
+    init(size) {
+      const state: State = {
+        size,
+        now: 0,
+        motion: options.motion,
+        model,
+        screen: "home",
+        overlay: null,
+        boot: { start: null, done: !options.boot },
+        live: {},
+        conflicts: { phase: "loading", items: [], detail: null, selected: 0 },
+        home: { selected: Math.max(0, model.hosts.findIndex((h) => h.self)) },
+        matrix: { row: 0, col: Math.max(0, model.hosts.findIndex((h) => h.self)), expanded: [] },
+        fault: null,
+      };
+      return refresh(state);
+    },
+
+    update(state, message: Core | Msg) {
+      switch (message.type) {
+        case "key":
+          return onKey(state, message.key);
+        case "paste":
+          return state.overlay?.kind === "palette" ? [{ ...state, overlay: { kind: "palette", query: state.overlay.query + message.text.replace(/\s+/g, " "), selected: 0 } }, []] : [state, []];
+        case "resize":
+          return [{ ...state, size: message.size }, []];
+        case "tick": {
+          const boot = { ...state.boot };
+          if (!boot.done) {
+            boot.start ??= message.now;
+            // Skip the animation when the terminal cannot keep up with it.
+            if (message.now - boot.start >= BOOT_MS || message.late > LAG_MS) boot.done = true;
+          }
+          return [{ ...state, now: message.now, boot }, []];
+        }
+        case "host": {
+          const current = state.live[message.host];
+          if (!current || current.gen !== message.gen) return [state, []];
+          return [{ ...state, live: { ...state.live, [message.host]: { ...current, phase: "done", at: state.now, result: message.result } } }, []];
+        }
+        case "conflicts": {
+          const r = message.result;
+          const conflicts: ConflictsLive = r.ok ? { phase: "done", items: r.items, detail: null, selected: clamp(state.conflicts.selected, 0, Math.max(0, r.items.length - 1)) } : { phase: "done", items: [], detail: r.detail, selected: 0 };
+          return [{ ...state, conflicts }, []];
+        }
+        case "fault":
+          return [{ ...state, fault: message.text }, []];
+      }
+    },
+
+    view: drawApp,
+
+    tick(state) {
+      if (!state.boot.done) return 33;
+      const loading = Object.values(state.live).some((l) => l.phase === "loading") || state.conflicts.phase === "loading";
+      return loading && state.motion ? 80 : 1000;
+    },
+  };
+}

@@ -133,6 +133,12 @@ export function planCounts(configDir: string, home: string): { pending: number; 
   return { pending, conflicts: conflictsOf(planned.plan).length };
 }
 
+/** The conflicts `diff` would list, read the way `status` reads them: offline, writing nothing. */
+export function planConflicts(configDir: string, home: string): Conflict[] | Result {
+  const planned = prepare(configDir, home, "offline");
+  return isResult(planned) ? planned : conflictsOf(planned.plan);
+}
+
 export function diff(configDir: string, color: boolean, home: string = homedir()): Result {
   const planned = prepare(configDir, home, "diff");
   if (isResult(planned)) return planned;
