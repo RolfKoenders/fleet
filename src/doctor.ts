@@ -76,7 +76,7 @@ function localChecks(home: string): Check[] {
   return [
     timer === "active"
       ? { name: "timer", result: "ok", detail: "active" }
-      : { name: "timer", result: "problem", detail: timer === null ? "unknown (systemctl is not installed or gave no answer)" : timer },
+      : { name: "timer", result: "problem", detail: timer === null ? "unknown (the scheduler is not installed or gave no answer)" : timer },
     existsSync(key)
       ? { name: "age-key", result: "ok", detail: null }
       : { name: "age-key", result: "problem", detail: `no age key at ${shown(key, home)}; \`fleet init\` creates it` },
