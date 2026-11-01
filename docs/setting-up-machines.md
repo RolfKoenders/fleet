@@ -20,6 +20,25 @@ sudo loginctl enable-linger <user>
 
 Without systemd, run `fleet apply` by hand or from cron.
 
+## macOS (experimental)
+
+macOS support is written from Apple's documentation and tested against fakes. It has not yet been run on a Mac, so expect to find problems, and report them. Use macOS 12.3 or newer: the scripts use `readlink -f`.
+
+Install what fleet needs with Homebrew, on Apple Silicon (`/opt/homebrew`) or Intel (`/usr/local`):
+
+```sh
+brew install node sops age
+xcode-select --install   # for git, if you have no other
+```
+
+Fleet finds Homebrew's tools without a login shell, so the timer works without `brew shellenv`.
+
+On a Mac the timer is a LaunchAgent, `~/Library/LaunchAgents/dev.fleet.apply.plist`. It runs `fleet apply` when it loads (at login) and at :00 and :30 each hour, and a run missed while the Mac slept happens when it wakes. The output goes to `~/Library/Logs/fleet.log`. Check it with `fleet status`, or `launchctl print gui/$(id -u)/dev.fleet.apply`.
+
+A LaunchAgent runs only while its user is logged in at the desktop. `fleet init` over ssh to a Mac nobody is logged in to writes the file and stops, saying so. Log in on the Mac once, turn on automatic login if it is a headless machine, and run `fleet init <host>` again.
+
+Git must be able to read and push your config repo without a prompt, from a launchd job. A key kept in the macOS Keychain may need `UseKeychain yes` and `AddKeysToAgent yes` in `~/.ssh/config` (Apple documents those two options); whether a launchd job can then use it is not yet checked. `fleet init` tests a push before it installs the timer.
+
 ## Machines that already have a setup
 
 `fleet init` ends with a first apply and then turns on the timer. Fleet stops at anything it did not write, lists it as a conflict, and writes nothing. Back up what you want to keep, clear each conflict, and run `fleet init` again. Init is safe to run as often as you need.

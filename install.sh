@@ -19,7 +19,10 @@ main() {
     "${FLEET_NODE:-}" \
     "$HOME/.local/share/fnm/aliases/default/bin/node" \
     "$HOME/.local/bin/node" \
-    "$(command -v node 2>/dev/null || true)"
+    "$(command -v node 2>/dev/null || true)" \
+    /opt/homebrew/bin/node \
+    /opt/homebrew/opt/node@22/bin/node \
+    /usr/local/opt/node@22/bin/node
   do
     if [ -n "$node" ] && [ -x "$node" ] && "$node" -e 'process.exit(process.features.typescript ? 0 : 1)' 2>/dev/null; then
       found_node=$node
@@ -50,10 +53,11 @@ main() {
     echo "Linked $link"
   fi
 
-  command -v sops >/dev/null 2>&1 || [ -x "$HOME/.local/bin/sops" ] ||
-    echo "You still need sops 3.11 or newer: https://github.com/getsops/sops"
-  command -v age-keygen >/dev/null 2>&1 || [ -x "$HOME/.local/bin/age-keygen" ] ||
-    echo "You still need age: https://github.com/FiloSottile/age"
+  # On macOS, `brew install sops age` brings both.
+  command -v sops >/dev/null 2>&1 || [ -x "$HOME/.local/bin/sops" ] || [ -x /opt/homebrew/bin/sops ] ||
+    echo "You still need sops 3.11 or newer: https://github.com/getsops/sops (macOS: brew install sops)"
+  command -v age-keygen >/dev/null 2>&1 || [ -x "$HOME/.local/bin/age-keygen" ] || [ -x /opt/homebrew/bin/age-keygen ] ||
+    echo "You still need age: https://github.com/FiloSottile/age (macOS: brew install age)"
 
   case ":$PATH:" in
     *":$HOME/.local/bin:"*) ;;
