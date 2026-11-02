@@ -3,6 +3,7 @@ import { diff, planConflicts } from "../apply.ts";
 import { repoState, runGit } from "../git.ts";
 import { publishedRepos } from "../push.ts";
 import { status } from "../status.ts";
+import { looksSecret } from "./pushrun.ts";
 
 /** Runs one read-only question off the main thread, so the screen keeps moving while it is asked. */
 export type Job = { op: "status" | "conflicts" | "preview"; toolDir: string; configDir: string; home: string };
@@ -15,6 +16,8 @@ export type RepoPreview = {
   behind: number | null;
   /** `git status --porcelain`: the two status letters and the path. */
   files: { status: string; path: string }[];
+  /** The paths among ALL the changed files (not just the ones listed) that look like a plaintext secret and would be committed. A push from the bridge is blocked while there are any. */
+  flagged: string[];
 };
 
 export type Preview = { code: string; plan: string[]; repos: RepoPreview[] };
@@ -26,12 +29,14 @@ function preview(job: Job): Preview {
   const repos = publishedRepos(job.configDir, job.home).map(({ dir, shown }): RepoPreview => {
     const state = repoState(dir);
     const porcelain = runGit(dir, "status", "--porcelain", "--untracked-files=all");
-    const files = porcelain.stdout.split("\n").filter((l) => l !== "").slice(0, FILE_CAP).map((l) => {
+    const all = porcelain.stdout.split("\n").filter((l) => l !== "").map((l) => {
       // The output is trimmed, which can eat the first line's leading space, so the status is whatever comes before the gap.
       const m = /^(\S{1,2})\s+(.+)$/.exec(l);
       return { status: m?.[1] ?? "?", path: m?.[2] ?? l };
     });
-    return { shown, branch: state.branch, ahead: state.ahead, behind: state.behind, files };
+    // A file that is being deleted is not a secret being published.
+    const flagged = all.filter((f) => !f.status.includes("D") && looksSecret(f.path)).map((f) => f.path).slice(0, FILE_CAP);
+    return { shown, branch: state.branch, ahead: state.ahead, behind: state.behind, files: all.slice(0, FILE_CAP), flagged };
   });
   return { code: planned.code, plan: [...(planned.text ?? "").split("\n").filter((l) => l !== ""), ...(planned.messages ?? [])], repos };
 }

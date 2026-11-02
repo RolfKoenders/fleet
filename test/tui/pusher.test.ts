@@ -1,10 +1,10 @@
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { git, installFakeSsh, linkFleetSkill, makeClone, makeHome, publish, repoRoot } from "../helpers.ts";
 import type { SshPlan } from "../helpers.ts";
-import { RealPusher } from "../../src/tui/pusher.ts";
+import { pushArguments, RealPusher } from "../../src/tui/pusher.ts";
 import { loadModel } from "../../src/tui/model.ts";
 import { reduce, startRun, finish } from "../../src/tui/pushrun.ts";
 import type { FleetEvent } from "../../src/events.ts";
@@ -77,4 +77,37 @@ test("the preview reads the dirty files and the plan, and changes nothing", asyn
   assert.ok(r.preview.plan.length > 0);
   assert.equal(git(w.clone, "rev-parse", "HEAD"), before, "nothing was committed");
   assert.equal(git(w.clone, "status", "--porcelain").split("\n").length, 2, "nothing was staged");
+});
+
+test("a typed commit message is passed as -m, also when it starts with a dash, and none leaves the generated one", async () => {
+  assert.deepEqual(pushArguments(), ["push", "--json"]);
+  assert.deepEqual(pushArguments(""), ["push", "--json"]);
+  assert.deepEqual(pushArguments("Add the triage skill"), ["push", "--json", "-m", "Add the triage skill"]);
+  assert.deepEqual(pushArguments("-fix the thing"), ["push", "--json", "--message=-fix the thing"]);
+  for (const message of ["Add the triage skill", "-- a dashed start"]) {
+    const w = world({}, {});
+    w.write("notes.md", "one\n");
+    const end = await w.pusher.run(() => {}, message);
+    assert.equal(end.code, "ok");
+    assert.equal(git(w.remote, "log", "-1", "--format=%s", "main"), message);
+  }
+});
+
+test("the preview flags the plaintext secrets that would be committed, among all the files, and not the ignored or deleted ones", async () => {
+  const w = world({}, {});
+  w.write(".gitignore", "ignored.pem\n");
+  w.write("gone-token.txt", "x\n");
+  publish(w.clone, "add a file to delete");
+  rmSync(join(w.clone, "gone-token.txt"));
+  w.write("ignored.pem", "x\n");
+  w.write("deploy.key", "x\n");
+  w.write("secrets/shared.enc.yaml", "sops: {}\n");
+  // More files than the preview lists, with the secret sorted last.
+  for (let i = 0; i < 230; i++) w.write(`many/a${String(i).padStart(3, "0")}.md`, "x\n");
+  w.write("zz/.env.production", "x\n");
+  const r = await w.pusher.preview(new AbortController().signal);
+  assert.ok(r.ok);
+  const repo = r.preview.repos.at(-1)!;
+  assert.deepEqual([...repo.flagged].sort(), [".env.production".replace(/^/, "zz/"), "deploy.key"].sort());
+  assert.ok(repo.files.length <= 200, "the list is cut but the flags are not");
 });

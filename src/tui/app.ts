@@ -6,7 +6,7 @@ import type { StatusFields } from "../status.ts";
 import type { PreviewResult, Pusher } from "./pusher.ts";
 import { finish, reduce, startRun } from "./pushrun.ts";
 import type { PushEnd, PushRun } from "./pushrun.ts";
-import { CONFIRM_WORD } from "./views/push.ts";
+import { CONFIRM_WORD, MESSAGE_MAX, pushBlock } from "./views/push.ts";
 import { homeLayout } from "./layout.ts";
 import { items, search } from "./palette.ts";
 import type { Action, Screen } from "./palette.ts";
@@ -38,7 +38,7 @@ export type ConflictsLive = { phase: "loading" | "done"; items: Conflict[]; deta
 /** Where a push is: not started, being reviewed (nothing runs until the word is typed), running, or over. */
 export type PushState =
   | { phase: "idle" }
-  | { phase: "review"; gen: number; preview: PreviewResult | null; typed: string }
+  | { phase: "review"; gen: number; preview: PreviewResult | null; typed: string; message: string; focus: "confirm" | "message" }
   | { phase: "running" | "finished"; run: PushRun };
 
 export type TimelineLive = {
@@ -126,8 +126,8 @@ export function createApp(options: Options): App<State, Msg> {
     send({ type: "preview", gen, result: pusher ? await pusher.preview(signal) : { ok: false, detail: "pushing is not offered in this view" } });
   };
   // The one place a push starts. It is the real `fleet push`; its events come back as messages.
-  const startPush: Cmd<Msg> = async ({ send }) => {
-    const end = await pusher!.run((event) => send({ type: "push", event }));
+  const startPush = (message: string): Cmd<Msg> => async ({ send }) => {
+    const end = await pusher!.run((event) => send({ type: "push", event }), message === "" ? undefined : message);
     send({ type: "pushEnd", end });
   };
 
@@ -136,7 +136,7 @@ export function createApp(options: Options): App<State, Msg> {
     const closed: State = { ...state, overlay: null, screen: "push" };
     if (state.push.phase === "running") return [closed, []];
     const gen = state.reviews + 1;
-    return [{ ...closed, reviews: gen, push: { phase: "review", gen, preview: null, typed: "" } }, [askPreview(gen)]];
+    return [{ ...closed, reviews: gen, push: { phase: "review", gen, preview: null, typed: "", message: "", focus: "confirm" } }, [askPreview(gen)]];
   }
 
   /** Quitting while a push runs asks first; the push is never stopped by it. */
@@ -149,13 +149,23 @@ export function createApp(options: Options): App<State, Msg> {
     const p = state.push as Extract<PushState, { phase: "review" }>;
     if (key.ctrl && key.text === "c") return [state, [({ quit }) => quit(0)]];
     if (key.name === "escape") return [{ ...state, push: { phase: "idle" } }, []];
-    const set = (typed: string): [State, Cmd<Msg>[]] => [{ ...state, push: { ...p, typed } }, []];
-    if (key.name === "backspace") return set([...p.typed].slice(0, -1).join(""));
-    if (key.name === "char" && !key.ctrl && !key.alt && key.text) return set((p.typed + key.text).slice(0, 24));
+    // Read the files again, after a secret was removed or gitignored.
+    if (key.ctrl && key.text === "r") {
+      const gen = state.reviews + 1;
+      return [{ ...state, reviews: gen, push: { ...p, gen, preview: null } }, [askPreview(gen)]];
+    }
+    const field = p.focus;
+    if (key.name === "tab" || key.name === "backtab") return [{ ...state, push: { ...p, focus: field === "confirm" ? "message" : "confirm" } }, []];
+    const edit = (text: string, max: number): [State, Cmd<Msg>[]] => [{ ...state, push: { ...p, ...(field === "confirm" ? { typed: text.slice(0, max) } : { message: text.slice(0, max) }) } }, []];
+    const text = field === "confirm" ? p.typed : p.message;
+    if (key.name === "backspace") return edit([...text].slice(0, -1).join(""), 24);
+    if (key.ctrl && key.text === "u") return edit("", 24);
+    if (key.name === "char" && !key.ctrl && !key.alt && key.text && !/[\u0000-\u001f\u007f]/.test(key.text)) return edit(text + key.text, field === "confirm" ? 24 : MESSAGE_MAX);
     if (key.name === "enter") {
-      // Only the typed word, only after the preview was read, ever starts it.
-      if (p.typed !== CONFIRM_WORD || p.preview === null || !p.preview.ok || pusher === undefined) return [state, []];
-      return [{ ...state, push: { phase: "running", run: startRun(model.hosts, state.now) } }, [startPush]];
+      // Enter in the message box only moves on to the word. Whatever is typed there is a message, never the word.
+      if (field === "message") return [{ ...state, push: { ...p, focus: "confirm" } }, []];
+      if (p.typed !== CONFIRM_WORD || pusher === undefined || pushBlock(p) !== null) return [state, []];
+      return [{ ...state, push: { phase: "running", run: startRun(model.hosts, state.now) } }, [startPush(p.message.trim())]];
     }
     return [state, []];
   }
