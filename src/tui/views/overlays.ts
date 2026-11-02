@@ -2,8 +2,9 @@ import { BOLD, drawBox } from "../buffer.ts";
 import type { Canvas } from "../buffer.ts";
 import type { State } from "../app.ts";
 import { items, search } from "../palette.ts";
+import { describeRunning, remaining } from "../pushrun.ts";
 import { theme } from "../theme.ts";
-import { stringWidth, truncate } from "../width.ts";
+import { stringWidth, truncate, wrap } from "../width.ts";
 import { pad, s, segments } from "./ui.ts";
 
 function frame(c: Canvas, w: number, h: number, title: string): Canvas {
@@ -18,10 +19,11 @@ function frame(c: Canvas, w: number, h: number, title: string): Canvas {
 }
 
 const HELP: [string, string][] = [
-  ["1 2 3  tab", "switch screen"],
+  ["1 2 3 4  tab", "switch screen"],
   ["← ↑ ↓ →  hjkl", "move"],
   ["enter", "home: open in matrix; matrix: show skills"],
   ["ctrl-k  :", "command palette"],
+  ["P", "review a push, then type push to run it"],
   ["r", "ask every host again"],
   ["c", "home: go to conflicts"],
   ["esc", "close, or back to home"],
@@ -37,7 +39,7 @@ export function drawHelp(root: Canvas): void {
   c.text(3, y, "legend", { fg: theme.muted, attr: BOLD, bg: theme.surface });
   segments(c, 3, y + 1, [["●", { ...s.ok, ...bg }], [" from the defaults   ", { ...s.muted, ...bg }], ["◆", { fg: theme.host, ...bg }], [" from the host's file   ", { ...s.muted, ...bg }], ["◉", { ...s.ok, ...bg }], [" both", { ...s.muted, ...bg }]], c.w - 6);
   segments(c, 3, y + 2, [["✕", { ...s.warn, ...bg }], [" excluded   ", { ...s.muted, ...bg }], ["·", { ...s.faint, ...bg }], [" not picked", { ...s.muted, ...bg }]], c.w - 6);
-  c.text(3, y + 4, truncate("The bridge only reads. It never changes a host or the config.", c.w - 6), { ...s.sub, ...bg });
+  c.text(3, y + 4, truncate("The bridge only reads, until you press P and type push. Then it runs fleet push.", c.w - 6), { ...s.sub, ...bg });
 }
 
 export function drawPalette(root: Canvas, state: State): void {
@@ -69,4 +71,21 @@ export function drawPalette(root: Canvas, state: State): void {
   if (chosen) {
     segments(c, 3, y, chosen.command === null ? [["equals ", { ...s.faint, ...bg }], [chosen.note, { ...s.muted, ...bg }]] : [["equals ", { ...s.faint, ...bg }], [chosen.command, { ...s.brandBold, ...bg }]], c.w - 6);
   }
+}
+
+/** The warning for quitting while a push is still running. */
+export function drawLeave(root: Canvas, state: State): void {
+  const p = state.push;
+  if (p.phase !== "running") return;
+  const c = frame(root, 68, 11, "a push is still running");
+  const bg = { bg: theme.surface };
+  const lines: string[] = [
+    `Right now: ${describeRunning(p.run)}.`,
+    `Still to do: ${remaining(p.run).join(", ") || "nothing but the last step"}.`,
+    "",
+    "Leaving the bridge does not stop it. The push carries on by itself, and fleet will wait for it in this terminal and print how it ended.",
+  ];
+  let y = 2;
+  for (const line of lines) for (const t of wrap(line, c.w - 6).concat(line === "" ? [""] : [])) c.text(3, y++, t, { ...s.text, ...bg });
+  segments(c, 3, c.h - 2, [["q", { ...s.brandBold, ...bg }], [" leave anyway    ", { ...s.muted, ...bg }], ["esc", { ...s.brandBold, ...bg }], [" stay", { ...s.muted, ...bg }]]);
 }

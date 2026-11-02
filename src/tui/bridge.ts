@@ -6,6 +6,7 @@ import { detectLevel } from "./color.ts";
 import type { Env } from "./color.ts";
 import { loadModel } from "./model.ts";
 import { realProbe } from "./probe.ts";
+import { RealPusher } from "./pusher.ts";
 import { runOnTerminal } from "./runtime.ts";
 
 /** Whether the boot animation and the spinners may move: not when the user or a plain terminal asks for none. */
@@ -23,6 +24,15 @@ export async function bridge(toolDir: string, configDir: string, json: boolean, 
   const level = detectLevel(env, true);
   const motion = motionAllowed(env);
   const model = loadModel(configDir, readHostName(home));
-  const app = createApp({ model, probe: realProbe(toolDir, configDir, home), motion, boot: motion && level !== "none" });
-  return { relayed: await runOnTerminal(app, { stdin: process.stdin, stdout: process.stdout }, { level }) };
+  const pusher = new RealPusher(toolDir, configDir, home, model.hosts);
+  const app = createApp({ model, probe: realProbe(toolDir, configDir, home), pusher, motion, boot: motion && level !== "none" });
+  const code = await runOnTerminal(app, { stdin: process.stdin, stdout: process.stdout }, { level });
+  // The screen is gone but a push that was started from it is not: say so, and stay until it has ended.
+  const waiting = pusher.whenDone();
+  if (waiting === null) return { relayed: code };
+  process.stderr.write(`fleet: a push is still running (${pusher.running()}). Leaving the bridge did not stop it; waiting for it to end.\n`);
+  const end = await waiting;
+  const how = end.code === null ? `no result (exit ${end.exit ?? "none"})` : end.code;
+  process.stderr.write(`fleet: the push ended: ${how}\n`);
+  return { relayed: code, messages: end.messages };
 }

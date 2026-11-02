@@ -1,6 +1,11 @@
 import type { App, Cmd, Core } from "./runtime.ts";
 import type { Conflict } from "../plan.ts";
 import type { ConflictsResult, HostResult, Probe } from "./probe.ts";
+import type { FleetEvent } from "../events.ts";
+import type { PreviewResult, Pusher } from "./pusher.ts";
+import { finish, reduce, startRun } from "./pushrun.ts";
+import type { PushEnd, PushRun } from "./pushrun.ts";
+import { CONFIRM_WORD } from "./views/push.ts";
 import { homeLayout } from "./layout.ts";
 import { items, search } from "./palette.ts";
 import type { Action, Screen } from "./palette.ts";
@@ -23,7 +28,13 @@ export type HostLive = {
 
 export type ConflictsLive = { phase: "loading" | "done"; items: Conflict[]; detail: string | null; selected: number };
 
-export type Overlay = null | { kind: "help" } | { kind: "palette"; query: string; selected: number };
+/** Where a push is: not started, being reviewed (nothing runs until the word is typed), running, or over. */
+export type PushState =
+  | { phase: "idle" }
+  | { phase: "review"; gen: number; preview: PreviewResult | null; typed: string }
+  | { phase: "running" | "finished"; run: PushRun };
+
+export type Overlay = null | { kind: "help" } | { kind: "leave" } | { kind: "palette"; query: string; selected: number };
 
 export type State = {
   size: Size;
@@ -36,6 +47,9 @@ export type State = {
   boot: { start: number | null; done: boolean };
   live: Record<string, HostLive>;
   conflicts: ConflictsLive;
+  push: PushState;
+  /** Counts the reviews, so the answer to an old one is ignored. */
+  reviews: number;
   home: { selected: number };
   matrix: { row: number; col: number; expanded: string[] };
   fault: string | null;
@@ -44,9 +58,13 @@ export type State = {
 export type Msg =
   | { type: "host"; host: string; gen: number; result: HostResult }
   | { type: "conflicts"; result: ConflictsResult }
+  | { type: "preview"; gen: number; result: PreviewResult }
+  | { type: "push"; event: FleetEvent }
+  | { type: "pushEnd"; end: PushEnd }
   | { type: "fault"; text: string };
 
-export type Options = { model: Model; probe: Probe; motion: boolean; boot: boolean };
+/** `pusher` is absent where pushing is not offered. */
+export type Options = { model: Model; probe: Probe; pusher?: Pusher; motion: boolean; boot: boolean };
 
 export const BOOT_MS = 1700;
 /** A tick this far behind means the terminal or the link cannot keep up with the animation. */
@@ -55,7 +73,7 @@ const LAG_MS = 150;
 const clamp = (n: number, lo: number, hi: number): number => Math.max(lo, Math.min(hi, n));
 
 export function createApp(options: Options): App<State, Msg> {
-  const { model, probe } = options;
+  const { model, probe, pusher } = options;
   const palette = items(model);
 
   const askHost = (name: string, gen: number): Cmd<Msg> => async ({ send, signal }) => {
@@ -66,6 +84,44 @@ export function createApp(options: Options): App<State, Msg> {
   const askConflicts: Cmd<Msg> = async ({ send, signal }) => {
     send({ type: "conflicts", result: await probe.conflicts(signal) });
   };
+
+  const askPreview = (gen: number): Cmd<Msg> => async ({ send, signal }) => {
+    send({ type: "preview", gen, result: pusher ? await pusher.preview(signal) : { ok: false, detail: "pushing is not offered in this view" } });
+  };
+  // The one place a push starts. It is the real `fleet push`; its events come back as messages.
+  const startPush: Cmd<Msg> = async ({ send }) => {
+    const end = await pusher!.run((event) => send({ type: "push", event }));
+    send({ type: "pushEnd", end });
+  };
+
+  /** Opens the review, which reads and changes nothing. A push in flight is watched, not started again. */
+  function review(state: State): [State, Cmd<Msg>[]] {
+    const closed: State = { ...state, overlay: null, screen: "push" };
+    if (state.push.phase === "running") return [closed, []];
+    const gen = state.reviews + 1;
+    return [{ ...closed, reviews: gen, push: { phase: "review", gen, preview: null, typed: "" } }, [askPreview(gen)]];
+  }
+
+  /** Quitting while a push runs asks first; the push is never stopped by it. */
+  function leave(state: State): [State, Cmd<Msg>[]] {
+    if (state.push.phase === "running" && state.overlay?.kind !== "leave") return [{ ...state, overlay: { kind: "leave" } }, []];
+    return [state, [({ quit }) => quit(0)]];
+  }
+
+  function onReview(state: State, key: Key): [State, Cmd<Msg>[]] {
+    const p = state.push as Extract<PushState, { phase: "review" }>;
+    if (key.ctrl && key.text === "c") return [state, [({ quit }) => quit(0)]];
+    if (key.name === "escape") return [{ ...state, push: { phase: "idle" } }, []];
+    const set = (typed: string): [State, Cmd<Msg>[]] => [{ ...state, push: { ...p, typed } }, []];
+    if (key.name === "backspace") return set([...p.typed].slice(0, -1).join(""));
+    if (key.name === "char" && !key.ctrl && !key.alt && key.text) return set((p.typed + key.text).slice(0, 24));
+    if (key.name === "enter") {
+      // Only the typed word, only after the preview was read, ever starts it.
+      if (p.typed !== CONFIRM_WORD || p.preview === null || !p.preview.ok || pusher === undefined) return [state, []];
+      return [{ ...state, push: { phase: "running", run: startRun(model.hosts, state.now) } }, [startPush]];
+    }
+    return [state, []];
+  }
 
   /** Starts asking every host at once; each answers on its own time. */
   function refresh(state: State): [State, Cmd<Msg>[]] {
@@ -105,8 +161,10 @@ export function createApp(options: Options): App<State, Msg> {
         return refresh(closed);
       case "help":
         return [{ ...closed, overlay: { kind: "help" } }, []];
+      case "push":
+        return review(closed);
       case "quit":
-        return [closed, [({ quit }) => quit(0)]];
+        return leave(state);
     }
   }
 
@@ -168,16 +226,23 @@ export function createApp(options: Options): App<State, Msg> {
 
   function onKey(state: State, key: Key): [State, Cmd<Msg>[]] {
     if (!state.boot.done) return [{ ...state, boot: { ...state.boot, done: true } }, []];
+    if (state.overlay?.kind === "leave") {
+      if (key.name === "escape") return [{ ...state, overlay: null }, []];
+      if (key.text === "q" || key.name === "enter" || (key.ctrl && key.text === "c")) return [state, [({ quit }) => quit(0)]];
+      return [state, []];
+    }
     if (state.overlay?.kind === "palette") return onPalette(state, key);
     if (state.overlay?.kind === "help") {
       if (key.name === "escape" || key.text === "?" || key.text === "q" || key.name === "enter") return [{ ...state, overlay: null }, []];
       return [state, []];
     }
+    if (state.screen === "push" && state.push.phase === "review") return onReview(state, key);
     const ch = key.ctrl || key.alt ? undefined : key.text;
-    if (key.ctrl && key.text === "c") return [state, [({ quit }) => quit(0)]];
+    if (key.ctrl && key.text === "c") return leave(state);
     if (key.ctrl && key.text === "k") return [{ ...state, overlay: { kind: "palette", query: "", selected: 0 } }, []];
     if (ch === ":" || ch === "/") return [{ ...state, overlay: { kind: "palette", query: "", selected: 0 } }, []];
-    if (ch === "q") return [state, [({ quit }) => quit(0)]];
+    if (ch === "q") return leave(state);
+    if (ch === "P") return review(state);
     if (ch === "?") return [{ ...state, overlay: { kind: "help" } }, []];
     if (ch === "r") return refresh(state);
     const tab = SCREENS.find((s) => s.key === ch);
@@ -193,6 +258,7 @@ export function createApp(options: Options): App<State, Msg> {
       return [moveHome(state, key), []];
     }
     if (state.screen === "matrix") return [moveMatrix(state, key), []];
+    if (state.screen === "push") return [state, []];
     return [moveConflicts(state, key), []];
   }
 
@@ -208,6 +274,8 @@ export function createApp(options: Options): App<State, Msg> {
         boot: { start: null, done: !options.boot },
         live: {},
         conflicts: { phase: "loading", items: [], detail: null, selected: 0 },
+        push: { phase: "idle" },
+        reviews: 0,
         home: { selected: Math.max(0, model.hosts.findIndex((h) => h.self)) },
         matrix: { row: 0, col: Math.max(0, model.hosts.findIndex((h) => h.self)), expanded: [] },
         fault: null,
@@ -242,6 +310,20 @@ export function createApp(options: Options): App<State, Msg> {
           const conflicts: ConflictsLive = r.ok ? { phase: "done", items: r.items, detail: null, selected: clamp(state.conflicts.selected, 0, Math.max(0, r.items.length - 1)) } : { phase: "done", items: [], detail: r.detail, selected: 0 };
           return [{ ...state, conflicts }, []];
         }
+        case "preview": {
+          if (state.push.phase !== "review" || state.push.gen !== message.gen) return [state, []];
+          return [{ ...state, push: { ...state.push, preview: message.result } }, []];
+        }
+        case "push": {
+          if (state.push.phase !== "running") return [state, []];
+          return [{ ...state, push: { phase: "running", run: reduce(state.push.run, message.event) } }, []];
+        }
+        case "pushEnd": {
+          if (state.push.phase !== "running") return [state, []];
+          // The hosts' cards are stale now, so ask them again.
+          const [next, cmds] = refresh({ ...state, overlay: state.overlay?.kind === "leave" ? null : state.overlay, push: { phase: "finished", run: finish(state.push.run, message.end) } });
+          return [next, cmds];
+        }
         case "fault":
           return [{ ...state, fault: message.text }, []];
       }
@@ -252,7 +334,8 @@ export function createApp(options: Options): App<State, Msg> {
     tick(state) {
       if (!state.boot.done) return 33;
       const loading = Object.values(state.live).some((l) => l.phase === "loading") || state.conflicts.phase === "loading";
-      return loading && state.motion ? 80 : 1000;
+      const pushing = state.push.phase === "running" || (state.push.phase === "review" && state.push.preview === null);
+      return (loading || pushing) && state.motion ? 80 : 1000;
     },
   };
 }

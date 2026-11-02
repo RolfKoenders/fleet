@@ -1,5 +1,6 @@
 import { EXIT } from "./exit.ts";
 import type { ExitName } from "./exit.ts";
+import { send } from "./events.ts";
 
 /** What a command returns. `text` is the human form, `fields` the extra keys of the `--json` document. */
 export type Result = {
@@ -18,9 +19,13 @@ export type Sink = { stdout: (s: string) => void; stderr: (s: string) => void };
  * Results go to stdout, messages to stderr. With `json`, stdout is exactly one document and
  * the messages are also listed in it.
  */
-export function emit(result: Result | Relayed, host: string | null, json: boolean, sink: Sink): number {
+export function emit(result: Result | Relayed, host: string | null, json: boolean, sink: Sink, events = false): number {
   const messages = result.messages ?? [];
-  for (const message of messages) sink.stderr(`${message}\n`);
+  // With events on, the messages are lines of the event stream, so a reader sees nothing but JSON on stderr.
+  for (const message of messages) {
+    if (events) send({ event: "message", host, text: message });
+    else sink.stderr(`${message}\n`);
+  }
   if ("relayed" in result) return result.relayed;
   if (json) {
     const doc = { ok: result.code === "ok", code: result.code, host, messages, ...result.fields };

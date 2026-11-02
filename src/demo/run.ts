@@ -31,7 +31,7 @@ It is all deleted when you exit.
 To try:
 ${lines.join("\n")}
 
-Also: look around with ls and git log, edit a file in the config, ssh me@devbox 'ls ~/.claude/skills'.
+Also: look around with ls and git log, edit a file in the config, ssh me@devbox 'ls ~/.claude/skills', or run fleet bridge and press P to watch a push live.
 Type exit to leave.
 `;
 }

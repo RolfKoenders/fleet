@@ -7,6 +7,7 @@ import { apply, diff, failure } from "./apply.ts";
 import { bridge } from "./tui/bridge.ts";
 import { InvalidConfigError } from "./config.ts";
 import { demo } from "./demo/run.ts";
+import { eventsOn, ignoreBrokenStderr } from "./events.ts";
 import { doctor, doctorAll, DEFAULT_TIMEOUT_SECONDS } from "./doctor.ts";
 import { findConfigDir } from "./dirs.ts";
 import { readHostName } from "./host.ts";
@@ -50,7 +51,7 @@ const commands: Command[] = [
   { name: "status", usage: "status [--all]", summary: "Report this host: fleet clone, applied state, timer, pending changes, conflicts and tool versions (--all asks every host over ssh)", effect: "read", args: 0, run: ({ color, all, found }) => (all ? statusAll(toolDir, configOf(found), color) : status(toolDir, configOf(found), color)) },
   { name: "doctor", usage: "doctor [--all] [--timeout <seconds>]", summary: "Start this host's MCP servers and ask each what it offers, plus cheap local checks (--all asks every host over ssh). It runs the catalog's commands with real credentials and may make npx download packages, so it runs only when you ask for it, never from the timer", effect: "change", args: 0, run: ({ color, all, timeout, found }) => (all ? doctorAll(configOf(found), color, timeout) : doctor(configOf(found), color, timeout)) },
   { name: "diff", usage: "diff", summary: "Show what apply would change, without changing anything", effect: "read", args: 0, run: ({ color, found }) => diff(configOf(found), color) },
-  { name: "bridge", usage: "bridge", summary: "Open the full-screen view of every host, the matrix of what each gets, and conflicts (read-only; needs a terminal)", effect: "read", args: 0, run: ({ json, found }) => bridge(toolDir, configOf(found), json) },
+  { name: "bridge", usage: "bridge", summary: "Open the full-screen view of every host, the matrix of what each gets, and conflicts (read-only until you confirm a push with P; needs a terminal)", effect: "read", args: 0, run: ({ json, found }) => bridge(toolDir, configOf(found), json) },
   { name: "apply", usage: "apply", summary: "Make this host match its config", effect: "change", args: 0, run: ({ color, json, found }) => apply(toolDir, configOf(found), color, undefined, json ? ["apply", "--json"] : ["apply"]) },
   { name: "push", usage: "push [-m <message>]", summary: "Publish changes to GitHub, then apply on every host (-m sets the commit message)", effect: "change", args: 0, run: ({ color, message, found }) => push(toolDir, configOf(found), message, color) },
   { name: "adopt", usage: "adopt mcp|skill <name>", summary: "Record an existing MCP server or skill as fleet's", effect: "change", args: 2, run: ({ color, args, found }) => adopt(configOf(found), args, color) },
@@ -127,11 +128,12 @@ function dispatch(argv: string[]): { result: Promise<Result | Relayed> | Result 
 }
 
 export async function main(argv: string[], sink: Sink): Promise<number> {
+  if (eventsOn()) ignoreBrokenStderr();
   const json = argv.includes("--json");
   const host = readHostName();
   try {
-    return emit(await dispatch(argv).result, host, json, sink);
+    return emit(await dispatch(argv).result, host, json, sink, eventsOn());
   } catch (error) {
-    return emit(failure(error) ?? { code: "error", messages: [`fleet: ${(error as Error).message}`] }, host, json, sink);
+    return emit(failure(error) ?? { code: "error", messages: [`fleet: ${(error as Error).message}`] }, host, json, sink, eventsOn());
   }
 }

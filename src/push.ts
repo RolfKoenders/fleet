@@ -1,8 +1,9 @@
-import { spawnSync } from "node:child_process";
+import { spawn } from "node:child_process";
 import { existsSync, readdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { failure } from "./apply.ts";
+import { eventsOn, readLine, send } from "./events.ts";
 import { parseCatalog } from "./catalog.ts";
 import { loadConfig } from "./config.ts";
 import { repoState, runGit, UnreachableError } from "./git.ts";
@@ -32,8 +33,26 @@ type Checked = { host: string; targets: Target[]; repos: Repo[]; ssh: string | n
 const firstLine = (text: string) => text.trim().split("\n")[0] ?? "";
 const invalid = (...problems: string[]): Result => ({ code: "invalid", messages: problems.map((p) => `fleet: ${p}`) });
 
-/** What the remote runs. The remote shell expands `~`, because non-interactive ssh has no `~/.local/bin` on its PATH. */
-const REMOTE_COMMAND = "~/.local/bin/fleet apply --json";
+/**
+ * What the remote runs. The remote shell expands `~`, because non-interactive ssh has no `~/.local/bin` on its PATH.
+ * With events on, the variable goes in the command itself, because ssh does not carry ours across; a fleet that
+ * does not know it ignores it.
+ */
+const remoteCommand = (events: boolean): string => `${events ? "FLEET_EVENTS=1 " : ""}~/.local/bin/fleet apply --json`;
+
+/**
+ * The repos a push publishes, in order: each followed source's clone, then the config repo. Never the tool: the
+ * fleet clone is not anyone's to publish from.
+ */
+export function publishedRepos(configDir: string, home: string): Repo[] {
+  const followed = parseCatalog(configDir, []).sources.filter((s) => s.branch !== null).sort((a, b) => a.name.localeCompare(b.name));
+  const repos: Repo[] = followed
+    .map((s) => sourceDir(home, s.name))
+    .filter((dir) => existsSync(join(dir, ".git")))
+    .map((dir) => ({ dir, shown: `~${dir.slice(home.length)}` }));
+  repos.push({ dir: configDir, shown: configDir });
+  return repos;
+}
 
 /**
  * Validates the config, checks that every secrets file is encrypted, and finds the other hosts and the
@@ -66,13 +85,7 @@ function check(configDir: string, home: string): Checked | Result {
   const targets = hostTargets(configDir, host, problems);
   if (problems.length > 0) return invalid(...problems);
 
-  const followed = parseCatalog(configDir, []).sources.filter((s) => s.branch !== null).sort((a, b) => a.name.localeCompare(b.name));
-  const repos: Repo[] = followed
-    .map((s) => sourceDir(home, s.name))
-    .filter((dir) => existsSync(join(dir, ".git")))
-    .map((dir) => ({ dir, shown: `~${dir.slice(home.length)}` }));
-  // The config repo, never the tool: the fleet clone is not anyone's to publish from.
-  repos.push({ dir: configDir, shown: configDir });
+  const repos = publishedRepos(configDir, home);
 
   const ssh = findTool("ssh", process.env, home);
   if (ssh === null && targets.some((t) => t.ssh !== null)) {
@@ -153,12 +166,44 @@ function recordFrom(host: string, status: number | null, stdout: string, notes: 
   return { host, result: "error", changes, conflicts: [] };
 }
 
+type Ran = { error?: Error; status: number | null; stdout: string; stderr: string };
+
+/**
+ * Runs a program without blocking and hands each line of its stderr to `onLine` as it arrives. With `onLine`
+ * unset the stderr is collected instead (and with `inherit`, passed straight through).
+ */
+function run(program: string, args: string[], options: { env?: NodeJS.ProcessEnv; inherit?: boolean; onLine?: (line: string) => void }): Promise<Ran> {
+  return new Promise((resolve) => {
+    const child = spawn(program, args, { env: options.env, stdio: ["ignore", "pipe", options.inherit ? "inherit" : "pipe"] });
+    let [stdout, stderr, pending] = ["", "", ""];
+    child.stdout!.setEncoding("utf8").on("data", (d: string) => (stdout += d));
+    child.stderr?.setEncoding("utf8").on("data", (d: string) => {
+      stderr += d;
+      if (options.onLine === undefined) return;
+      pending += d;
+      for (let at = pending.indexOf("\n"); at >= 0; at = pending.indexOf("\n")) {
+        const line = pending.slice(0, at);
+        pending = pending.slice(at + 1);
+        if (line.trim() !== "") options.onLine(line);
+      }
+    });
+    child.once("error", (error) => resolve({ error, status: null, stdout, stderr }));
+    child.once("close", (status) => {
+      if (pending.trim() !== "") options.onLine?.(pending);
+      resolve({ status, stdout, stderr });
+    });
+  });
+}
+
+/** Forwards a child's stderr line as an event of its lane. */
+const forward = (host: string) => (line: string) => send(readLine(line, host));
+
 /** Applies here, as its own `fleet apply` process, the way the timer and the other hosts run it. */
-function applyHere(toolDir: string, host: string, home: string, notes: string[]): HostRecord {
-  const r = spawnSync(join(toolDir, "bin/fleet"), ["apply", "--json"], {
-    encoding: "utf8",
-    stdio: ["ignore", "pipe", "inherit"],
+async function applyHere(toolDir: string, host: string, home: string, notes: string[], events: boolean): Promise<HostRecord> {
+  const r = await run(join(toolDir, "bin/fleet"), ["apply", "--json"], {
     env: { ...process.env, FLEET_NODE: probedNode(), HOME: home },
+    inherit: !events,
+    ...(events ? { onLine: forward(host) } : {}),
   });
   if (r.error) {
     notes.push(`fleet: ${host}: cannot run ${join(toolDir, "bin/fleet")}: ${r.error.message}`);
@@ -167,10 +212,10 @@ function applyHere(toolDir: string, host: string, home: string, notes: string[])
   return recordFrom(host, r.status, r.stdout, notes);
 }
 
-function applyThere(ssh: string, target: Target & { ssh: string }, notes: string[]): HostRecord {
-  const r = spawnSync(ssh, ["-o", "BatchMode=yes", "-o", "ConnectTimeout=10", target.ssh, REMOTE_COMMAND], {
-    encoding: "utf8",
-    stdio: ["ignore", "pipe", "pipe"],
+async function applyThere(ssh: string, target: Target & { ssh: string }, notes: string[], events: boolean, home: string): Promise<HostRecord> {
+  const r = await run(ssh, ["-o", "BatchMode=yes", "-o", "ConnectTimeout=10", target.ssh, remoteCommand(events)], {
+    env: { ...process.env, HOME: home },
+    ...(events ? { onLine: forward(target.host) } : {}),
   });
   if (r.error || r.status === 255) {
     notes.push(`fleet: ${target.host}: unreachable over ssh (${r.error?.message ?? (firstLine(r.stderr) || "no reason given")})`);
@@ -191,26 +236,44 @@ function render(records: HostRecord[], color: boolean): string {
   return lines.join("\n");
 }
 
-export function push(toolDir: string, configDir: string, message: string | undefined, color: boolean, home: string = homedir()): Result {
+export async function push(toolDir: string, configDir: string, message: string | undefined, color: boolean, home: string = homedir()): Promise<Result> {
+  const events = eventsOn();
   try {
+    send({ event: "stage", stage: "validate" });
     const checked = check(configDir, home);
     if ("code" in checked) return checked;
     const { host, targets, repos, ssh } = checked;
+    send({ event: "hosts", hosts: [{ host, via: "local" }, ...targets.map((t) => ({ host: t.host, via: t.ssh === null ? ("timer" as const) : ("ssh" as const) }))] });
 
     const notes: string[] = [];
-    for (const repo of repos) {
+    send({ event: "stage", stage: "publish", of: repos.length });
+    for (const [i, repo] of repos.entries()) {
       const conflict = publish(repo, host, message, notes);
       if (conflict !== null) {
         return { code: "conflict", text: `${conflict.path}: ${conflict.detail}\n  fix: ${conflict.fix}`, messages: [...notes, `fleet: ${conflict.path} has diverged; nothing more was pushed or applied`], fields: { hosts: [], conflicts: [conflict] } };
       }
+      send({ event: "step", step: "publish", target: repo.shown, n: i + 1, of: repos.length });
     }
 
-    const records = [applyHere(toolDir, host, home, notes)];
+    send({ event: "stage", stage: "apply", of: targets.length + 1 });
+    const visit = async (name: string, go: () => Promise<HostRecord>): Promise<HostRecord> => {
+      send({ event: "host", host: name, state: "start" });
+      const record = await go();
+      send({ event: "host", host: name, state: "done", result: record.result, changes: record.changes });
+      return record;
+    };
+    const records = [await visit(host, () => applyHere(toolDir, host, home, notes, events))];
     // A conflict here means the config is not ready for any host, so none of them is touched.
     if (records[0]!.result !== "conflict") {
       for (const target of targets) {
-        records.push(target.ssh === null ? { host: target.host, result: "timer", changes: 0, conflicts: [] } : applyThere(ssh!, { ...target, ssh: target.ssh }, notes));
+        if (target.ssh === null) {
+          records.push(await visit(target.host, async () => ({ host: target.host, result: "timer", changes: 0, conflicts: [] })));
+        } else {
+          records.push(await visit(target.host, () => applyThere(ssh!, { ...target, ssh: target.ssh! }, notes, events, home)));
+        }
       }
+    } else {
+      for (const target of targets) send({ event: "host", host: target.host, state: "skip" });
     }
 
     const worst = EXIT_ORDER.find((result) => records.some((r) => r.result === result));

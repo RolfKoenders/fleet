@@ -1,5 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { join } from "node:path";
+import { note } from "./events.ts";
 import type { Relayed } from "./output.ts";
 import { probedNode } from "./tools.ts";
 
@@ -13,7 +14,7 @@ export const relaunched = (): boolean => process.env[MARK] === "1";
  * code. This is how `fleet apply` hands over to the code it just checked out.
  */
 export function relaunch(root: string, args: string[]): Relayed {
-  process.stderr.write("fleet: the fleet clone moved; running its new code\n");
+  note("fleet: the fleet clone moved; running its new code");
   const r = spawnSync(join(root, "bin/fleet"), args, {
     stdio: "inherit",
     // The wrapper already found a usable Node; the new run reuses it rather than probing again.

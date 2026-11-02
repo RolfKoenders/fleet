@@ -9,17 +9,22 @@ import type { Hint } from "./chrome.ts";
 import { drawConflicts } from "./conflicts.ts";
 import { drawHome } from "./home.ts";
 import { drawMatrix } from "./matrix.ts";
-import { drawHelp, drawPalette } from "./overlays.ts";
+import { drawPush } from "./push.ts";
+import { drawHelp, drawLeave, drawPalette } from "./overlays.ts";
 import { s } from "./ui.ts";
 
 const COMMON: Hint[] = [["ctrl-k", "palette"], ["?", "help"], ["q", "quit"]];
 
 function hints(state: State): Hint[] {
+  if (state.overlay?.kind === "leave") return [["q", "leave anyway"], ["esc", "stay"]];
+  if (state.screen === "push" && state.push.phase === "review") return [["type push", "confirm"], ["enter", "go"], ["esc", "cancel"]];
   if (state.overlay?.kind === "palette") return [["↑↓", "choose"], ["enter", "go"], ["esc", "close"]];
   if (state.overlay?.kind === "help") return [["esc", "close"]];
   switch (state.screen) {
     case "home":
-      return [[homeLayout(state.size).mode === "cards" ? "←↑↓→" : "↑↓", "select"], ["enter", "matrix"], ["r", "refresh"], ...COMMON];
+      return [[homeLayout(state.size).mode === "cards" ? "←↑↓→" : "↑↓", "select"], ["enter", "matrix"], ["r", "refresh"], ["P", "push"], ...COMMON];
+    case "push":
+      return [["P", state.push.phase === "running" ? "watch" : "review a push"], ["esc", "home"], ...COMMON];
     case "matrix":
       return [["←↑↓→", "move"], ["enter", "skills"], ["r", "refresh"], ...COMMON];
     case "conflicts":
@@ -44,10 +49,12 @@ export function drawApp(state: State, c: Canvas): void {
   const body = c.sub(0, BODY_TOP, c.w, bodyHeight(state.size));
   if (state.screen === "home") drawHome(body, state);
   else if (state.screen === "matrix") drawMatrix(body, state);
+  else if (state.screen === "push") drawPush(body, state);
   else drawConflicts(body, state);
   if (state.overlay) c.paint(0, 0, c.w, c.h - 1, { attr: DIM });
   drawFooter(c, c.h - 1, hints(state));
   if (state.fault !== null) c.text(1, c.h - 2, `a background task failed: ${state.fault}`.slice(0, c.w - 2), { fg: theme.warn });
   if (state.overlay?.kind === "help") drawHelp(c);
   if (state.overlay?.kind === "palette") drawPalette(c, state);
+  if (state.overlay?.kind === "leave") drawLeave(c, state);
 }

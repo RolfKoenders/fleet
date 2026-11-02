@@ -3,6 +3,7 @@ import { homedir } from "node:os";
 import { dirname } from "node:path";
 import { isManagedTool } from "./dirs.ts";
 import { InvalidConfigError, loadConfig } from "./config.ts";
+import { note, send } from "./events.ts";
 import { addServer, ensurePrivate, findClaude, isClaudeServer, removeServer, serverName, shadowWarnings } from "./claudemcp.ts";
 import { findTool } from "./tools.ts";
 import { MissingToolError, repoState, syncRepo, UnreachableError } from "./git.ts";
@@ -162,7 +163,7 @@ function syncRepos(toolDir: string, configDir: string, home: string): { conflict
     // With local work in the config repo, its pin is not known to be what GitHub has, so the tool stays put.
     if (blocked !== null) return { conflicts: [repoConflict(configDir, blocked)], moved: false };
     if (!isManagedTool(toolDir, home)) {
-      process.stderr.write(`fleet: running from ${toolDir}, not the managed fleet clone, so the config's pinned tool commit was not enforced\n`);
+      note(`fleet: running from ${toolDir}, not the managed fleet clone, so the config's pinned tool commit was not enforced`, readHostName(home));
       return { conflicts: [], moved: false };
     }
     const problems: string[] = [];
@@ -190,7 +191,9 @@ export function apply(toolDir: string, configDir: string, color: boolean, home: 
     release?.();
     release = null;
   };
+  const name = readHostName(home);
   try {
+    send({ event: "stage", host: name, stage: "sync" });
     const synced = syncRepos(toolDir, configDir, home);
     if (isResult(synced)) return synced;
     if (synced.moved && !relaunched()) {
@@ -198,6 +201,7 @@ export function apply(toolDir: string, configDir: string, color: boolean, home: 
       unlock();
       return relaunch(toolDir, relaunchArgs);
     }
+    send({ event: "stage", host: name, stage: "plan" });
     const planned = prepare(configDir, home, "apply", synced.conflicts);
     if (isResult(planned)) return planned;
     const { host, plan, state } = planned;
@@ -246,6 +250,13 @@ export function apply(toolDir: string, configDir: string, color: boolean, home: 
       }
     }
 
+    // What the write stage will do, so a reader can show `n of`: one step per settings file, per `claude` call, per link.
+    const settingsFiles = Object.values(SETTINGS_FILE).filter((file) => plan.keys.removes.some((k) => k.file === file) || [...plan.keys.creates, ...plan.keys.updates].some((k) => k.file === file));
+    const of = settingsFiles.length + claudeRemoves.length + claudeSets.length + plan.links.creates.length + plan.links.removes.length;
+    let n = 0;
+    const done = (step: string, target: string) => send({ event: "step", host: name, step, target, n: ++n, of });
+    send({ event: "stage", host: name, stage: "write", of });
+
     for (const file of Object.values(SETTINGS_FILE)) {
       const removes = plan.keys.removes.filter((k) => k.file === file);
       const sets = [...plan.keys.creates, ...plan.keys.updates].filter((k) => k.file === file);
@@ -254,6 +265,7 @@ export function apply(toolDir: string, configDir: string, color: boolean, home: 
       for (const remove of removes) keys.delete(keyName(remove));
       for (const record of written) keys.set(keyName(record), record);
       save();
+      done("write-keys", file);
     }
     const updating = new Set(plan.keys.updates.map(keyName));
     try {
@@ -261,11 +273,13 @@ export function apply(toolDir: string, configDir: string, color: boolean, home: 
         removeServer(claude, home, remove);
         keys.delete(keyName(remove));
         save();
+        done("remove-server", keyName(remove));
       }
       for (const set of claudeSets) {
         if (updating.has(keyName(set))) removeServer(claude, home, set);
         keys.set(keyName(set), addServer(claude, home, set));
         save();
+        done("add-server", keyName(set));
       }
     } finally {
       // Whatever mode `claude` left it in, even when a command failed part way.
@@ -277,11 +291,13 @@ export function apply(toolDir: string, configDir: string, color: boolean, home: 
       symlinkSync(create.source, path);
       links.set(create.target, create.source);
       save();
+      done("write-link", create.target);
     }
     for (const remove of plan.links.removes) {
       rmSync(expandTarget(remove.target, home));
       links.delete(remove.target);
       save();
+      done("remove-link", remove.target);
     }
     if (JSON.stringify([[...links], [...keys]]) !== before) save();
     return result;
