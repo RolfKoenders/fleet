@@ -425,7 +425,7 @@ function missing(ctx: Ctx): Outcome {
 
 // Step 7
 
-const EXIT_NAMES = new Set(["ok", "error", "invalid", "conflict", "unreachable", "needs-secret", "missing-prerequisite", "locked"]);
+const EXIT_NAMES = new Set(["ok", "error", "invalid", "conflict", "unreachable", "needs-secret", "missing-prerequisite", "locked", "unhealthy"]);
 
 function firstApply(ctx: Ctx): Outcome {
   const r = ctx.machine(script("apply", '"$HOME/.local/bin/fleet" apply --json\n'));
