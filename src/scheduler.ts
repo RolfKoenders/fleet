@@ -39,7 +39,8 @@ export const MACOS_VERSION_COMMAND = "sw_vers -productVersion";
 export function macosVersionProblem(raw: string): string | null {
   const m = /^(\d+)\.?(\d+)?(?:\.\d+)*$/.exec(raw.trim());
   const want = `${MACOS_MINIMUM[0]}.${MACOS_MINIMUM[1]}`;
-  if (m === null) return `could not read the macOS version (${MACOS_VERSION_COMMAND} printed '${raw.trim()}'); fleet needs ${want} or newer`;
+  // Fixed text: what the host printed is not shown, since it is not a version.
+  if (m === null) return `could not read the macOS version from ${MACOS_VERSION_COMMAND}; fleet needs ${want} or newer`;
   const major = Number(m[1]);
   const minor = Number(m[2] ?? 0);
   if (major > MACOS_MINIMUM[0] || (major === MACOS_MINIMUM[0] && minor >= MACOS_MINIMUM[1])) return null;
