@@ -44,8 +44,10 @@ export function drawHeader(c: Canvas, state: State): void {
   }
   for (let i = 0; i < w; i++) if (c.buf.chars[(c.y0 + 1) * c.buf.cols + c.x0 + i] === " ") c.cell(i, 1, "─", { fg: theme.border });
 
-  const pill = " read-only ";
-  if (w >= 80) c.text(w - stringWidth(pill) - 1, 0, pill, { fg: theme.muted, bg: theme.surface });
+  // Truthful: the bridge only reads until a person has typed the confirmation for a push.
+  const p = state.push.phase;
+  const pill = p === "running" ? " pushing " : p === "review" ? " reviewing a push " : " read-only; P pushes ";
+  if (w >= 80) c.text(w - stringWidth(pill) - 1, 0, pill, { fg: p === "running" ? theme.warn : theme.muted, bg: theme.surface });
   if (asking(state) > 0 && w >= 100) c.text(w - stringWidth(pill) - 4, 0, spinner(state.now, state.motion), s.brand);
 }
 

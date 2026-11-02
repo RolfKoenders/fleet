@@ -1,11 +1,12 @@
 import type { Model } from "./model.ts";
 
-export type Screen = "home" | "matrix" | "conflicts";
+export type Screen = "home" | "matrix" | "conflicts" | "push";
 
 export const SCREENS: { id: Screen; title: string; key: string }[] = [
   { id: "home", title: "Home", key: "1" },
   { id: "matrix", title: "Matrix", key: "2" },
   { id: "conflicts", title: "Conflicts", key: "3" },
+  { id: "push", title: "Push", key: "4" },
 ];
 
 export type Action =
@@ -13,6 +14,7 @@ export type Action =
   | { do: "host"; name: string }
   | { do: "row"; name: string; kind: "bundle" | "server" }
   | { do: "refresh" }
+  | { do: "push" }
   | { do: "help" }
   | { do: "quit" };
 
@@ -37,6 +39,7 @@ export function items(model: Model): Item[] {
     ...model.hosts.map((h): Item => ({ kind: "host", label: h.name, command: h.self ? "fleet status" : "fleet status --all", note: "", action: { do: "host", name: h.name } })),
     ...model.bundles.map((b): Item => ({ kind: "bundle", label: b.name, command: null, note: FROM_CONFIG, action: { do: "row", name: b.name, kind: "bundle" } })),
     ...model.servers.map((s): Item => ({ kind: "server", label: s.name, command: null, note: FROM_CONFIG, action: { do: "row", name: s.name, kind: "server" } })),
+    { kind: "action", label: "Push", command: "fleet push", note: "", action: { do: "push" } },
     { kind: "action", label: "Refresh hosts", command: "fleet status --all", note: "", action: { do: "refresh" } },
     { kind: "action", label: "Help", command: null, note: "keys and legend", action: { do: "help" } },
     { kind: "action", label: "Quit", command: null, note: "leaves the bridge", action: { do: "quit" } },
