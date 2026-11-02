@@ -21,6 +21,7 @@ test("exit code names and numbers are fixed", () => {
     "needs-secret": 5,
     "missing-prerequisite": 6,
     locked: 7,
+    unhealthy: 8,
   });
 });
 

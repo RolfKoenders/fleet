@@ -4,12 +4,20 @@ import { delimiter, join } from "node:path";
 import { isObject } from "./yamlfile.ts";
 
 /**
- * The handshake `fleet doctor` has with one MCP server: `initialize`, `notifications/initialized`, then
- * `tools/list`. It speaks the initialize era of the protocol (revision 2025-11-25), which every server
- * in use answers. Nothing here prints; the caller decides what a person may see.
+ * What `fleet doctor` says to one MCP server, in both eras of the protocol. It asks the modern way first:
+ * `server/discover` (revision 2026-07-28 and later, which carries version and identity on every request),
+ * then `tools/list`. A server that does not answer that as a modern one is taken to be a legacy one, and is
+ * asked the initialize way (revision 2025-11-25): `initialize`, `notifications/initialized`, `tools/list`.
+ * Nothing here prints; the caller decides what a person may see.
  */
 
 export const PROTOCOL_VERSION = "2025-11-25";
+export const MODERN_VERSION = "2026-07-28";
+
+const VERSION = /^\d{4}-\d{2}-\d{2}$/;
+/** JSON-RPC errors only a modern server sends: header mismatch, missing capability, unsupported version. */
+const MODERN_ERRORS = [-32020, -32021, -32022];
+const UNSUPPORTED_VERSION = -32022;
 
 export type ProbeResult = "ok" | "auth-needed" | "unreachable" | "missing-binary" | "bad-response" | "exited" | "timeout";
 
@@ -18,22 +26,31 @@ export type ProbeTarget =
   | { kind: "stdio"; command: string[]; env: Record<string, string>; cwd: string }
   | { kind: "network"; transport: "http" | "sse" | "remote"; url: string; headers: Record<string, string> };
 
-export type Probed = { result: ProbeResult; tools: number | null; latencyMs: number | null; detail: string | null };
+/** `protocol` is the revision the server answered in, or null when it did not answer. */
+export type Probed = { result: ProbeResult; tools: number | null; latencyMs: number | null; detail: string | null; protocol: string | null };
 
 /** A way the handshake ended that is not success. `detail` is fixed text or a number: never server or config text. */
 class ProbeError extends Error {
   result: ProbeResult;
   detail: string;
-  constructor(result: ProbeResult, detail: string) {
+  /** The JSON-RPC error code the server sent, and the versions it listed with it. Used to decide what to try next, never shown. */
+  code: number | null;
+  supported: string[];
+  constructor(result: ProbeResult, detail: string, code: number | null = null, supported: string[] = []) {
     super(detail);
     this.result = result;
     this.detail = detail;
+    this.code = code;
+    this.supported = supported;
   }
 }
 
+const isModernError = (error: unknown): error is ProbeError => error instanceof ProbeError && error.code !== null && MODERN_ERRORS.includes(error.code);
+
 /** Both ends of the conversation, whatever carries it. */
 type Channel = {
-  request(method: string, params: unknown): Promise<Record<string, unknown>>;
+  /** `modern` is the revision of a modern request, which an HTTP channel sends as headers and sends without a session. */
+  request(method: string, params: unknown, modern?: string): Promise<Record<string, unknown>>;
   notify(method: string): Promise<void>;
   /** The version the server chose, which an HTTP channel must send on later requests. */
   negotiated(version: string): void;
@@ -46,14 +63,41 @@ const MAX_BYTES = 4 * 1024 * 1024;
 function rpcResult(message: unknown, id: number): Record<string, unknown> {
   if (!isObject(message)) throw new ProbeError("bad-response", "the answer was not a JSON-RPC message");
   if (isObject(message.error)) {
-    const code = typeof message.error.code === "number" ? message.error.code : "?";
-    throw new ProbeError("bad-response", `the server answered with JSON-RPC error ${code}`);
+    const code = typeof message.error.code === "number" ? message.error.code : null;
+    const data = message.error.data;
+    const supported = isObject(data) && Array.isArray(data.supported) ? data.supported.filter((v): v is string => typeof v === "string" && VERSION.test(v)) : [];
+    throw new ProbeError("bad-response", `the server answered with JSON-RPC error ${code ?? "?"}`, code, supported);
   }
   if (message.id !== id || !isObject(message.result)) throw new ProbeError("bad-response", "the answer was not a JSON-RPC result");
   return message.result;
 }
 
-async function handshake(channel: Channel): Promise<number> {
+const versionOf = (init: Record<string, unknown>): string | null => (typeof init.protocolVersion === "string" && VERSION.test(init.protocolVersion) ? init.protocolVersion : null);
+
+/** What the server counted: `tools/list` page by page. `meta` is added to every request's params, as the modern era wants. */
+async function listTools(channel: Channel, modern?: string): Promise<number> {
+  const meta = modern === undefined ? {} : { _meta: modernMeta(modern) };
+  let tools = 0;
+  let cursor: string | undefined;
+  for (let page = 0; page < MAX_PAGES; page++) {
+    let result;
+    try {
+      result = await channel.request("tools/list", cursor === undefined ? meta : { ...meta, cursor }, modern);
+    } catch (error) {
+      // A server with no tools may not implement the method at all.
+      if (error instanceof ProbeError && error.code === -32601 && page === 0) return 0;
+      throw error;
+    }
+    if (!Array.isArray(result.tools)) throw new ProbeError("bad-response", "the tools/list answer has no tools list");
+    tools += result.tools.length;
+    if (typeof result.nextCursor !== "string" || result.nextCursor === "") return tools;
+    cursor = result.nextCursor;
+  }
+  return tools;
+}
+
+/** The legacy way: `initialize`, then `notifications/initialized`, then the tools. */
+async function legacyHandshake(channel: Channel): Promise<{ tools: number; protocol: string | null }> {
   const init = await channel.request("initialize", {
     protocolVersion: PROTOCOL_VERSION,
     capabilities: {},
@@ -64,24 +108,62 @@ async function handshake(channel: Channel): Promise<number> {
   }
   channel.negotiated(init.protocolVersion);
   await channel.notify("notifications/initialized");
+  return { tools: await listTools(channel), protocol: versionOf(init) };
+}
 
-  let tools = 0;
-  let cursor: string | undefined;
-  for (let page = 0; page < MAX_PAGES; page++) {
-    let result;
+const modernMeta = (version: string) => ({
+  "io.modelcontextprotocol/protocolVersion": version,
+  "io.modelcontextprotocol/clientInfo": { name: "fleet-doctor", version: "1" },
+  "io.modelcontextprotocol/clientCapabilities": {},
+});
+
+/** The newest revision in `versions` that is modern, or null. */
+const newestModern = (versions: string[]): string | null => [...versions].filter((v) => VERSION.test(v) && v >= MODERN_VERSION).sort().at(-1) ?? null;
+
+/**
+ * The modern way, first half: `server/discover`, giving the revision to use. Throws a `bad-response` for
+ * anything that does not look like a modern server; the caller then tries the legacy way. A modern server's
+ * own errors (`isModernError`) are not that: it is modern, and a version it will not speak is a failure to report.
+ */
+async function modernDiscover(channel: Channel, graceMs: number | null): Promise<string> {
+  const discover = async (version: string): Promise<Record<string, unknown>> => {
+    const asking = channel.request("server/discover", { _meta: modernMeta(version) }, version);
+    if (graceMs === null) return asking;
+    // stdio has no status code: a legacy server may stay silent, which the spec says to read as legacy.
+    asking.catch(() => {});
+    let timer: NodeJS.Timeout | undefined;
+    const silent = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new ProbeError("bad-response", "no answer to server/discover")), graceMs);
+    });
     try {
-      result = await channel.request("tools/list", cursor === undefined ? {} : { cursor });
-    } catch (error) {
-      // A server with no tools may not implement the method at all.
-      if (error instanceof ProbeError && error.detail === "the server answered with JSON-RPC error -32601" && page === 0) return 0;
-      throw error;
+      return await Promise.race([asking, silent]);
+    } finally {
+      clearTimeout(timer);
     }
-    if (!Array.isArray(result.tools)) throw new ProbeError("bad-response", "the tools/list answer has no tools list");
-    tools += result.tools.length;
-    if (typeof result.nextCursor !== "string" || result.nextCursor === "") return tools;
-    cursor = result.nextCursor;
+  };
+
+  let version = MODERN_VERSION;
+  let found: Record<string, unknown>;
+  try {
+    found = await discover(version);
+  } catch (error) {
+    if (!(error instanceof ProbeError) || error.code !== UNSUPPORTED_VERSION) throw error;
+    // A modern server that does not speak ours: use the newest of its versions that is modern, once.
+    const other = newestModern(error.supported);
+    if (other === null) {
+      if (error.supported.includes(PROTOCOL_VERSION)) throw new ProbeError("bad-response", "the server speaks only the initialize era", null);
+      throw new ProbeError("bad-response", "the server speaks no protocol revision fleet speaks", UNSUPPORTED_VERSION);
+    }
+    version = other;
+    found = await discover(version);
   }
-  return tools;
+  const supported = Array.isArray(found.supportedVersions) ? found.supportedVersions.filter((v): v is string => typeof v === "string") : null;
+  if (supported === null || (found.resultType !== undefined && found.resultType !== "complete")) {
+    throw new ProbeError("bad-response", "the server/discover answer has no supportedVersions");
+  }
+  const chosen = supported.includes(version) ? version : newestModern(supported);
+  if (chosen === null) throw new ProbeError("bad-response", "the server/discover answer lists no modern revision");
+  return chosen;
 }
 
 // ---- stdio ----
@@ -195,6 +277,11 @@ function stdioChannel(target: Extract<ProbeTarget, { kind: "stdio" }>, extraDirs
   return {
     request(method, params) {
       const id = nextId++;
+      // Text that is not JSON-RPC, then silence or an exit, is a bad answer, not just an exit.
+      const named = (error: unknown): never => {
+        if (junk > 0 && error instanceof ProbeError && error.result === "exited") throw new ProbeError("bad-response", "the server wrote text that is not JSON-RPC to its output and then exited");
+        throw error;
+      };
       const answer = new Promise<unknown>((resolve, reject) => {
         waiting.set(id, { resolve, reject });
       });
@@ -202,15 +289,10 @@ function stdioChannel(target: Extract<ProbeTarget, { kind: "stdio" }>, extraDirs
         write({ id, method, params });
       } catch (error) {
         waiting.delete(id);
-        return Promise.reject(error);
+        answer.catch(() => {});
+        return Promise.reject(error).catch(named);
       }
-      return answer.then(
-        (message) => rpcResult(message, id),
-        (error) => {
-          if (junk > 0 && error instanceof ProbeError && error.result === "exited") throw new ProbeError("bad-response", "the server wrote text that is not JSON-RPC to its output and then exited");
-          throw error;
-        },
-      );
+      return answer.then((message) => rpcResult(message, id), named);
     },
     async notify(method) {
       write({ method });
@@ -314,6 +396,25 @@ function checkedUrl(url: string): URL {
   return parsedUrl;
 }
 
+/** A response body as text, cut off at the size limit. */
+async function boundedText(response: Response): Promise<string> {
+  const reader = response.body?.getReader();
+  if (reader === undefined) return "";
+  const decoder = new TextDecoder();
+  let text = "";
+  try {
+    for (let bytes = 0; bytes <= MAX_BYTES; ) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      bytes += value.length;
+      text += decoder.decode(value, { stream: true });
+    }
+  } finally {
+    await reader.cancel().catch(() => {});
+  }
+  return text;
+}
+
 /** Streamable HTTP: each message is a POST, answered by JSON or by an SSE stream. */
 function httpChannel(target: Extract<ProbeTarget, { kind: "network" }>, signal: AbortSignal): Channel {
   const url = checkedUrl(target.url);
@@ -322,25 +423,43 @@ function httpChannel(target: Extract<ProbeTarget, { kind: "network" }>, signal: 
   let version: string | null = null;
   let nextId = 1;
 
-  const post = async (message: object): Promise<Response> => {
+  const post = async (message: { method: string; id?: number; params?: unknown }, modern?: string): Promise<Response> => {
     const headers: Record<string, string> = { ...target.headers, "content-type": "application/json", accept: "application/json, text/event-stream" };
-    if (session !== null) headers["mcp-session-id"] = session;
-    if (version !== null) headers["mcp-protocol-version"] = version;
+    if (modern !== undefined) {
+      // The modern era has no session: each request names its revision and method.
+      headers["mcp-protocol-version"] = modern;
+      headers["mcp-method"] = message.method;
+    } else {
+      if (session !== null) headers["mcp-session-id"] = session;
+      if (version !== null) headers["mcp-protocol-version"] = version;
+    }
     let response;
     try {
       response = await fetch(url, { method: "POST", headers, body: JSON.stringify({ jsonrpc: "2.0", ...message }), signal, redirect: "follow" });
     } catch (error) {
       throw fetchFailure(error, signal);
     }
+    // A modern server explains a 400 in the body, which tells it from a legacy server that just refuses.
+    if (modern !== undefined && !response.ok && response.status !== 401 && response.status !== 403) {
+      const text = await boundedText(response);
+      let message: unknown = null;
+      try {
+        message = JSON.parse(text);
+      } catch {
+        // not JSON: not a modern error
+      }
+      if (isObject(message) && isObject(message.error) && typeof message.error.code === "number" && MODERN_ERRORS.includes(message.error.code)) rpcResult(message, -1);
+      throw new ProbeError("bad-response", `HTTP ${response.status}`);
+    }
     checkStatus(response, credentials);
     return response;
   };
 
   return {
-    async request(method, params) {
+    async request(method, params, modern) {
       const id = nextId++;
-      const response = await post({ id, method, params });
-      session ??= response.headers.get("mcp-session-id");
+      const response = await post({ id, method, params }, modern);
+      if (modern === undefined) session ??= response.headers.get("mcp-session-id");
       try {
         if ((response.headers.get("content-type") ?? "").includes("text/event-stream")) {
           if (response.body === null) throw new ProbeError("bad-response", "the answer had no body");
@@ -467,15 +586,34 @@ async function sseChannel(target: Extract<ProbeTarget, { kind: "network" }>, sig
 }
 
 /** Starts a channel; a `remote` server is tried as Streamable HTTP and, if the url refuses a POST that way, as the old SSE transport. */
-async function open(target: ProbeTarget, signal: AbortSignal, extraDirs: string[]): Promise<{ channel: Channel; fallback: (() => Promise<Channel>) | null }> {
-  if (target.kind === "stdio") return { channel: stdioChannel(target, extraDirs), fallback: null };
-  if (target.transport === "sse") return { channel: await sseChannel(target, signal), fallback: null };
-  return { channel: httpChannel(target, signal), fallback: target.transport === "remote" ? () => sseChannel(target, signal) : null };
+async function open(target: ProbeTarget, signal: AbortSignal, extraDirs: string[]): Promise<{ channel: Channel; fallback: (() => Promise<Channel>) | null; modern: boolean }> {
+  if (target.kind === "stdio") return { channel: stdioChannel(target, extraDirs), fallback: null, modern: true };
+  // The old SSE transport predates the modern era and never carries it.
+  if (target.transport === "sse") return { channel: await sseChannel(target, signal), fallback: null, modern: false };
+  return { channel: httpChannel(target, signal), fallback: target.transport === "remote" ? () => sseChannel(target, signal) : null, modern: true };
+}
+
+type Answered = { tools: number; protocol: string | null };
+
+/** Modern first, then legacy when the server did not answer as a modern one. */
+async function handshake(channel: Channel, target: ProbeTarget, modern: boolean, timeoutMs: number): Promise<Answered> {
+  if (modern) {
+    let version: string;
+    try {
+      // On stdio a legacy server may never answer; half the time left is the most that is waited before reading that as legacy.
+      version = await modernDiscover(channel, target.kind === "stdio" ? Math.round(timeoutMs / 2) : null);
+    } catch (error) {
+      if (!(error instanceof ProbeError) || error.result !== "bad-response" || isModernError(error)) throw error;
+      return legacyHandshake(channel);
+    }
+    return { tools: await listTools(channel, version), protocol: version };
+  }
+  return legacyHandshake(channel);
 }
 
 /**
- * Runs the handshake with one hard deadline for all of it. Whatever it started is stopped before this returns,
- * and no text from the server or the config is in the result.
+ * Runs the handshake with one hard deadline for all of it, both eras included. Whatever it started is stopped
+ * before this returns, and no text from the server or the config is in the result.
  */
 export async function probe(target: ProbeTarget, timeoutMs: number, extraDirs: string[] = []): Promise<Probed> {
   const started = performance.now();
@@ -487,22 +625,22 @@ export async function probe(target: ProbeTarget, timeoutMs: number, extraDirs: s
   deadline.catch(() => {});
   const opened: Channel[] = [];
   try {
-    const { channel, fallback } = await Promise.race([open(target, control.signal, extraDirs), deadline]);
+    const { channel, fallback, modern } = await Promise.race([open(target, control.signal, extraDirs), deadline]);
     opened.push(channel);
-    let tools;
+    let answered: Answered;
     try {
-      tools = await Promise.race([handshake(channel), deadline]);
+      answered = await Promise.race([handshake(channel, target, modern, timeoutMs), deadline]);
     } catch (error) {
       const refused = error instanceof ProbeError && error.result === "bad-response" && /^HTTP (400|404|405)$/.test(error.detail);
       if (!refused || fallback === null) throw error;
       const second = await Promise.race([fallback(), deadline]);
       opened.push(second);
-      tools = await Promise.race([handshake(second), deadline]);
+      answered = await Promise.race([legacyHandshake(second), deadline]);
     }
-    return { result: "ok", tools, latencyMs: Math.round(performance.now() - started), detail: null };
+    return { result: "ok", tools: answered.tools, latencyMs: Math.round(performance.now() - started), detail: null, protocol: answered.protocol };
   } catch (error) {
     const e = fetchFailure(error, control.signal);
-    return { result: e.result, tools: null, latencyMs: null, detail: e.detail };
+    return { result: e.result, tools: null, latencyMs: null, detail: e.detail, protocol: null };
   } finally {
     clearTimeout(timer);
     // HTTP closes its session while the signal is live; aborting after that is what ends an SSE stream.
