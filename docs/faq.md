@@ -30,4 +30,4 @@ No. That is the copy your machine runs, and fleet moves it to the pinned commit.
 
 ## Does it run on macOS?
 
-Experimentally. The timer is a LaunchAgent instead of a systemd timer, and the scripts and tool search know Homebrew. See [macOS](setting-up-machines.md#macos-experimental). It has been tested only against fakes so far.
+Experimentally. The timer is a LaunchAgent instead of a systemd timer, and the scripts and tool search know Homebrew. See [macOS](setting-up-machines.md#macos-experimental). Fleet has never run on a real Mac; it is tested only against fakes.
