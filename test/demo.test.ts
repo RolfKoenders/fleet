@@ -5,6 +5,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { buildSandbox, destroy, fakeCallsLog, sandboxEnv } from "../src/demo/sandbox.ts";
 import { LAUNCHD_PLIST } from "../src/scheduler.ts";
+import { CONFIG_DIR } from "../src/init.ts";
 import { makeHome, repoRoot, runBin, tempDir, writeExecutable } from "./helpers.ts";
 import { EXIT } from "../src/exit.ts";
 
@@ -101,7 +102,7 @@ test("the sandbox builds every path from its root and its environment from an al
 
     const git = (cwd: string, ...args: string[]) => spawnSync("/usr/bin/git", args, { cwd, env, encoding: "utf8" });
     for (const host of sandbox.hosts) {
-      for (const repo of [join(host.home, "fleet-config"), join(host.home, ".local/share/fleet/fleet"), join(host.home, ".local/share/fleet/sources/example-skills")]) {
+      for (const repo of [join(host.home, CONFIG_DIR), join(host.home, ".local/share/fleet/fleet"), join(host.home, ".local/share/fleet/sources/example-skills")]) {
         const urls = git(repo, "remote", "-v").stdout.split("\n").filter((l) => l !== "").map((l) => l.split(/\s+/)[1]!);
         assert.ok(urls.length > 0 && urls.every((u) => u.startsWith(sandbox.root + sep)), `${repo}: ${urls}`);
       }

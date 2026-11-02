@@ -9,7 +9,7 @@ import { cannedProbe, makeConfig, SIZE } from "./fixture.ts";
 
 const repos = (files: { status: string; path: string }[], flagged: string[]) => [
   { shown: "~/.local/share/fleet/sources/mine", branch: "main", ahead: 0, behind: 0, files: [], flagged: [] },
-  { shown: "/home/me/fleet-config", branch: "main", ahead: 1, behind: 0, files, flagged },
+  { shown: "/home/me/config", branch: "main", ahead: 1, behind: 0, files, flagged },
 ];
 const CLEAN_FILES = [{ status: "M", path: "catalog/skills.yaml" }, { status: "??", path: "notes.md" }];
 const plan = ["create ~/.claude/skills/triage -> /cfg/skills/triage", "update mcpServers.docs"];
@@ -76,7 +76,7 @@ export async function playToMiddle(h: Headless<State, Msg>, f: FakePusher): Prom
   f.emit({ event: "stage", host: null, stage: "validate" });
   f.emit({ event: "hosts", hosts: [{ host: "laptop", via: "local" }, { host: "box", via: "ssh" }, { host: "edge", via: "timer" }, { host: "server", via: "ssh" }] });
   f.emit({ event: "stage", host: null, stage: "publish", of: 2 });
-  f.emit({ event: "step", host: null, step: "publish", target: "/home/me/fleet-config", n: 2, of: 2 });
+  f.emit({ event: "step", host: null, step: "publish", target: "/home/me/config", n: 2, of: 2 });
   f.emit({ event: "stage", host: null, stage: "apply", of: 4 });
   f.emit({ event: "host", host: "laptop", state: "start" });
   f.emit({ event: "host", host: "laptop", state: "done", result: "ok", changes: 3 });

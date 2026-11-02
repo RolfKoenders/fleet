@@ -5,6 +5,7 @@ import { delimiter, join, sep } from "node:path";
 import { MissingToolError } from "../git.ts";
 import { setPinValue } from "../newconfig.ts";
 import { findTool } from "../tools.ts";
+import { CONFIG_DIR } from "../init.ts";
 
 /**
  * The demo's world: a throwaway directory that holds every host's home, local bare repos standing in for GitHub,
@@ -72,7 +73,7 @@ function git(root: string, cwd: string, ...args: string[]): string {
 
 /** Runs the sandbox's own `fleet` as a host, the way its timer would. */
 function fleet(sandbox: Sandbox, host: DemoHost, args: string[]): void {
-  const config = host === sandbox.admin ? sandbox.config : join(host.home, "fleet-config");
+  const config = host === sandbox.admin ? sandbox.config : join(host.home, CONFIG_DIR);
   try {
     execFileSync(join(host.home, ".local/bin/fleet"), args, { cwd: config, env: sandboxEnv(sandbox.root, host.home, { config }), stdio: ["ignore", "pipe", "pipe"] });
   } catch (error) {
@@ -137,7 +138,7 @@ export function buildSandbox(toolDir: string): Sandbox {
   const root = realpathSync(mkdtempSync(join(tmpdir(), "fleet-demo-")));
   try {
     const hosts = HOST_NAMES.map(([name, ssh]): DemoHost => ({ name, ssh, home: join(root, name) }));
-    const sandbox: Sandbox = { root, admin: hosts[0]!, hosts, config: join(hosts[0]!.home, "fleet-config") };
+    const sandbox: Sandbox = { root, admin: hosts[0]!, hosts, config: join(hosts[0]!.home, CONFIG_DIR) };
     writeFileSync(join(root, "gitconfig"), "[user]\n\tname = Fleet Demo\n\temail = demo@example.invalid\n[advice]\n\tdetachedHead = false\n");
     installFakes(sandbox, toolDir);
 
@@ -163,8 +164,8 @@ export function buildSandbox(toolDir: string): Sandbox {
       git(root, root, "clone", "--quiet", join(remotes, "tool.git"), managed);
       git(root, managed, "checkout", "--quiet", "--detach", tool);
       symlinkSync(join(managed, "bin/fleet"), join(host.home, ".local/bin/fleet"));
-      git(root, root, "clone", "--quiet", join(remotes, "config.git"), join(host.home, "fleet-config"));
-      writeAll(host.home, { ".config/fleet/host": `${host.name}\n`, ".config/fleet/config": `${join(host.home, "fleet-config")}\n` });
+      git(root, root, "clone", "--quiet", join(remotes, "config.git"), join(host.home, CONFIG_DIR));
+      writeAll(host.home, { ".config/fleet/host": `${host.name}\n`, ".config/fleet/config": `${join(host.home, CONFIG_DIR)}\n` });
       fleet(sandbox, host, ["apply"]);
     }
 

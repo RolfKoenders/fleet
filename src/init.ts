@@ -69,8 +69,9 @@ type Ctx = {
 const HOST_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 const RECIPIENT = /^age1[a-z0-9]+$/;
 const KEY_SHOWN = "~/.config/fleet/age.key";
-/** Where a new host keeps the config repo. The admin's own form uses the repo it runs from. */
-const CONFIG_DEFAULT = '"$HOME/fleet-config"';
+/** Where a new host keeps the config repo, under its home. The admin's own form uses the repo it runs from. */
+export const CONFIG_DIR = "fleet-config";
+const CONFIG_DEFAULT = `"$HOME/${CONFIG_DIR}"`;
 /** The fleet clone `~/.local/bin/fleet` points into, on every host. */
 const TOOL_CLONE = '"$HOME/.local/share/fleet/fleet"';
 

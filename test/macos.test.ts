@@ -7,6 +7,7 @@ import { installFake, setup } from "./initworld.ts";
 import type { S } from "./initworld.ts";
 import { installStatusTools, makeClone, makeHome, repoRoot, runFleet, writeExecutable } from "./helpers.ts";
 import { EXIT } from "../src/exit.ts";
+import { CONFIG_DIR } from "../src/init.ts";
 import { HOMEBREW_BIN, HOMEBREW_KEG_NODES, probeDirs, SHELL_NODE_CANDIDATES, SHELL_PROBE_PATH } from "../src/tools.ts";
 import { LAUNCHD_LABEL, LAUNCHD_PLIST, macosVersionProblem, parseOs } from "../src/scheduler.ts";
 import { LOG_KEEP, LOG_LIMIT, trimLog } from "../src/logtrim.ts";
@@ -197,7 +198,7 @@ test("a host that is neither Linux nor macOS is refused before anything is chang
   const { r, doc } = s.json();
   assert.equal(r.code, EXIT["missing-prerequisite"]);
   assert.match((doc.checklist as string[]).join("\n"), /FreeBSD/);
-  assert.equal(existsSync(join(s.lab, "fleet-config")), false);
+  assert.equal(existsSync(join(s.lab, CONFIG_DIR)), false);
 });
 
 test("status shows whether the LaunchAgent is loaded, asking launchctl about gui/<uid>/<label>", () => {
@@ -256,7 +257,7 @@ test("init stops with missing-prerequisite on a Mac older than 12.3, and changes
     const { r, doc } = s.json();
     assert.equal(r.code, EXIT["missing-prerequisite"]);
     assert.match((doc.checklist as string[]).join("\n"), message);
-    assert.equal(existsSync(plistPath(s)) || existsSync(join(s.lab, "fleet-config")), false, "nothing changed on the host");
+    assert.equal(existsSync(plistPath(s)) || existsSync(join(s.lab, CONFIG_DIR)), false, "nothing changed on the host");
     assert.deepEqual(launchctl(s), []);
   }
   const s = mac();
