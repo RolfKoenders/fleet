@@ -4,6 +4,7 @@ import { join, sep } from "node:path";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { buildSandbox, destroy, fakeCallsLog, sandboxEnv } from "../src/demo/sandbox.ts";
+import { LAUNCHD_PLIST } from "../src/scheduler.ts";
 import { makeHome, repoRoot, runBin, tempDir, writeExecutable } from "./helpers.ts";
 import { EXIT } from "../src/exit.ts";
 
@@ -23,7 +24,7 @@ function snapshot(dir: string): string[] {
 
 /**
  * A stand-in for the real system around a run: a home with things a demo must not touch, and a PATH directory
- * whose `ssh`, `claude`, `opencode`, `sops`, `age`, `systemctl` all leave a marker if they are ever run.
+ * whose `ssh`, `claude`, `opencode`, `sops`, `age`, `systemctl`, `launchctl` all leave a marker if they are ever run.
  */
 function decoy() {
   const home = makeHome("realhost");
@@ -35,7 +36,7 @@ function decoy() {
   writeFileSync(join(home, ".config/fleet/config"), `${join(home, "real-config")}\n`);
   const marks = tempDir("fleet-marks-");
   const path = tempDir("fleet-decoy-path-");
-  for (const tool of ["ssh", "claude", "opencode", "sops", "age", "age-keygen", "systemctl"]) {
+  for (const tool of ["ssh", "claude", "opencode", "sops", "age", "age-keygen", "systemctl", "launchctl"]) {
     writeExecutable(join(path, tool), `#!/bin/sh\necho "${tool} $*" >> ${join(marks, "calls")}\nexit 1\n`);
   }
   const tmp = tempDir("fleet-demo-tmp-");
@@ -56,7 +57,7 @@ test("a scripted run walks the tour, passes, and deletes the sandbox", () => {
   assert.deepEqual(readdirSync(d.tmp), [], "nothing is left in the temp directory");
 });
 
-test("nothing in the real home changes, and the real ssh, claude, opencode, sops and systemctl are never run", () => {
+test("nothing in the real home changes, and the real ssh, claude, opencode, sops, systemctl and launchctl are never run", () => {
   const d = decoy();
   const before = snapshot(d.home);
   const r = d.run(["demo"]);
@@ -123,12 +124,27 @@ test("the sandbox builds every path from its root and its environment from an al
   assert.equal(existsSync(sandbox.root), false);
 });
 
+test("a demo host with the LaunchAgent, as on a Mac, reports its timer active through the fake launchctl", () => {
+  const sandbox = buildSandbox(repoRoot);
+  try {
+    const host = sandbox.admin;
+    mkdirSync(join(host.home, LAUNCHD_PLIST, ".."), { recursive: true });
+    writeFileSync(join(host.home, LAUNCHD_PLIST), "<plist/>\n");
+    const env = sandboxEnv(sandbox.root, host.home, { config: sandbox.config });
+    const r = spawnSync(join(host.home, ".local/bin/fleet"), ["status", "--json"], { cwd: sandbox.config, env, encoding: "utf8" });
+    assert.equal(JSON.parse(r.stdout).timer, "active", r.stderr);
+    assert.match(readFileSync(fakeCallsLog(sandbox.root), "utf8"), /"tool":"launchctl"/);
+  } finally {
+    destroy(sandbox.root);
+  }
+});
+
 test("destroy refuses a directory that is not a demo sandbox", () => {
   assert.throws(() => destroy(tempDir("fleet-test-")), /refusing to delete/);
   assert.throws(() => destroy(join(repoRoot, "src")), /refusing to delete/);
 });
 
-test("on a terminal, demo --shell starts a shell with a prompt marker and the tour, and deletes the sandbox on exit", { skip: spawnSync("sh", ["-c", "command -v script"]).status !== 0 && "script is not installed" }, () => {
+test("on a terminal, demo --shell starts a shell with a prompt marker and the tour, and deletes the sandbox on exit", { skip: spawnSync("script", ["--version"], { stdio: "ignore" }).status !== 0 && "script(1) from util-linux is not installed, so there is no pty to run in" }, () => {
   const d = decoy();
   const before = snapshot(d.home);
   const env = { HOME: d.home, PATH: `${d.path}:/usr/bin:/bin`, TMPDIR: d.tmp, TERM: "dumb", FLEET_NODE: process.execPath };

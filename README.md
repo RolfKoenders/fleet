@@ -93,14 +93,14 @@ Add `--json` to any command for output a script can read.
 
 ## Requirements
 
-- Linux with systemd, or macOS 12.3 or newer with Homebrew (see [Setting up machines](docs/setting-up-machines.md#macos-experimental))
+- Linux with systemd, or macOS 12.3 or newer with Homebrew (see [Setting up machines](docs/setting-up-machines.md#macos))
 - Claude Code or opencode
 - Node 22.18 or newer
 - git
 - [sops](https://github.com/getsops/sops) 3.11 or newer
 - [age](https://github.com/FiloSottile/age)
 
-macOS is experimental. Fleet has never run on a real Mac: the support is written from Apple's documentation and tested only against fakes. Headless Macs are out of scope ([details](docs/setting-up-machines.md#macos-experimental)).
+On a Mac the timer is a LaunchAgent, so it runs while the user is logged in at the desktop ([details](docs/setting-up-machines.md#macos)).
 
 ## Docs
 

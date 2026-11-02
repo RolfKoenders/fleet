@@ -35,13 +35,10 @@ jobs:
       - run: npx tsc --noEmit
       - run: npm test
 
-  # EXPERIMENTAL. macOS support has not been run on a Mac. This job is here so that the first push shows
-  # what fails; it does not block a merge (continue-on-error) until it has been green and the label below
-  # is dropped. Apple Silicon is macos-latest, Intel is macos-15-intel.
+  # Apple Silicon is macos-latest, Intel is macos-15-intel.
   test-macos:
-    name: test (macOS, experimental)
+    name: test (macOS)
     runs-on: ${{ matrix.os }}
-    continue-on-error: true
     strategy:
       fail-fast: false
       matrix:

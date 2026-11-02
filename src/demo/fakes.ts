@@ -1,6 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { appendFileSync, chmodSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { LAUNCHD_LABEL } from "../scheduler.ts";
 import { fakeCallsLog, sandboxEnv } from "./sandbox.ts";
 
 /**
@@ -75,6 +76,8 @@ const FAKES: Record<string, () => number> = {
   // The demo has no secrets, so it never decrypts anything; status only asks for the version.
   sops: () => (args[0] === "--version" ? (console.log("sops 3.13.3"), 0) : (console.error("fake sops: the demo uses no secrets"), 1)),
   systemctl: () => (args.join(" ") === "--user is-active fleet.timer" ? (console.log("active"), 0) : 2),
+  // On a Mac, status asks whether the LaunchAgent is loaded; every demo host has it.
+  launchctl: () => (args[0] === "print" && args[1]?.endsWith(`/${LAUNCHD_LABEL}`) ? 0 : 2),
 };
 
 process.exit((FAKES[tool] ?? (() => (console.error(`fake ${tool}: unknown tool`), 2)))());

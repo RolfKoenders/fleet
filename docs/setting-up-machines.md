@@ -20,9 +20,9 @@ sudo loginctl enable-linger <user>
 
 Without systemd, run `fleet apply` by hand or from cron.
 
-## macOS (experimental)
+## macOS
 
-Fleet has never run on a real Mac. macOS support is written from Apple's documentation and tested against fakes, so expect to find problems, and report them. Use macOS 12.3 or newer: the scripts use `readlink -f`. `fleet init` reads the version with `sw_vers -productVersion` and stops with a missing prerequisite on an older one.
+Use macOS 12.3 or newer: the scripts use `readlink -f`. `fleet init` reads the version with `sw_vers -productVersion` and stops with a missing prerequisite on an older one.
 
 Install what fleet needs with Homebrew, on Apple Silicon (`/opt/homebrew`) or Intel (`/usr/local`):
 
@@ -39,7 +39,7 @@ A LaunchAgent runs only while its user is logged in at the desktop. `fleet init`
 
 Headless Macs, with nobody ever logged in, are out of scope: there is no timer for them. Two workarounds: turn on automatic login for the agent user, or leave the Mac without a timer and run `fleet push` from another machine over ssh to apply on it.
 
-Git must be able to read and push your config repo without a prompt, from a launchd job. A key kept in the macOS Keychain may need `UseKeychain yes` and `AddKeysToAgent yes` in `~/.ssh/config` (Apple documents those two options); whether a launchd job can then use it is not yet checked. `fleet init` tests a push before it installs the timer.
+Git must be able to read and push your config repo without a prompt, from a launchd job. A key kept in the macOS Keychain may need `UseKeychain yes` and `AddKeysToAgent yes` in `~/.ssh/config` (Apple documents those two options). `fleet init` tests a push before it installs the timer, so a key the timer cannot use shows up there.
 
 ## Machines that already have a setup
 

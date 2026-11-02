@@ -8,7 +8,7 @@ import { findTool } from "../tools.ts";
 
 /**
  * The demo's world: a throwaway directory that holds every host's home, local bare repos standing in for GitHub,
- * and fakes for the tools that would reach outside it (`ssh`, `claude`, `opencode`, `sops`, `systemctl`).
+ * and fakes for the tools that would reach outside it (`ssh`, `claude`, `opencode`, `sops`, `systemctl`, `launchctl`).
  * Nothing in it is derived from the real home: every path comes from `root`, and the environment a command
  * runs with is built here from a short allowlist, never from the caller's.
  */
@@ -108,7 +108,7 @@ const SKILLS = ["review", "debug", "notes", "triage"];
 function installFakes(sandbox: Sandbox, toolDir: string): void {
   const dir = join(sandbox.root, "fakes");
   mkdirSync(dir, { recursive: true });
-  for (const name of ["ssh", "claude", "opencode", "sops", "systemctl"]) {
+  for (const name of ["ssh", "claude", "opencode", "sops", "systemctl", "launchctl"]) {
     const script = join(dir, name);
     writeFileSync(script, `#!/bin/sh\nFLEET_DEMO_ROOT=${quote(sandbox.root)} exec ${quote(process.execPath)} ${quote(join(toolDir, "src/demo/fakes.ts"))} ${name} "$@"\n`);
     chmodSync(script, 0o755);
