@@ -2,7 +2,7 @@ import { spawnSync } from "node:child_process";
 import { readdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { planCounts } from "./apply.ts";
+import { planConflicts, planCounts } from "./apply.ts";
 import { MissingToolError, repoState } from "./git.ts";
 import type { RepoState } from "./git.ts";
 import { readHostName } from "./host.ts";
@@ -180,6 +180,19 @@ export function status(toolDir: string, configDir: string, color: boolean, home:
   if ("code" in fields) return fields;
   const text = [`host: ${host ?? "(unknown)"}`, ...lines(fields, color, toolDir)].join("\n");
   return { code: "ok", text, messages, fields: { ...fields } };
+}
+
+/**
+ * `fleet status --conflicts`: this host's conflicts in full, planned offline the way `status` counts them. Reads only: no
+ * clone, no fetch, nothing written. A host that has conflicts still answers `ok`; the list is the answer.
+ */
+export function statusConflicts(configDir: string, color: boolean, home: string = homedir()): Result {
+  const host = readHostName(home);
+  if (host === null) return { code: "invalid", messages: ["fleet: no host name set; `fleet init <host>` writes one"] };
+  const planned = planConflicts(configDir, home);
+  if (!Array.isArray(planned)) return planned;
+  const text = planned.length === 0 ? "no conflicts" : planned.flatMap((c) => [`${paint(color, "yellow", c.kind)} ${c.path}: ${c.detail}`, `  fix: ${c.fix}`]).join("\n");
+  return { code: "ok", text, fields: { conflicts: planned.map(({ kind, path, detail, fix }) => ({ kind, path, detail, fix })) } };
 }
 
 /** One host's answer. `timer` is a host with no `ssh` destination, which applies on its own schedule. */

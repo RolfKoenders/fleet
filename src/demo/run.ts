@@ -64,7 +64,7 @@ async function interactive(sandbox: Sandbox, onChild: (child: ChildProcess) => v
  * `fleet demo`: builds the sandbox, then gives the person a shell in it, or, without a terminal (or with
  * `--json`), walks the same steps itself. The sandbox is deleted when the process ends, whichever way it ends.
  */
-export async function demo(toolDir: string, json: boolean): Promise<Result> {
+export async function demo(toolDir: string, json: boolean, _shell = false): Promise<Result> {
   const sandbox = buildSandbox(toolDir);
   process.once("exit", () => destroy(sandbox.root));
   const tty = process.stdin.isTTY === true && process.stdout.isTTY === true && !json;
