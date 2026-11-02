@@ -16,16 +16,17 @@ export const motionAllowed = (env: Env): boolean => (env.FLEET_NO_MOTION ?? "") 
  * `fleet bridge`: the full-screen view. It reads the config, this host and, over ssh, the others, and writes
  * nothing. It needs a terminal, so an agent or a pipe gets a refusal that points at `fleet status`.
  */
-export async function bridge(toolDir: string, configDir: string, json: boolean, env: Env = process.env, home: string = homedir()): Promise<Result | Relayed> {
+export async function bridge(toolDir: string, configDir: () => string, json: boolean, env: Env = process.env, home: string = homedir()): Promise<Result | Relayed> {
   if (json) return { code: "invalid", messages: ["fleet: 'bridge' is a full-screen view and has no --json form; use 'fleet status --all --json'"] };
   if (process.stdin.isTTY !== true || process.stdout.isTTY !== true) {
     return { code: "invalid", messages: ["fleet: 'bridge' needs a terminal; to read the same facts without one, run 'fleet status --all'"] };
   }
+  const dir = configDir();
   const level = detectLevel(env, true);
   const motion = motionAllowed(env);
-  const model = loadModel(configDir, readHostName(home));
-  const pusher = new RealPusher(toolDir, configDir, home, model.hosts);
-  const app = createApp({ model, probe: realProbe(toolDir, configDir, home), pusher, motion, boot: motion && level !== "none" });
+  const model = loadModel(dir, readHostName(home));
+  const pusher = new RealPusher(toolDir, dir, home, model.hosts);
+  const app = createApp({ model, probe: realProbe(toolDir, dir, home), pusher, motion, boot: motion && level !== "none" });
   const code = await runOnTerminal(app, { stdin: process.stdin, stdout: process.stdout }, { level });
   // The screen is gone but a push that was started from it is not: say so, and stay until it has ended.
   const waiting = pusher.whenDone();

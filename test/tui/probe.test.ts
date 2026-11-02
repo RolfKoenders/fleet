@@ -18,7 +18,7 @@ const doc = (over: Record<string, unknown> = {}) =>
     host: "remote",
     messages: [],
     repos: { fleet: { branch: "main", sha: "abc1234", clean: true, ahead: 0, behind: 0 } },
-    applied: { at: "2026-10-30T10:00:00Z", ageSeconds: 600 },
+    applied: { at: "2026-10-30T10:00:00Z", ageSeconds: 600, config: null },
     timer: "active",
     pending: 0,
     conflicts: 0,

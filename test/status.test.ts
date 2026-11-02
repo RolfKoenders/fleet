@@ -109,7 +109,7 @@ test("status works with git only on a bare PATH, found by absolute path", () => 
 
 type Full = {
   host: string | null;
-  applied: { at: string | null; ageSeconds: number | null };
+  applied: { at: string | null; ageSeconds: number | null; config: string | null };
   timer: string | null;
   pending: number | null;
   conflicts: number | null;
@@ -226,13 +226,25 @@ test("a timer state that cannot be read is null", () => {
 test("with nothing applied, the applied state is null", () => {
   const { clone } = makeClone();
   const { applied } = full(clone, makeHome("laptop"));
-  assert.deepEqual(applied, { at: null, ageSeconds: null });
+  assert.deepEqual(applied, { at: null, ageSeconds: null, config: null });
 });
 
-const writeApplied = (home: string, appliedAt: string) => {
+const writeApplied = (home: string, appliedAt: string, repos: Record<string, string> = {}) => {
   mkdirSync(join(home, ".local/state/fleet"), { recursive: true });
-  writeFileSync(join(home, ".local/state/fleet/applied.json"), JSON.stringify({ version: 1, host: "laptop", appliedAt, repos: {}, links: [], keys: [] }));
+  writeFileSync(join(home, ".local/state/fleet/applied.json"), JSON.stringify({ version: 1, host: "laptop", appliedAt, repos, links: [], keys: [] }));
 };
+
+test("the config commit of the last apply is reported, and an older state without one reads as unknown", () => {
+  const { clone } = makeClone();
+  const home = makeHome("laptop");
+  const at = "2026-10-30T10:00:00Z";
+  writeApplied(home, at);
+  assert.equal(full(clone, home).applied.config, null);
+  assert.match(runFleet(clone, ["status"], { home }).stdout, /^ {2}config: unknown$/m);
+  writeApplied(home, at, { config: "abc1234" });
+  assert.equal(full(clone, home).applied.config, "abc1234");
+  assert.match(runFleet(clone, ["status"], { home }).stdout, /^ {2}config: abc1234$/m);
+});
 
 test("the applied state age is counted from appliedAt", () => {
   const { clone } = makeClone();
@@ -252,7 +264,7 @@ test("an applied state that cannot be read is null, said on stderr, and does not
   mkdirSync(join(home, ".local/state/fleet"), { recursive: true });
   writeFileSync(join(home, ".local/state/fleet/applied.json"), "{ not json");
   const { doc, stderr } = status(clone, home);
-  assert.deepEqual(doc.applied, { at: null, ageSeconds: null });
+  assert.deepEqual(doc.applied, { at: null, ageSeconds: null, config: null });
   assert.match(stderr, /applied state/);
 });
 

@@ -31,6 +31,15 @@ type Planned = { host: string; plan: Plan; state: AppliedState | null };
 
 const conflictsOf = (plan: Plan) => [...plan.keys.conflicts, ...plan.links.conflicts];
 
+/** The commit the config repo is at, or null when it is not a git repository or git is missing: then nothing is recorded. */
+function configCommit(configDir: string): string | null {
+  try {
+    return repoState(configDir).sha;
+  } catch {
+    return null;
+  }
+}
+
 /** The result for a failure every command reports the same way, or null for one it does not know. */
 export function failure(error: unknown): Result | null {
   if (error instanceof InvalidConfigError) return { code: "invalid", messages: error.problems.map((p) => `fleet: ${p}`) };
@@ -210,7 +219,10 @@ export function apply(toolDir: string, configDir: string, color: boolean, home: 
 
     const links = new Map<string, string>((state?.links ?? []).map((l) => [l.target, l.source]));
     const keys = new Map<string, KeyRecord>((state?.keys ?? []).map((k) => [keyName(k), k]));
-    const before = JSON.stringify([[...links], [...keys]]);
+    // The config commit is part of what is compared, because state is otherwise saved only when links or keys change.
+    const configSha = configCommit(configDir);
+    const snapshot = (config: string | null) => JSON.stringify([[...links], [...keys], config]);
+    const before = snapshot(state?.repos?.config ?? null);
     for (const noop of plan.links.noops) links.set(noop.target, noop.source);
     for (const forgotten of plan.links.forgets) links.delete(forgotten.target);
     for (const noop of plan.keys.noops) keys.set(keyName(noop), noop);
@@ -230,7 +242,7 @@ export function apply(toolDir: string, configDir: string, color: boolean, home: 
           version: 1,
           host,
           appliedAt: new Date().toISOString().replace(/\.\d+Z$/, "Z"),
-          repos: { ...state?.repos, fleet: fleetSha },
+          repos: { ...state?.repos, fleet: fleetSha, ...(configSha === null ? {} : { config: configSha }) },
           links: records,
           keys: [...keys.values()],
         },
@@ -299,7 +311,7 @@ export function apply(toolDir: string, configDir: string, color: boolean, home: 
       save();
       done("remove-link", remove.target);
     }
-    if (JSON.stringify([[...links], [...keys]]) !== before) save();
+    if (snapshot(configSha ?? state?.repos?.config ?? null) !== before) save();
     return result;
   } finally {
     unlock();

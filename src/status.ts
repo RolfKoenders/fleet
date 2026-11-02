@@ -22,7 +22,8 @@ export type ToolVersions = { claude: string | null; opencode: string | null; sop
 /** What `fleet status --json` reports about one host, besides `host`. Null is "could not be read". */
 export type StatusFields = {
   repos: { fleet: RepoState };
-  applied: { at: string | null; ageSeconds: number | null };
+  /** `config` is the commit of the config repo the last apply was made from. Null for an older state, or one made outside a git repo. */
+  applied: { at: string | null; ageSeconds: number | null; config: string | null };
   /** What `systemctl --user is-active fleet.timer` printed, or `active` or `inactive` for the LaunchAgent on macOS. */
   timer: string | null;
   /** Links and keys apply would create, update or remove. */
@@ -84,12 +85,14 @@ export function timerState(home: string): string | null {
 }
 
 function appliedAge(home: string, messages: string[]): StatusFields["applied"] {
-  const none = { at: null, ageSeconds: null };
+  const none = { at: null, ageSeconds: null, config: null };
   try {
-    const at = readState(home)?.appliedAt;
+    const state = readState(home);
+    const at = state?.appliedAt;
     const time = typeof at === "string" ? Date.parse(at) : Number.NaN;
     if (Number.isNaN(time)) return none;
-    return { at: at as string, ageSeconds: Math.max(0, Math.floor((Date.now() - time) / 1000)) };
+    const config = state?.repos?.config;
+    return { at: at as string, ageSeconds: Math.max(0, Math.floor((Date.now() - time) / 1000)), config: typeof config === "string" ? config : null };
   } catch (error) {
     messages.push(`fleet: the applied state cannot be read: ${(error as Error).message}`);
     return none;
@@ -134,6 +137,7 @@ function lines(fields: StatusFields, color: boolean, clone: string | null): stri
     `  ahead: ${fleet.ahead ?? "n/a"}`,
     `  behind: ${fleet.behind ?? "n/a"}`,
     fields.applied.at === null ? "applied: never" : `applied: ${ago(fields.applied.ageSeconds ?? 0)} (${fields.applied.at})`,
+    ...(fields.applied.at === null ? [] : [`  config: ${fields.applied.config ?? "unknown"}`]),
     `timer: ${timer}`,
     `pending: ${shown(fields.pending)}`,
     `conflicts: ${fields.conflicts === null || fields.conflicts === 0 ? shown(fields.conflicts) : paint(color, "yellow", String(fields.conflicts))}`,
@@ -202,7 +206,7 @@ function fromDocument(doc: Obj): StatusFields | null {
   const tools = isObject(doc.tools) ? doc.tools : {};
   return {
     repos: { fleet: { branch: printable(fleet.branch), sha: printable(fleet.sha) ?? "", clean: fleet.clean, ahead: count(fleet.ahead), behind: count(fleet.behind) } },
-    applied: { at: printable(applied.at), ageSeconds: count(applied.ageSeconds) },
+    applied: { at: printable(applied.at), ageSeconds: count(applied.ageSeconds), config: printable(applied.config) },
     timer: printable(doc.timer),
     pending: count(doc.pending),
     conflicts: count(doc.conflicts),

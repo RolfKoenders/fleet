@@ -19,13 +19,15 @@ function frame(c: Canvas, w: number, h: number, title: string): Canvas {
 }
 
 const HELP: [string, string][] = [
-  ["1 2 3 4  tab", "switch screen"],
+  ["1-7  tab", "switch screen"],
   ["← ↑ ↓ →  hjkl", "move"],
   ["enter", "home: open in matrix; matrix: show skills"],
   ["ctrl-k  :", "command palette"],
   ["P", "review a push, then type push to run it"],
   ["r", "ask every host again"],
   ["c", "home: go to conflicts"],
+  ["v  f", "secrets: by name or host; catalog: filter"],
+  ["pgup pgdn", "timeline and catalog: scroll the detail"],
   ["esc", "close, or back to home"],
   ["?", "this help"],
   ["q  ctrl-c", "quit"],

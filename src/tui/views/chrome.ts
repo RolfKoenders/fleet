@@ -29,12 +29,13 @@ export function drawHeader(c: Canvas, state: State): void {
   if (w >= 40) c.text(11, 0, "bridge", s.muted);
 
   const total = conflictTotal(state);
-  const wide = w >= 62;
-  let x = wide ? 20 : 11 + (w >= 40 ? 7 : 0);
+  // Every title, the conflict badge, the pill and the spinner fit only from here on.
+  const titled = w >= 126;
+  let x = 11 + (w >= 40 ? 7 : 0);
   for (const tab of SCREENS) {
     const active = tab.id === state.screen;
     const badge = tab.id === "conflicts" && total > 0 ? ` ${total}` : "";
-    const label = wide || active ? `${tab.key} ${tab.title}${badge}` : `${tab.key}`;
+    const label = titled || active ? `${tab.key} ${tab.title}${badge}` : `${tab.key}${badge}`;
     const style = active ? { fg: theme.text, attr: BOLD } : s.muted;
     const end = c.text(x + 1, 0, label, style);
     if (badge) c.text(end - badge.length, 0, badge, { fg: theme.bad, attr: BOLD });

@@ -1,12 +1,15 @@
 import type { Model } from "./model.ts";
 
-export type Screen = "home" | "matrix" | "conflicts" | "push";
+export type Screen = "home" | "matrix" | "conflicts" | "timeline" | "secrets" | "catalog" | "push";
 
 export const SCREENS: { id: Screen; title: string; key: string }[] = [
   { id: "home", title: "Home", key: "1" },
   { id: "matrix", title: "Matrix", key: "2" },
   { id: "conflicts", title: "Conflicts", key: "3" },
-  { id: "push", title: "Push", key: "4" },
+  { id: "timeline", title: "Timeline", key: "4" },
+  { id: "secrets", title: "Secrets", key: "5" },
+  { id: "catalog", title: "Catalog", key: "6" },
+  { id: "push", title: "Push", key: "7" },
 ];
 
 export type Action =
@@ -36,6 +39,9 @@ export function items(model: Model): Item[] {
     { kind: "screen", label: "Home", command: "fleet status --all", note: "", action: { do: "screen", screen: "home" } },
     { kind: "screen", label: "Matrix", command: null, note: FROM_CONFIG, action: { do: "screen", screen: "matrix" } },
     { kind: "screen", label: "Conflicts", command: "fleet diff", note: "", action: { do: "screen", screen: "conflicts" } },
+    { kind: "screen", label: "Timeline", command: null, note: "reads the config repo's git history", action: { do: "screen", screen: "timeline" } },
+    { kind: "screen", label: "Secrets", command: null, note: "reads secret names only; values are never decrypted", action: { do: "screen", screen: "secrets" } },
+    { kind: "screen", label: "Catalog", command: null, note: "reads the catalog and the skill sources already cloned", action: { do: "screen", screen: "catalog" } },
     ...model.hosts.map((h): Item => ({ kind: "host", label: h.name, command: h.self ? "fleet status" : "fleet status --all", note: "", action: { do: "host", name: h.name } })),
     ...model.bundles.map((b): Item => ({ kind: "bundle", label: b.name, command: null, note: FROM_CONFIG, action: { do: "row", name: b.name, kind: "bundle" } })),
     ...model.servers.map((s): Item => ({ kind: "server", label: s.name, command: null, note: FROM_CONFIG, action: { do: "row", name: s.name, kind: "server" } })),
