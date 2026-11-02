@@ -5,7 +5,7 @@ const [w, h] = (process.argv[2] ?? "100x32").split("x").map(Number) as [number, 
 const canned = {
   hosts: {
     laptop: ok({ pending: 2, tools: { claude: "2.1.4", opencode: null, sops: "3.13.3", node: "22.18.0", t3: null } }),
-    server: ok({ conflicts: 2, pending: 1, applied: { at: "x", ageSeconds: 86400 * 3 }, timer: "inactive" }),
+    server: ok({ conflicts: 2, pending: 1, applied: { at: "x", ageSeconds: 86400 * 3, config: null }, timer: "inactive" }),
     box: { result: "unreachable" as const, status: null, detail: "ssh: connect to host box port 22: Connection timed out" },
     edge: { result: "timer" as const, status: null },
   },

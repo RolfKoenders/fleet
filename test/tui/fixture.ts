@@ -22,7 +22,7 @@ export function makeConfig(): string {
 
 export const status = (over: Partial<StatusFields> = {}): StatusFields => ({
   repos: { fleet: { branch: "main", sha: "3f9a1c2d4e5f60718293a4b5c6d7e8f901234567", clean: true, ahead: 0, behind: 0 } },
-  applied: { at: "2026-10-30T10:00:00Z", ageSeconds: 720 },
+  applied: { at: "2026-10-30T10:00:00Z", ageSeconds: 720, config: "c0ffee1" },
   timer: "active",
   pending: 0,
   conflicts: 0,
