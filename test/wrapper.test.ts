@@ -3,7 +3,7 @@ import { mkdirSync, symlinkSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { bareToolPath, makeHome, repoRoot, writeExecutable } from "./helpers.ts";
+import { bareToolPath, makeHome, repoRoot, writeExecutable, skipIfSystemWide } from "./helpers.ts";
 
 const wrapper = join(repoRoot, "bin/fleet");
 
@@ -75,7 +75,7 @@ test("wrapper exports the path it probed, not a resolved one", () => {
   assert.match(r.stdout, new RegExp(`path=${join(aliasDir, "default/bin/node")}\n`));
 });
 
-test("wrapper exits 127 with a message when no Node is usable", () => {
+test("wrapper exits 127 with a message when no Node is usable", { skip: skipIfSystemWide("node") }, () => {
   const home = makeHome();
   const r = runWrapper(home, bareToolPath());
   assert.equal(r.code, 127);

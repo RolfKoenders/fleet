@@ -3,9 +3,9 @@ import { chmodSync, closeSync, existsSync, symlinkSync, mkdirSync, openSync, rea
 import { join } from "node:path";
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { installFake, setup } from "./initworld.ts";
+import { setup } from "./initworld.ts";
 import type { S } from "./initworld.ts";
-import { installStatusTools, makeClone, makeHome, repoRoot, runFleet, writeExecutable } from "./helpers.ts";
+import { installStatusTools, makeClone, makeHome, repoRoot, runFleet, writeExecutable, linuxOnly } from "./helpers.ts";
 import { EXIT } from "../src/exit.ts";
 import { CONFIG_DIR } from "../src/init.ts";
 import { HOMEBREW_BIN, HOMEBREW_KEG_NODES, probeDirs, SHELL_NODE_CANDIDATES, SHELL_PROBE_PATH } from "../src/tools.ts";
@@ -22,34 +22,9 @@ const uid = process.getuid!();
 const domain = `gui/${uid}`;
 const service = `${domain}/${LAUNCHD_LABEL}`;
 
-/** Refuses the legacy verbs and any domain but `gui/<uid>`, and fails `bootstrap` of a loaded agent the way launchd does. */
-const FAKE_LAUNCHCTL = `
-const fs = require("node:fs");
-const home = process.env.HOME;
-const args = process.argv.slice(2);
-fs.appendFileSync(home + "/launchctl-calls.log", JSON.stringify(args) + "\\n");
-const loaded = home + "/.fake-agent-loaded";
-const [verb, target, plist] = args;
-if (!["print", "bootstrap", "bootout"].includes(verb)) { process.stderr.write("fake launchctl: refusing " + verb + "\\n"); process.exit(2); }
-if (!/^gui\\/\\d+(\\/|$)/.test(target)) { process.stderr.write("fake launchctl: refusing domain " + target + "\\n"); process.exit(2); }
-const inDomain = target.split("/").length === 2;
-if (verb === "print") {
-  if (fs.existsSync(home + "/fake-no-session")) { process.stderr.write("Could not find domain for " + target + "\\n"); process.exit(113); }
-  process.exit(inDomain || fs.existsSync(loaded) ? 0 : 113);
-}
-if (verb === "bootstrap") {
-  if (fs.existsSync(home + "/fake-launchctl-fail")) { process.stderr.write("Bootstrap failed: 5: Input/output error\\n"); process.exit(5); }
-  if (fs.existsSync(loaded)) { process.stderr.write("Bootstrap failed: 5: Input/output error\\n"); process.exit(5); }
-  if (!fs.existsSync(plist)) { process.stderr.write("no such plist\\n"); process.exit(2); }
-  fs.writeFileSync(loaded, fs.readFileSync(plist));
-  process.exit(0);
-}
-if (verb === "bootout") { fs.rmSync(loaded, { force: true }); process.exit(0); }
-`;
 
-/** Makes `home` look like a Mac to the scripts `init` runs: BSD `stat`, `uname` and `launchctl`. */
+/** Makes `home` look like a Mac to the scripts `init` runs: BSD `stat`, `uname` and `sw_vers`. Every machine has the fake `launchctl` already. */
 function makeMac(home: string): void {
-  installFake(home, "launchctl", FAKE_LAUNCHCTL);
   writeExecutable(join(home, ".local/bin/sw_vers"), `#!/bin/sh\nif [ "$1" = "-productVersion" ]; then cat "$HOME/fake-macos-version" 2>/dev/null || echo 14.5; else exit 1; fi\n`);
   writeExecutable(join(home, ".local/bin/uname"), `#!/bin/sh\nif [ "$1" = "-s" ]; then echo Darwin; else exec /usr/bin/uname "$@"; fi\n`);
   writeExecutable(
@@ -314,7 +289,7 @@ test("a log at or under 1 MB, a missing log, and any other OS are left alone", (
   assert.equal(statSync(logIn(home)).size, LOG_LIMIT + 1000);
 });
 
-test("apply on Linux does not touch a big ~/Library/Logs/fleet.log", () => {
+test("apply on Linux does not touch a big ~/Library/Logs/fleet.log", { skip: linuxOnly }, () => {
   const { clone } = makeClone();
   const home = makeHome("laptop");
   writeLog(home, LOG_LIMIT + 1000);

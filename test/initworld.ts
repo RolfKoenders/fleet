@@ -43,6 +43,31 @@ if (plan.stderr) process.stderr.write(plan.stderr + "\\n");
 process.exit(plan.exit === undefined ? 0 : plan.exit);
 `;
 
+/** Refuses the legacy verbs and any domain but `gui/<uid>`, and fails `bootstrap` of a loaded agent the way launchd does. */
+export const FAKE_LAUNCHCTL = `
+const fs = require("node:fs");
+const home = process.env.HOME;
+const args = process.argv.slice(2);
+fs.appendFileSync(home + "/launchctl-calls.log", JSON.stringify(args) + "\\n");
+const loaded = home + "/.fake-agent-loaded";
+const [verb, target, plist] = args;
+if (!["print", "bootstrap", "bootout"].includes(verb)) { process.stderr.write("fake launchctl: refusing " + verb + "\\n"); process.exit(2); }
+if (!/^gui\\/\\d+(\\/|$)/.test(target)) { process.stderr.write("fake launchctl: refusing domain " + target + "\\n"); process.exit(2); }
+const inDomain = target.split("/").length === 2;
+if (verb === "print") {
+  if (fs.existsSync(home + "/fake-no-session")) { process.stderr.write("Could not find domain for " + target + "\\n"); process.exit(113); }
+  process.exit(inDomain || fs.existsSync(loaded) ? 0 : 113);
+}
+if (verb === "bootstrap") {
+  if (fs.existsSync(home + "/fake-launchctl-fail")) { process.stderr.write("Bootstrap failed: 5: Input/output error\\n"); process.exit(5); }
+  if (fs.existsSync(loaded)) { process.stderr.write("Bootstrap failed: 5: Input/output error\\n"); process.exit(5); }
+  if (!fs.existsSync(plist)) { process.stderr.write("no such plist\\n"); process.exit(2); }
+  fs.writeFileSync(loaded, fs.readFileSync(plist));
+  process.exit(0);
+}
+if (verb === "bootout") { fs.rmSync(loaded, { force: true }); process.exit(0); }
+`;
+
 /** Logs each call, refuses anything that is not --user, and keeps "is the timer on" in a file. */
 export const FAKE_SYSTEMCTL = `
 const fs = require("node:fs");
@@ -75,8 +100,9 @@ export function installFake(home: string, name: string, script: string): void {
 
 /**
  * Everything a machine needs, in its own `~/.local/bin`, which is first on the probe path: real sops
- * and age-keygen, Node, and fakes for `claude`, `opencode` and `systemctl`. The real ones are on the
- * path of the test run, so a machine without these fakes could change the host running the tests.
+ * and age-keygen, Node, and fakes for `claude`, `opencode`, `systemctl` and `launchctl`. The real ones are
+ * on the path of the test run, so a machine without these fakes could change the host running the tests.
+ * Its `uname -s` says Linux whatever the tests run on; a test makes a Mac on purpose.
  */
 export function stock(home: string): void {
   mkdirSync(join(home, ".local/bin"), { recursive: true });
@@ -86,6 +112,8 @@ export function stock(home: string): void {
   installFakeClaude(home);
   writeExecutable(join(home, ".local/bin/opencode"), "#!/bin/sh\nexit 0\n");
   installFake(home, "systemctl", FAKE_SYSTEMCTL);
+  installFake(home, "launchctl", FAKE_LAUNCHCTL);
+  writeExecutable(join(home, ".local/bin/uname"), `#!/bin/sh\nif [ "$1" = "-s" ]; then echo Linux; else exec /usr/bin/uname "$@"; fi\n`);
 }
 
 export const identityOf = (home: string): Identity => {

@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync
 import { dirname, join } from "node:path";
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { git, installFakeSsh, installFakeTool, installStatusTools, makeClone, makeHome, publish, runFleet, tempDir, toolCalls } from "./helpers.ts";
+import { git, installFakeSsh, installFakeTool, installStatusTools, makeClone, makeHome, publish, runFleet, tempDir, toolCalls, fakeTimer } from "./helpers.ts";
 import type { SshPlan } from "./helpers.ts";
 import { EXIT } from "../src/exit.ts";
 import { findTool } from "../src/tools.ts";
@@ -174,7 +174,7 @@ function setup(catalog: string, opts: { hosts?: Record<string, string>; ssh?: Re
   for (const [name, text] of Object.entries(opts.hosts ?? {})) if (name !== "laptop") write(`hosts/${name}.yaml`, text);
   publish(clone, "config");
   installStatusTools(home);
-  if (opts.timer !== undefined) installFakeTool(home, "systemctl", { stdout: opts.timer });
+  if (opts.timer !== undefined) fakeTimer(home, opts.timer);
   installFakeSsh(home, opts.ssh ?? {});
   if (opts.key !== false) {
     mkdirSync(join(home, ".config/fleet"), { recursive: true });

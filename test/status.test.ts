@@ -4,7 +4,7 @@ import net from "node:net";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { bareToolPath, FAKE_VERSIONS, git, installFakeTool, installStatusTools, linkFleetSkill, makeClone, makeHome, makeSource, publish, runFleet, tempDir, toolCalls } from "./helpers.ts";
+import { bareToolPath, FAKE_VERSIONS, git, installFakeTool, installStatusTools, linkFleetSkill, makeClone, makeHome, makeSource, publish, runFleet, tempDir, toolCalls, linuxOnly } from "./helpers.ts";
 import { findTool } from "../src/tools.ts";
 
 type Repo = { branch: string | null; sha: string; clean: boolean; ahead: number | null; behind: number | null };
@@ -203,7 +203,7 @@ test("those exact sops arguments make no network request with the real sops, whe
   }
 });
 
-test("the timer state is what systemctl --user is-active fleet.timer prints", () => {
+test("the timer state is what systemctl --user is-active fleet.timer prints", { skip: linuxOnly }, () => {
   const { clone } = makeClone();
   for (const state of ["active", "inactive", "failed"]) {
     const home = makeHome("laptop");
@@ -214,7 +214,7 @@ test("the timer state is what systemctl --user is-active fleet.timer prints", ()
   }
 });
 
-test("a timer state that cannot be read is null", () => {
+test("a timer state that cannot be read is null", { skip: linuxOnly }, () => {
   const { clone } = makeClone();
   const home = makeHome("laptop");
   installStatusTools(home);

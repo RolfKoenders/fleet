@@ -1,7 +1,9 @@
 import { spawnSync } from "node:child_process";
-import { existsSync, chmodSync, cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, chmodSync, cpSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { LAUNCHD_LABEL } from "../src/scheduler.ts";
+import { HOMEBREW_BIN, HOMEBREW_KEG_NODES } from "../src/tools.ts";
 
 export const repoRoot = join(import.meta.dirname, "..");
 
@@ -10,7 +12,9 @@ export type Run = { code: number | null; stdout: string; stderr: string };
 const tempDirs: string[] = [];
 
 export function tempDir(prefix = "fleet-test-"): string {
-  const dir = mkdtempSync(join(tmpdir(), prefix));
+  // The real path: on macOS the temp directory is behind a symlink (/var is /private/var), and git and
+  // `readlink -f` print the real one.
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), prefix)));
   tempDirs.push(dir);
   return dir;
 }
@@ -261,8 +265,20 @@ export function installStatusTools(home: string): void {
   installFakeTool(home, "claude", { stdout: `${FAKE_VERSIONS.claude} (Claude Code)`, only: ["--version"] });
   installFakeTool(home, "opencode", { stdout: FAKE_VERSIONS.opencode, only: ["--version"] });
   installFakeTool(home, "sops", { stdout: `sops ${FAKE_VERSIONS.sops}`, only: ["--version", "--disable-version-check"] });
-  installFakeTool(home, "systemctl", { stdout: "active", only: ["--user", "is-active", "fleet.timer"] });
+  fakeTimer(home, "active");
 }
+
+/**
+ * The timer in `state`, as both schedulers report it: `systemctl` prints the word, and `launchctl print`
+ * finds the agent loaded only when it is `active`. Status asks whichever the OS running the tests has.
+ */
+export function fakeTimer(home: string, state: string): void {
+  installFakeTool(home, "systemctl", { stdout: state, exit: state === "active" ? 0 : 3, only: ["--user", "is-active", "fleet.timer"] });
+  installFakeTool(home, "launchctl", { exit: state === "active" ? 0 : 113, only: ["print", `gui/${process.getuid?.()}/${LAUNCHD_LABEL}`] });
+}
+
+/** A reason to skip a test about Linux's scheduler or its absence of a macOS log, or false on Linux. */
+export const linuxOnly: string | false = process.platform === "linux" ? false : "the tests run on macOS, and this one is about Linux";
 
 export type SshPlan = { home?: string; exit?: number; stdout?: string; stderr?: string };
 
@@ -373,6 +389,6 @@ export function makeWorld(host = "laptop") {
  * system directories, so a test cannot hide a tool installed there.
  */
 export function skipIfSystemWide(...tools: string[]): string | false {
-  const found = tools.filter((tool) => ["/usr/bin", "/bin", "/usr/local/bin"].some((dir) => existsSync(join(dir, tool))));
+  const found = tools.filter((tool) => ["/usr/bin", "/bin", "/usr/local/bin", HOMEBREW_BIN].some((dir) => existsSync(join(dir, tool))) || (tool === "node" && HOMEBREW_KEG_NODES.some((p) => existsSync(p))));
   return found.length > 0 ? `${found.join(" and ")} installed system-wide` : false;
 }
