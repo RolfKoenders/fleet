@@ -155,25 +155,45 @@ test("matrix: a broken host file shows a problem and the screen still opens", as
   assert.match(b.frame(), /SKILL BUNDLES/);
 });
 
-test("conflicts: the list with its detail and fix, and other hosts as a count with the detail marked local", async () => {
+test("conflicts: every host's conflicts are listed under its name, with the detail and fix of the selected one", async () => {
   const canned: Canned = {
-    hosts: { server: ok({ conflicts: 3 }) },
+    hosts: { server: ok({ conflicts: 2 }), box: ok({ conflicts: 1 }) },
     conflicts: { ok: true, items: [{ kind: "link", path: "~/.claude/CLAUDE.md", detail: "~/.claude/CLAUDE.md is a file", fix: "Move or delete it, then run 'fleet apply'." }] },
+    remote: {
+      server: { ok: true, items: [{ kind: "link", path: "~/.claude/rules/host.md", detail: "host.md is a file, not a link", fix: "rm it on server" }, { kind: "key", path: "~/.claude.json mcpServers.docs", detail: "changed outside fleet", fix: "claude mcp remove docs" }] },
+      box: { ok: false, reason: "old", detail: "detail needs a newer pin" },
+    },
   };
   const b = await bridgeFor(makeConfig(), canned);
   b.press("3");
-  const f = b.frame();
-  assert.match(f, /1 conflict on this host/);
-  assert.match(f, /~\/\.claude\/CLAUDE\.md is a file/);
+  let f = b.frame();
+  assert.match(f, /3 conflicts across hosts/);
+  assert.match(f, /laptop \(this host\)\s*\n› +link +~\/\.claude\/CLAUDE\.md/);
+  assert.match(f, /server\s*\n +link +~\/\.claude\/rules\/host\.md\n +key +~\/\.claude\.json mcpServers\.docs/);
   assert.match(f, /fix\s+Move or delete it/);
-  assert.match(f, /server\s+3 conflicts; the detail is local only, run fleet diff on that host/);
-  assert.match(f, /edge\s+unknown: no ssh destination/);
+  assert.match(f, /box +1 conflict; detail needs a newer pin/);
+  assert.doesNotMatch(f, /error/i);
+  assert.match(f, /edge +unknown: no ssh destination/);
+  b.press("down");
+  f = b.frame();
+  assert.match(f, /server: link/);
+  assert.match(f, /fix\s+rm it on server/);
+});
+
+test("conflicts: what a host reports is cut to printable text, and a host that cannot say is an explained failure", async () => {
+  const b = await bridgeFor(makeConfig(), {
+    hosts: { server: ok({ conflicts: 1 }), box: ok({ conflicts: 1 }) },
+    remote: { server: { ok: false, reason: "error", detail: "unreachable over ssh" }, box: { ok: true, items: [] } },
+  });
+  const f = b.press("3").frame();
+  assert.match(f, /server +1 conflict; the detail could not be read: unreachable over ssh/);
+  assert.match(f, /box +1 conflict reported, none listed/);
 });
 
 test("conflicts: none, and a plan that failed, are said plainly", async () => {
-  assert.match((await bridgeFor(makeConfig())).press("3").frame(), /✓ no conflicts on this host/);
+  assert.match((await bridgeFor(makeConfig())).press("3").frame(), /✓ no conflicts known on any host/);
   const b = await bridgeFor(makeConfig(), { conflicts: { ok: false, detail: "no host name set" } });
-  assert.match(b.press("3").frame(), /could not be planned[\s\S]*no host name set/);
+  assert.match(b.press("3").frame(), /could not be planned: no host name set/);
 });
 
 test("palette: ctrl-k and : open it, typing narrows it fuzzily, each result shows the fleet command it equals", async () => {

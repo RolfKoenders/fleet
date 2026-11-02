@@ -6,7 +6,7 @@ import type { Msg, Options, State } from "../../src/tui/app.ts";
 import { Headless } from "../../src/tui/headless.ts";
 import { loadModel } from "../../src/tui/model.ts";
 import { readingProbe } from "../../src/tui/probe.ts";
-import type { ConflictsResult, HostResult, Probe } from "../../src/tui/probe.ts";
+import type { ConflictsResult, HostResult, Probe, RemoteConflicts } from "../../src/tui/probe.ts";
 import { sourceDir } from "../../src/sources.ts";
 import type { StatusFields } from "../../src/status.ts";
 import { makeHome, repoRoot, tempDir } from "../helpers.ts";
@@ -35,7 +35,7 @@ export const status = (over: Partial<StatusFields> = {}): StatusFields => ({
 
 export const ok = (over: Partial<StatusFields> = {}): HostResult => ({ result: "ok", status: status(over) });
 
-export type Canned = { doctor?: Probe["doctor"]; hosts?: Record<string, HostResult | "never">; conflicts?: ConflictsResult; reads?: Pick<Probe, "history" | "commitDiff" | "secrets" | "catalog"> };
+export type Canned = { remote?: Record<string, RemoteConflicts>; doctor?: Probe["doctor"]; hosts?: Record<string, HostResult | "never">; conflicts?: ConflictsResult; reads?: Pick<Probe, "history" | "commitDiff" | "secrets" | "catalog"> };
 
 /** Reads that find nothing, for tests of other screens. */
 export const noReads: NonNullable<Canned["reads"]> = {
@@ -57,6 +57,7 @@ export function cannedProbe(canned: Canned = {}): Probe {
     async conflicts() {
       return canned.conflicts ?? { ok: true, items: [] };
     },
+    ...(canned.remote ? { hostConflicts: async (host: { name: string }) => canned.remote![host.name] ?? { ok: false as const, reason: "error" as const, detail: "no canned answer" } } : {}),
     ...(canned.doctor ? { doctor: canned.doctor } : {}),
   };
 }

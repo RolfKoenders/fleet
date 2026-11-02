@@ -23,11 +23,19 @@ export type HostResult = {
 
 export type ConflictsResult = { ok: true; items: Conflict[] } | { ok: false; detail: string };
 
+/**
+ * Another host's conflicts in full, from `fleet status --conflicts` over ssh. `old` is a host whose pinned fleet does not
+ * know that option yet (it exits 2): not an error, the detail simply needs a newer pin.
+ */
+export type RemoteConflicts = { ok: true; items: Conflict[] } | { ok: false; reason: "old" | "error"; detail: string };
+
 /** The questions the bridge asks. All read-only; tests and the frame tool supply their own. */
 export type Probe = {
   host(host: HostInfo, signal: AbortSignal): Promise<HostResult>;
-  /** The conflicts on this host, in full. Other hosts report a count only. */
+  /** The conflicts on this host, in full. */
   conflicts(signal: AbortSignal): Promise<ConflictsResult>;
+  /** The conflicts on another host, in full, over ssh. Read-only there too: it neither clones nor fetches. */
+  hostConflicts?(host: HostInfo, signal: AbortSignal): Promise<RemoteConflicts>;
   /** The config repo's history, one commit's changes, the secret names, and the catalog with the clones already on disk. None of them decrypts, clones, fetches or writes. */
   history(signal: AbortSignal): Promise<History>;
   commitDiff(sha: string, signal: AbortSignal): Promise<CommitDiff>;
@@ -68,10 +76,33 @@ type Reply = { code: string; fields?: StatusFields | null; conflicts?: Conflict[
 
 const reason = (messages: string[] | undefined): string => printable((messages ?? []).map((m) => m.replace(/^fleet: /, "")).join("; ")) ?? "no reason given";
 
+export const CONFLICTS_COMMAND = "~/.local/bin/fleet status --conflicts --json";
+const MAX_CONFLICTS = 50;
+const KINDS = ["link", "key", "repo", "removal"] as const;
+
+/** Reads what a host printed for `status --conflicts --json`: only the four known fields of each conflict, as printable text. Null when it is not that document. */
+export function readConflicts(stdout: string): Conflict[] | null {
+  let doc: unknown;
+  try {
+    doc = JSON.parse(stdout);
+  } catch {
+    return null;
+  }
+  if (typeof doc !== "object" || doc === null || (doc as { code?: unknown }).code !== "ok" || !Array.isArray((doc as { conflicts?: unknown }).conflicts)) return null;
+  const items: Conflict[] = [];
+  for (const c of (doc as { conflicts: unknown[] }).conflicts.slice(0, MAX_CONFLICTS)) {
+    if (typeof c !== "object" || c === null) continue;
+    const o = c as Record<string, unknown>;
+    const kind = KINDS.find((k) => k === o.kind) ?? "link";
+    items.push({ kind, path: printable(o.path) ?? "", detail: printable(o.detail) ?? "", fix: printable(o.fix) ?? "" });
+  }
+  return items;
+}
+
 /** Runs `ssh` without blocking, with the same arguments `fleet status --all` uses. */
-function ssh(path: string, dest: string, home: string, signal: AbortSignal): Promise<{ error?: Error; status: number | null; stdout: string; stderr: string }> {
+function ssh(path: string, dest: string, home: string, signal: AbortSignal, command?: string): Promise<{ error?: Error; status: number | null; stdout: string; stderr: string }> {
   return new Promise((resolve) => {
-    const child = spawn(path, sshArguments(dest), { stdio: ["ignore", "pipe", "pipe"], signal, timeout: 60_000, env: { ...process.env, HOME: home } });
+    const child = spawn(path, command === undefined ? sshArguments(dest) : ["-o", "BatchMode=yes", "-o", "ConnectTimeout=10", dest, command], { stdio: ["ignore", "pipe", "pipe"], signal, timeout: 60_000, env: { ...process.env, HOME: home } });
     let [stdout, stderr] = ["", ""];
     child.stdout.setEncoding("utf8").on("data", (d: string) => (stdout += d));
     child.stderr.setEncoding("utf8").on("data", (d: string) => (stderr += d));
@@ -118,6 +149,17 @@ export function realProbe(toolDir: string, configDir: string, home: string): Pro
       return { result: answer.result as HostResult["result"], status: answer.status, ...(answer.result === "ok" ? {} : { detail: detail ?? "" }) };
     },
     doctor: (all, signal) => runDoctor(toolDir, configDir, home, readHostName(home), all, signal),
+    async hostConflicts(host, signal) {
+      if (host.ssh === null) return { ok: false, reason: "error", detail: "no ssh destination" };
+      const path = findTool("ssh", process.env, home);
+      if (path === null) return { ok: false, reason: "error", detail: "ssh is not installed" };
+      const r = await ssh(path, host.ssh, home, signal, CONFLICTS_COMMAND);
+      if (r.error || r.status === 255) return { ok: false, reason: "error", detail: printable(r.error?.message ?? (r.stderr.trim().split("\n")[0] || "unreachable over ssh")) ?? "unreachable over ssh" };
+      // An older pin does not know the option and exits 2, whatever it printed.
+      if (r.status === 2) return { ok: false, reason: "old", detail: "detail needs a newer pin" };
+      const items = readConflicts(r.stdout);
+      return items === null ? { ok: false, reason: "error", detail: `its answer was not a conflicts document (exit ${r.status ?? "none"})` } : { ok: true, items };
+    },
     async conflicts(signal) {
       const r = await inWorker<Reply>({ op: "conflicts", toolDir, configDir, home }, signal);
       if (r?.code === "ok" && r.conflicts) return { ok: true, items: r.conflicts };

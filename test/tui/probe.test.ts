@@ -1,4 +1,4 @@
-import { mkdirSync, readdirSync, statSync, writeFileSync } from "node:fs";
+import { mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { PassThrough } from "node:stream";
 import { test } from "node:test";
@@ -196,3 +196,24 @@ test("a task that throws is reported on the screen and does not stop it", async 
   assert.equal(await run.done, 0);
 });
 
+
+test("probe: another host's conflicts come from status --conflicts over ssh, cut to the known fields; exit 2 is an older pin, not an error", async () => {
+  const conflictDoc = JSON.stringify({ ok: true, code: "ok", host: "server", messages: [], conflicts: [{ kind: "link", path: "~/.x\u001b[31m", detail: "d", fix: "f", extra: "no" }, { kind: "bogus", path: "p", detail: "d", fix: "f" }] });
+  const w = world({ server: { stdout: conflictDoc }, old: { exit: 2, stderr: "fleet: unknown option '--conflicts'" }, down: { exit: 255, stderr: "ssh: connect timed out" }, junk: { stdout: "hello" } });
+  const ask = (name: string) => w.probe.hostConflicts!(w.model.hosts.find((h) => h.name === name)!, never);
+  const ok = await ask("server");
+  assert.ok(ok.ok);
+  if (ok.ok) {
+    assert.deepEqual(Object.keys(ok.items[0]!).sort(), ["detail", "fix", "kind", "path"]);
+    assert.doesNotMatch(ok.items[0]!.path, /\u001b/);
+    assert.equal(ok.items[1]!.kind, "link", "an unknown kind is not passed on");
+  }
+  const old = await ask("old");
+  assert.deepEqual(old, { ok: false, reason: "old", detail: "detail needs a newer pin" });
+  const down = await ask("down");
+  assert.ok(!down.ok && down.reason === "error");
+  const junk = await ask("junk");
+  assert.ok(!junk.ok && junk.reason === "error");
+  const calls = readFileSync(join(w.home, "ssh-calls.log"), "utf8");
+  assert.match(calls, /status --conflicts --json/);
+});

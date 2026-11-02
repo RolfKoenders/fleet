@@ -1,6 +1,6 @@
 import type { App, Cmd, Core } from "./runtime.ts";
 import type { Conflict } from "../plan.ts";
-import type { ConflictsResult, HostResult, Probe } from "./probe.ts";
+import type { ConflictsResult, HostResult, Probe, RemoteConflicts } from "./probe.ts";
 import type { FleetEvent } from "../events.ts";
 import type { StatusFields } from "../status.ts";
 import type { PreviewResult, Pusher } from "./pusher.ts";
@@ -21,6 +21,7 @@ import type { CatalogView, CommitDiff, History, SecretsView } from "./reads.ts";
 import { drawApp } from "./views/index.ts";
 import { catalogItems } from "./views/catalog.ts";
 import { diffLines } from "./views/timeline.ts";
+import { conflictEntries } from "./views/conflicts.ts";
 
 export type HostLive = {
   phase: "loading" | "done";
@@ -34,7 +35,10 @@ export type HostLive = {
   seen: { agoSeconds: number; since: number } | null;
 };
 
-export type ConflictsLive = { phase: "loading" | "done"; items: Conflict[]; detail: string | null; selected: number };
+export type RemoteLive = { phase: "loading" | "done"; gen: number; result: RemoteConflicts | null };
+
+/** `selected` runs over this host's conflicts, then the other hosts', in host order (see `conflictEntries`). */
+export type ConflictsLive = { phase: "loading" | "done"; items: Conflict[]; detail: string | null; selected: number; remote: Record<string, RemoteLive> };
 
 /** Where a push is: not started, being reviewed (nothing runs until the word is typed), running, or over. */
 export type PushState =
@@ -86,6 +90,7 @@ export type State = {
 export type Msg =
   | { type: "host"; host: string; gen: number; result: HostResult }
   | { type: "conflicts"; result: ConflictsResult }
+  | { type: "remoteConflicts"; host: string; gen: number; result: RemoteConflicts }
   | { type: "preview"; gen: number; result: PreviewResult }
   | { type: "doctor"; gen: number; result: DoctorResult }
   | { type: "push"; event: FleetEvent }
@@ -128,6 +133,12 @@ export function createApp(options: Options): App<State, Msg> {
   };
   const askConflicts: Cmd<Msg> = async ({ send, signal }) => {
     send({ type: "conflicts", result: await probe.conflicts(signal) });
+  };
+
+  const askRemote = (name: string, gen: number): Cmd<Msg> => async ({ send, signal }) => {
+    const host = model.hosts.find((h) => h.name === name)!;
+    const result = probe.hostConflicts ? await probe.hostConflicts(host, signal) : ({ ok: false, reason: "error", detail: "this view cannot ask other hosts" } as const);
+    send({ type: "remoteConflicts", host: name, gen, result });
   };
 
   const askPreview = (gen: number): Cmd<Msg> => async ({ send, signal }) => {
@@ -300,7 +311,7 @@ export function createApp(options: Options): App<State, Msg> {
   }
 
   function moveConflicts(state: State, key: Key): State {
-    const n = state.conflicts.items.length;
+    const n = conflictEntries(state).length;
     const d = key.name === "down" || key.text === "j" ? 1 : key.name === "up" || key.text === "k" ? -1 : 0;
     return { ...state, conflicts: { ...state.conflicts, selected: clamp(state.conflicts.selected + d, 0, Math.max(0, n - 1)) } };
   }
@@ -435,7 +446,7 @@ export function createApp(options: Options): App<State, Msg> {
         overlay: null,
         boot: { start: null, done: !options.boot },
         live,
-        conflicts: { phase: "loading", items: [], detail: null, selected: 0 },
+        conflicts: { phase: "loading", items: [], detail: null, selected: 0, remote: {} },
         push: { phase: "idle" },
         doctor: { phase: "idle", gen: 0, scope: "all", result: null },
         reviews: 0,
@@ -471,12 +482,28 @@ export function createApp(options: Options): App<State, Msg> {
           if (!current || current.gen !== message.gen) return [state, []];
           const remember = options.remember;
           const keep: Cmd<Msg>[] = remember && message.result.result === "ok" && message.result.status && !model.hosts.find((h) => h.name === message.host)?.self ? [() => remember(message.host, message.result.status!)] : [];
-          return [{ ...state, live: { ...state.live, [message.host]: { ...current, phase: "done", at: state.now, result: message.result, seen: null } } }, keep];
+          // A host that says it has conflicts is asked for them in full (read-only there too); one that says none has nothing to list.
+          const self = model.hosts.find((h) => h.name === message.host)?.self ?? false;
+          const n = message.result.status?.conflicts ?? 0;
+          const remote = { ...state.conflicts.remote };
+          const cmds = [...keep];
+          if (!self && n > 0) {
+            const rgen = (remote[message.host]?.gen ?? 0) + 1;
+            remote[message.host] = { phase: "loading", gen: rgen, result: remote[message.host]?.result ?? null };
+            cmds.push(askRemote(message.host, rgen));
+          } else delete remote[message.host];
+          return [{ ...state, conflicts: { ...state.conflicts, remote }, live: { ...state.live, [message.host]: { ...current, phase: "done", at: state.now, result: message.result, seen: null } } }, cmds];
         }
         case "conflicts": {
           const r = message.result;
-          const conflicts: ConflictsLive = r.ok ? { phase: "done", items: r.items, detail: null, selected: clamp(state.conflicts.selected, 0, Math.max(0, r.items.length - 1)) } : { phase: "done", items: [], detail: r.detail, selected: 0 };
+          const conflicts: ConflictsLive = r.ok ? { ...state.conflicts, phase: "done", items: r.items, detail: null, selected: clamp(state.conflicts.selected, 0, Math.max(0, r.items.length - 1)) } : { ...state.conflicts, phase: "done", items: [], detail: r.detail, selected: 0 };
           return [{ ...state, conflicts }, []];
+        }
+        case "remoteConflicts": {
+          const cur = state.conflicts.remote[message.host];
+          if (!cur || cur.gen !== message.gen) return [state, []];
+          const conflicts = { ...state.conflicts, remote: { ...state.conflicts.remote, [message.host]: { ...cur, phase: "done" as const, result: message.result } } };
+          return [{ ...state, conflicts: { ...conflicts, selected: clamp(conflicts.selected, 0, Math.max(0, conflictEntries({ ...state, conflicts }).length - 1)) } }, []];
         }
         case "preview": {
           if (state.push.phase !== "review" || state.push.gen !== message.gen) return [state, []];
