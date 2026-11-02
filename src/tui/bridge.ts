@@ -2,6 +2,7 @@ import { homedir } from "node:os";
 import { readHostName } from "../host.ts";
 import type { Relayed, Result } from "../output.ts";
 import { createApp } from "./app.ts";
+import { readCache, remember } from "./cache.ts";
 import { detectLevel } from "./color.ts";
 import type { Env } from "./color.ts";
 import { loadModel } from "./model.ts";
@@ -26,7 +27,7 @@ export async function bridge(toolDir: string, configDir: () => string, json: boo
   const motion = motionAllowed(env);
   const model = loadModel(dir, readHostName(home));
   const pusher = new RealPusher(toolDir, dir, home, model.hosts);
-  const app = createApp({ model, probe: realProbe(toolDir, dir, home), pusher, motion, boot: motion && level !== "none" });
+  const app = createApp({ model, probe: realProbe(toolDir, dir, home), pusher, motion, boot: motion && level !== "none", cached: readCache(home), remember: (host, status) => remember(home, host, status) });
   const code = await runOnTerminal(app, { stdin: process.stdin, stdout: process.stdout }, { level });
   // The screen is gone but a push that was started from it is not: say so, and stay until it has ended.
   const waiting = pusher.whenDone();

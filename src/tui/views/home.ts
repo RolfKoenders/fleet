@@ -16,7 +16,8 @@ const color = (h: Health): number => (h === "ok" ? theme.ok : h === "warn" ? the
 
 function health(live: HostLive | undefined): Health {
   const r = live?.result;
-  if (!r) return "unknown";
+  // What an earlier run saw says nothing about now.
+  if (!r || live?.seen) return "unknown";
   if (r.result === "unreachable" || r.result === "error") return "bad";
   if (r.result === "timer" || !r.status) return "unknown";
   if (r.status.conflicts) return "bad";
@@ -26,11 +27,17 @@ function health(live: HostLive | undefined): Health {
 
 const num = (n: number | null, bad: Style): Seg => (n === null ? ["?", s.muted] : n === 0 ? ["0", s.ok] : [String(n), bad]);
 
+/** "seen 2h ago" for a host only an earlier run has seen, else null. */
+export function seenAgo(live: HostLive | undefined, now: number): string | null {
+  return live?.seen ? `seen ${span(live.seen.agoSeconds + Math.max(0, (now - live.seen.since) / 1000))} ago` : null;
+}
+
 /** How long ago the host last changed something, counting from when it answered. */
 function lastChange(live: HostLive, now: number): string {
   const a = live.result?.status?.applied;
   if (!a || a.at === null || a.ageSeconds === null) return "never";
-  const since = live.at === null ? 0 : Math.max(0, (now - live.at) / 1000);
+  const from = live.seen ? live.seen.since : live.at;
+  const since = from === null ? 0 : Math.max(0, (now - from) / 1000);
   return `${span(a.ageSeconds + since)} ago`;
 }
 
@@ -50,7 +57,8 @@ function drawCard(c: Canvas, x: number, y: number, w: number, host: HostInfo, li
   const result = live?.result ?? null;
   const loading = live?.phase === "loading";
   const status = result?.status ?? null;
-  const unknown = result !== null && result.result !== "ok";
+  const stale = live?.seen != null;
+  const unknown = (result !== null && result.result !== "ok") || stale;
   const kind: BorderKind = selected ? "heavy" : unknown ? "dashed" : "round";
   const base = selected ? theme.brandBright : loading && result === null ? theme.faint : h === "bad" ? mix(theme.bad, theme.faint, 0.45) : h === "warn" ? mix(theme.warn, theme.faint, 0.5) : theme.faint;
   const bg = selected ? theme.selected : theme.surface;
@@ -59,13 +67,16 @@ function drawCard(c: Canvas, x: number, y: number, w: number, host: HostInfo, li
   const sweep = loading && motion ? (i: number) => mix(base, theme.brandBright, Math.max(0, 1 - Math.abs(i - ((now / 28) % (w + 16)) + 8) / 5)) : undefined;
   drawBox(c, x, y, w, CARD_H, kind, { fg: base, bg }, sweep);
 
-  const dot = loading && result === null ? spinner(now, motion) : unknown ? (result?.result === "timer" ? "◌" : "✕") : status?.applied.at === null ? "○" : "●";
+  const dot = loading && result === null ? spinner(now, motion) : stale ? "◌" : unknown ? (result?.result === "timer" ? "◌" : "✕") : status?.applied.at === null ? "○" : "●";
   const nameStyle: Style = { fg: theme.text, attr: BOLD, bg };
-  const title: Seg[] = [[` ${dot} `, { fg: color(h === "unknown" && loading ? "ok" : h), bg }], [`${host.name} `, nameStyle]];
+  const title: Seg[] = [[` ${dot} `, { fg: color(h === "unknown" && loading && !stale ? "ok" : h), bg }], [`${host.name} `, nameStyle]];
   segments(c, x + 1, y, title);
   const tag = host.self ? " this host " : host.ssh !== null ? ` ${host.ssh} ` : " timer ";
   if (stringWidth(tag) + 4 + stringWidth(host.name) < w - 6) c.text(x + w - 2 - stringWidth(tag), y, tag, { fg: host.self ? theme.brand : theme.muted, bg });
   if (loading && result !== null) c.text(x + w - 4, y + CARD_H - 1, spinner(now, motion), { fg: theme.brand, bg });
+  // Old news is labelled on the card's edge, where it cannot be taken for a reading.
+  const ago = seenAgo(live, now);
+  if (ago !== null) c.text(x + 2, y + CARD_H - 1, ` ${ago}, not live `, { fg: theme.warn, bg });
 
   const ix = x + 2;
   const iw = w - 4;
@@ -121,7 +132,7 @@ function drawRow(c: Canvas, y: number, host: HostInfo, live: HostLive | undefine
   if (selected) c.fill(0, y, c.w, 1, { bg });
   const dot = loading && !r ? spinner(state.now, state.motion) : r?.result === "timer" ? "◌" : r && r.result !== "ok" ? "✕" : "●";
   const detail =
-    !r ? "asking" : r.result === "timer" ? "timer, unknown" : r.result === "unreachable" ? "unreachable" : r.result === "error" ? "no usable answer" : `${lastChange(live!, state.now)}  p${r.status?.pending ?? "?"} c${r.status?.conflicts ?? "?"}`;
+    !r ? "asking" : live?.seen ? `${seenAgo(live, state.now)}, not live: ${lastChange(live, state.now)}  p${r.status?.pending ?? "?"} c${r.status?.conflicts ?? "?"}` : r.result === "timer" ? "timer, unknown" : r.result === "unreachable" ? "unreachable" : r.result === "error" ? "no usable answer" : `${lastChange(live!, state.now)}  p${r.status?.pending ?? "?"} c${r.status?.conflicts ?? "?"}`;
   segments(c, 0, y, [[selected ? "▌" : " ", st(s.brand)], [`${dot} `, st({ fg: color(h) })], [pad(host.name, 12), st(s.bold)], [` ${truncate(detail, Math.max(0, c.w - 17))}`, st(s.sub)]]);
 }
 
@@ -132,11 +143,14 @@ function summary(state: State): Seg[] {
   const loading = n((l) => l?.phase === "loading");
   const down = n((l) => l?.result?.result === "unreachable" || l?.result?.result === "error");
   const timer = n((l) => l?.result?.result === "timer");
-  const pending = lives.reduce((a, l) => a + (l?.result?.status?.pending ?? 0), 0);
-  const conflicts = lives.reduce((a, l) => a + (l?.result?.status?.conflicts ?? 0), 0);
+  const old = n((l) => l?.seen != null);
+  // Only what a host has said this run is counted.
+  const pending = lives.reduce((a, l) => a + (l?.seen ? 0 : (l?.result?.status?.pending ?? 0)), 0);
+  const conflicts = lives.reduce((a, l) => a + (l?.seen ? 0 : (l?.result?.status?.conflicts ?? 0)), 0);
   const sep: Seg = ["  ·  ", s.faint];
   const segs: Seg[] = [[plural(hosts.length, "host"), s.text]];
   if (loading > 0) segs.push(sep, [`${spinner(state.now, state.motion)} asking ${loading}`, s.brand]);
+  if (old > 0) segs.push(sep, [`${old} seen earlier, not live`, s.warn]);
   if (down > 0) segs.push(sep, [`${down} unreachable`, s.bad]);
   if (timer > 0) segs.push(sep, [state.size.cols >= 100 ? `${timer} on timer, status unknown` : `${timer} timer`, s.muted]);
   segs.push(sep, ["pending ", s.muted], [String(pending), pending ? s.warn : s.ok], sep, ["conflicts ", s.muted], [String(conflicts), conflicts ? s.bad : s.ok]);
@@ -156,6 +170,7 @@ function drawDetail(c: Canvas, y: number, h: number, host: HostInfo, state: Stat
     ["servers", names(model.servers)],
     ["clone", fleet ? `${fleet.sha}${fleet.branch ? ` on ${fleet.branch}` : ""}` : "unknown"],
     ["changed", at ?? "unknown"],
+    ...(seenAgo(state.live[host.name], state.now) === null ? [] : ([["seen", `${seenAgo(state.live[host.name], state.now)!.slice(5)}, not live; asking again`]] as [string, string][])),
   ];
   rows.slice(0, h - 2).forEach(([k, v], i) => segments(c, 3, y + 1 + i, [[pad(k, 9), s.muted], [v, s.sub]], c.w - 6));
 }

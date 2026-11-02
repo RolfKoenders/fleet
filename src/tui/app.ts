@@ -2,6 +2,7 @@ import type { App, Cmd, Core } from "./runtime.ts";
 import type { Conflict } from "../plan.ts";
 import type { ConflictsResult, HostResult, Probe } from "./probe.ts";
 import type { FleetEvent } from "../events.ts";
+import type { StatusFields } from "../status.ts";
 import type { PreviewResult, Pusher } from "./pusher.ts";
 import { finish, reduce, startRun } from "./pushrun.ts";
 import type { PushEnd, PushRun } from "./pushrun.ts";
@@ -14,6 +15,7 @@ import type { Key } from "./input.ts";
 import type { Model } from "./model.ts";
 import { visibleRows } from "./model.ts";
 import type { Size } from "./terminal.ts";
+import type { CachedHost } from "./cache.ts";
 import type { CatalogView, CommitDiff, History, SecretsView } from "./reads.ts";
 import { drawApp } from "./views/index.ts";
 import { catalogItems } from "./views/catalog.ts";
@@ -27,6 +29,8 @@ export type HostLive = {
   /** When the answer arrived, on the runtime's clock. */
   at: number | null;
   result: HostResult | null;
+  /** Set while `result` is what an earlier run of the bridge saw and no answer to this run has come: how long ago, and when it was loaded. It is not live. */
+  seen: { agoSeconds: number; since: number } | null;
 };
 
 export type ConflictsLive = { phase: "loading" | "done"; items: Conflict[]; detail: string | null; selected: number };
@@ -87,7 +91,17 @@ export type Msg =
   | { type: "fault"; text: string };
 
 /** `pusher` is absent where pushing is not offered. */
-export type Options = { model: Model; probe: Probe; pusher?: Pusher; motion: boolean; boot: boolean };
+export type Options = {
+  model: Model;
+  probe: Probe;
+  pusher?: Pusher;
+  motion: boolean;
+  boot: boolean;
+  /** What an earlier run saw of each host, shown (as old) until the host answers. */
+  cached?: Record<string, CachedHost>;
+  /** Called with each good answer, so it can be remembered for the next run. */
+  remember?: (host: string, status: StatusFields) => void;
+};
 
 export const BOOT_MS = 1700;
 /** A tick this far behind means the terminal or the link cannot keep up with the animation. */
@@ -167,10 +181,10 @@ export function createApp(options: Options): App<State, Msg> {
       const gen = (live[h.name]?.gen ?? 0) + 1;
       // A host with no ssh destination cannot be asked, so there is nothing to wait for.
       if (!h.self && h.ssh === null) {
-        live[h.name] = { phase: "done", gen, since: state.now, at: state.now, result: { result: "timer", status: null } };
+        live[h.name] = { phase: "done", gen, since: state.now, at: state.now, result: { result: "timer", status: null }, seen: null };
         continue;
       }
-      live[h.name] = { phase: "loading", gen, since: state.now, at: live[h.name]?.at ?? null, result: live[h.name]?.result ?? null };
+      live[h.name] = { phase: "loading", gen, since: state.now, at: live[h.name]?.at ?? null, result: live[h.name]?.result ?? null, seen: live[h.name]?.seen ?? null };
       cmds.push(askHost(h.name, gen));
     }
     const hasSelf = model.self !== null;
@@ -368,6 +382,12 @@ export function createApp(options: Options): App<State, Msg> {
 
   return {
     init(size) {
+      const live: Record<string, HostLive> = {};
+      for (const h of model.hosts) {
+        const kept = options.cached?.[h.name];
+        // This host is read in place and answers at once, so only the others are remembered.
+        if (kept && !h.self) live[h.name] = { phase: "loading", gen: 0, since: 0, at: null, result: kept.result, seen: { agoSeconds: kept.agoSeconds, since: 0 } };
+      }
       const state: State = {
         size,
         now: 0,
@@ -376,7 +396,7 @@ export function createApp(options: Options): App<State, Msg> {
         screen: "home",
         overlay: null,
         boot: { start: null, done: !options.boot },
-        live: {},
+        live,
         conflicts: { phase: "loading", items: [], detail: null, selected: 0 },
         push: { phase: "idle" },
         reviews: 0,
@@ -410,7 +430,9 @@ export function createApp(options: Options): App<State, Msg> {
         case "host": {
           const current = state.live[message.host];
           if (!current || current.gen !== message.gen) return [state, []];
-          return [{ ...state, live: { ...state.live, [message.host]: { ...current, phase: "done", at: state.now, result: message.result } } }, []];
+          const remember = options.remember;
+          const keep: Cmd<Msg>[] = remember && message.result.result === "ok" && message.result.status && !model.hosts.find((h) => h.name === message.host)?.self ? [() => remember(message.host, message.result.status!)] : [];
+          return [{ ...state, live: { ...state.live, [message.host]: { ...current, phase: "done", at: state.now, result: message.result, seen: null } } }, keep];
         }
         case "conflicts": {
           const r = message.result;

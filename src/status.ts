@@ -211,7 +211,7 @@ export const count = (value: unknown): number | null => (typeof value === "numbe
  * A remote host's status, cut down to the fields fleet knows and to printable text, because it is shown on a
  * terminal and a host can be wrong. Null when the document has no fleet clone state, such as a failed status.
  */
-function fromDocument(doc: Obj): StatusFields | null {
+export function statusFromDocument(doc: Obj): StatusFields | null {
   const repos = isObject(doc.repos) ? doc.repos : {};
   const fleet = repos.fleet;
   if (!isObject(fleet) || typeof fleet.clean !== "boolean") return null;
@@ -249,7 +249,7 @@ export function hostStatusFrom(host: string, r: SshOutcome, notes: string[]): Ho
   } catch {
     // not a document
   }
-  const fields = doc === null ? null : fromDocument(doc);
+  const fields = doc === null ? null : statusFromDocument(doc);
   if (fields !== null) return { host, result: "ok", status: fields };
   const detail =
     doc !== null && typeof doc.code === "string"

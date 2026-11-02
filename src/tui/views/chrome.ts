@@ -16,7 +16,7 @@ export function conflictTotal(state: State): number {
   let n = state.conflicts.items.length;
   for (const h of state.model.hosts) {
     const r = state.live[h.name]?.result;
-    if (!h.self && r?.status && r.status.conflicts) n += r.status.conflicts;
+    if (!h.self && r?.status && r.status.conflicts && !state.live[h.name]?.seen) n += r.status.conflicts;
   }
   return n;
 }

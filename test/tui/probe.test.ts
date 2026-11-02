@@ -9,7 +9,7 @@ import { createApp } from "../../src/tui/app.ts";
 import { loadModel } from "../../src/tui/model.ts";
 import { realProbe } from "../../src/tui/probe.ts";
 import { runOnTerminal } from "../../src/tui/runtime.ts";
-import { cannedProbe } from "./fixture.ts";
+import { CACHE_FILE, cannedProbe } from "./fixture.ts";
 
 const doc = (over: Record<string, unknown> = {}) =>
   JSON.stringify({
@@ -43,10 +43,11 @@ function world(hosts: Record<string, SshPlan | null>) {
 }
 
 // The fake tools log their own calls into the home; those logs are the test's, not the bridge's.
+// The host cache is the one file the bridge may write under the home, and the probes do not write it.
 const tree = (dir: string): string[] =>
   readdirSync(dir, { withFileTypes: true }).filter((e) => !e.name.endsWith("-calls.log")).flatMap((e) => {
     const p = join(dir, e.name);
-    return e.isDirectory() ? tree(p) : [`${p} ${statSync(p).size} ${statSync(p).mtimeMs}`];
+    return e.isDirectory() ? tree(p) : p.endsWith(CACHE_FILE) ? [] : [`${p} ${statSync(p).size} ${statSync(p).mtimeMs}`];
   });
 
 const never = new AbortController().signal;
