@@ -3,7 +3,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { installFakeSsh, installStatusTools, makeClone, makeHome, publish, repoRoot } from "../helpers.ts";
+import { git, installFakeSsh, installStatusTools, makeClone, makeHome, publish, repoRoot } from "../helpers.ts";
 import { EXIT } from "../../src/exit.ts";
 import { LEAVE, ENTER } from "../../src/tui/terminal.ts";
 
@@ -13,13 +13,22 @@ const skip = hasScript ? false : "script(1) is not installed, so there is no pty
 type Ran = { code: number | null; out: string };
 
 /** Runs `command` in a real pty made by script(1), types `keys` once `ready` shows, signals it after `signal`. */
-function inPty(command: string, opts: { env: Record<string, string>; ready: string; keys?: string; then?: string; signal?: { name: string; pattern: string } }): Promise<Ran> {
+function inPty(command: string, opts: { env: Record<string, string>; ready: string; keys?: string; then?: string; signal?: { name: string; pattern: string }; steps?: { until: string; keys: string }[] }): Promise<Ran> {
   return new Promise((resolve, reject) => {
     const child = spawn("script", ["-qec", `stty cols 100 rows 30; ${command}`, "/dev/null"], { env: { PATH: "/usr/bin:/bin", ...opts.env }, stdio: ["pipe", "pipe", "pipe"] });
     let out = "";
     let acted = false;
+    // Each step waits until its text has newly appeared in the output, then types its keys.
+    const steps = [...(opts.steps ?? [])];
+    let seen = 0;
     child.stdout.setEncoding("utf8").on("data", (d: string) => {
       out += d;
+      const step = steps[0];
+      if (step && out.indexOf(step.until, seen) >= 0) {
+        seen = out.indexOf(step.until, seen) + step.until.length;
+        steps.shift();
+        setTimeout(() => child.stdin.write(step.keys), 150);
+      }
       if (acted || !out.includes(opts.ready)) return;
       acted = true;
       setTimeout(() => {
@@ -144,4 +153,27 @@ test("bare fleet still prints help, and the help lists bridge as a read command"
   assert.match(r.stdout, /^ {2}bridge +Open the full-screen view/m);
   const agent = spawnSync(join(w.clone, "bin/fleet"), ["agent"], { env: { PATH: "/usr/bin:/bin", ...w.env }, encoding: "utf8", input: "" });
   assert.match(agent.stdout, /### Read-only[\s\S]*fleet bridge[\s\S]*### Changes things/);
+});
+
+test("pty: P, the typed word and enter run a real push in a temp home, and the lanes tick off", { skip }, async () => {
+  const w = bridgeWorld();
+  installFakeSsh(w.home, { "me@other": { stdout: JSON.stringify({ ok: true, code: "ok", host: "other", messages: [], created: [{}, {}], updated: [], removed: [], conflicts: [] }) } });
+  writeFileSync(join(w.clone, "notes.md"), "a note\n");
+  const env = { ...w.env, GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_SYSTEM: "/dev/null", GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@example.com", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@example.com" };
+  const r = await inPty(w.command, {
+    env,
+    ready: "laptop",
+    keys: "P",
+    steps: [
+      { until: "notes.md", keys: "push" },
+      { until: "push\u001b", keys: "\r" },
+      { until: "Push finished", keys: "q" },
+    ],
+  });
+  assert.ok(r.out.includes("Review before you push"));
+  assert.match(r.out, /Push finished/);
+  assert.match(r.out, /other/);
+  assert.match(r.out, /EXIT=0/);
+  assert.equal(git(w.clone, "log", "-1", "--format=%s", "main"), "fleet push from laptop: 1 files");
+  assert.ok(cooked(r.out.slice(r.out.indexOf("EXIT="))), "the tty is back in cooked mode");
 });
