@@ -1,8 +1,10 @@
 import { spawnSync } from "node:child_process";
 import { existsSync, lstatSync } from "node:fs";
+import { basename } from "node:path";
 import { homedir } from "node:os";
 import { failure } from "./apply.ts";
 import { loadConfig } from "./config.ts";
+import type { Config } from "./config.ts";
 import { readHostName } from "./host.ts";
 import { CLAUDE_JSON } from "./mcp.ts";
 import { probe } from "./mcpprobe.ts";
@@ -29,7 +31,10 @@ export type Check = { name: string; result: "ok" | "problem"; detail: string | n
 type ServerResult = ProbeResult;
 const SERVER_RESULTS: ServerResult[] = ["ok", "auth-needed", "unreachable", "missing-binary", "bad-response", "exited", "timeout"];
 
-/** One server as one tool has it rendered. `fails` is false for a result that is expected until a person logs in. */
+/**
+ * One server as one tool has it rendered. `protocol` is the MCP revision it answered in (null when it did
+ * not answer). `fails` is false for a result that is expected until a person logs in.
+ */
 export type ServerCheck = {
   server: string;
   tool: "claude" | "opencode";
@@ -37,6 +42,7 @@ export type ServerCheck = {
   result: ServerResult;
   tools: number | null;
   latencyMs: number | null;
+  protocol: string | null;
   detail: string | null;
   fails: boolean;
 };
@@ -70,16 +76,23 @@ function isLink(path: string): boolean {
   }
 }
 
-function localChecks(home: string): Check[] {
-  const timer = timerState(home);
+/** `usesSecrets` is null when the config could not be read, so it is not known. */
+function ageKey(home: string, usesSecrets: boolean | null): Check {
+  const name = "age-key";
   const key = ageKeyPath(home);
+  if (existsSync(key)) return { name, result: "ok", detail: null };
+  // Only a host whose config uses secrets needs the key.
+  if (usesSecrets === true) return { name, result: "problem", detail: `no age key at ${shown(key, home)}; \`fleet init\` creates it` };
+  return { name, result: "ok", detail: usesSecrets === false ? "none, and this host's config uses no secrets" : "none, and the config could not be read to tell whether it uses secrets" };
+}
+
+function localChecks(home: string, usesSecrets: boolean | null): Check[] {
+  const timer = timerState(home);
   return [
     timer === "active"
       ? { name: "timer", result: "ok", detail: "active" }
       : { name: "timer", result: "problem", detail: timer === null ? "unknown (the scheduler is not installed or gave no answer)" : timer },
-    existsSync(key)
-      ? { name: "age-key", result: "ok", detail: null }
-      : { name: "age-key", result: "problem", detail: `no age key at ${shown(key, home)}; \`fleet init\` creates it` },
+    ageKey(home, usesSecrets),
     skillLinks(home),
   ];
 }
@@ -117,8 +130,10 @@ function clean(text: string, secrets: string[]): string {
   return printable(out) ?? "";
 }
 
-async function checkServers(configDir: string, host: string, home: string, timeoutMs: number): Promise<ServerCheck[]> {
-  const config = loadConfig(configDir, host, { home, sources: "none" });
+const isNpx = (target: ProbeTarget): boolean => target.kind === "stdio" && basename(target.command[0]!) === "npx";
+const NPX_HINT = "npx may still be downloading the package; retry with a higher --timeout";
+
+async function checkServers(config: Config, configDir: string, host: string, home: string, timeoutMs: number): Promise<ServerCheck[]> {
   const keys = config.keys.filter((k) => (k.file === CLAUDE_JSON && k.path.startsWith("mcpServers.")) || (k.file === SETTINGS_FILE.opencode && k.path.startsWith("mcp.")));
   // Only the secrets the servers use are decrypted.
   const names = [...new Set(keys.flatMap((k) => secretNames(k.value)))].sort();
@@ -133,10 +148,11 @@ async function checkServers(configDir: string, host: string, home: string, timeo
   const records = await Promise.all(
     planned.map(async (p): Promise<ServerCheck> => {
       const base = { server: p.server, tool: p.tool, transport: p.transport };
-      if (p.target === null) return { ...base, result: "bad-response", tools: null, latencyMs: null, detail: "the rendered entry has an unexpected shape", fails: true };
+      if (p.target === null) return { ...base, result: "bad-response", tools: null, latencyMs: null, protocol: null, detail: "the rendered entry has an unexpected shape", fails: true };
       const r = await probe(p.target, timeoutMs, extraDirs);
       const fails = r.result !== "ok" && !(r.result === "auth-needed" && !p.credentials);
-      return { ...base, result: r.result, tools: r.tools, latencyMs: r.latencyMs, detail: r.detail === null ? null : clean(r.detail, secretValues), fails };
+      const detail = r.detail === null ? null : clean(r.detail, secretValues);
+      return { ...base, result: r.result, tools: r.tools, latencyMs: r.latencyMs, protocol: r.protocol, detail: r.result === "timeout" && isNpx(p.target) ? `${detail ?? "no answer in time"}; ${NPX_HINT}` : detail, fails };
     }),
   );
   return records.sort((a, b) => a.server.localeCompare(b.server) || a.tool.localeCompare(b.tool));
@@ -147,10 +163,16 @@ async function checkServers(configDir: string, host: string, home: string, timeo
 const good = (color: boolean, text: string) => paint(color, "green", text);
 const warn = (color: boolean, text: string) => paint(color, "yellow", text);
 
+/** A server that wants a login, with no credentials configured, is not a failure: doctor cannot see login state. */
+const isLogin = (s: ServerCheck): boolean => s.result === "auth-needed" && !s.fails;
+const shownResult = (s: ServerCheck): string => (isLogin(s) ? "login" : s.result);
+const LOGIN_NOTE = "login: the server wants a login, and doctor cannot see login state";
+
 function serverLine(s: ServerCheck, color: boolean): string {
-  const facts = [s.tools === null ? null : `${s.tools} tool${s.tools === 1 ? "" : "s"}`, s.latencyMs === null ? null : `${s.latencyMs} ms`].filter((f) => f !== null);
-  const result = s.result === "ok" ? good(color, "ok") : warn(color, s.result);
-  return `  ${s.server} (${s.tool}, ${s.transport}): ${result}${facts.length > 0 ? `, ${facts.join(", ")}` : ""}${s.detail === null ? "" : ` (${s.detail})`}`;
+  const facts = [s.tools === null ? null : `${s.tools} tool${s.tools === 1 ? "" : "s"}`, s.latencyMs === null ? null : `${s.latencyMs} ms`, s.protocol === null ? null : `MCP ${s.protocol}`].filter((f) => f !== null);
+  const result = s.result === "ok" ? good(color, "ok") : isLogin(s) ? shownResult(s) : warn(color, s.result);
+  const detail = isLogin(s) ? null : s.detail;
+  return `  ${s.server} (${s.tool}, ${s.transport}): ${result}${facts.length > 0 ? `, ${facts.join(", ")}` : ""}${detail === null ? "" : ` (${detail})`}`;
 }
 
 function lines(fields: DoctorFields, color: boolean): string[] {
@@ -159,6 +181,7 @@ function lines(fields: DoctorFields, color: boolean): string[] {
     ...fields.checks.map((c) => `  ${c.name}: ${c.result === "ok" ? good(color, "ok") : warn(color, "problem")}${c.detail === null ? "" : ` (${c.detail})`}`),
     fields.servers.length === 0 ? "mcp servers: none picked" : "mcp servers:",
     ...fields.servers.map((s) => serverLine(s, color)),
+    ...(fields.servers.some(isLogin) ? [LOGIN_NOTE] : []),
   ];
 }
 
@@ -172,18 +195,29 @@ const plural = (n: number) => `${n} problem${n === 1 ? "" : "s"}`;
 export async function doctor(configDir: string, color: boolean, timeoutSeconds: number = DEFAULT_TIMEOUT_SECONDS, home: string = homedir()): Promise<Result> {
   const host = readHostName(home);
   if (host === null) return { code: "invalid", messages: ["fleet: no host name set; `fleet init <host>` writes one"] };
-  const fields: DoctorFields = { checks: localChecks(home), servers: [] };
+  let config: Config | null = null;
+  let failed: Result | null = null;
   try {
-    fields.servers = await checkServers(configDir, host, home, Math.round(timeoutSeconds * 1000));
+    config = loadConfig(configDir, host, { home, sources: "none" });
   } catch (error) {
-    // The local checks still stand; the servers could not even be listed.
+    failed = failure(error);
+    if (failed === null) throw error;
+  }
+  // Whether secrets are used is read from the config, without decrypting anything.
+  const fields: DoctorFields = { checks: localChecks(home, config === null ? null : config.secrets.length > 0), servers: [] };
+  // The local checks still stand when the servers could not even be listed.
+  const stopped = (result: Result): Result => ({ ...result, text: [`host: ${host}`, ...lines(fields, color)].join("\n"), fields: { ...fields } });
+  if (failed !== null) return stopped(failed);
+  try {
+    fields.servers = await checkServers(config!, configDir, host, home, Math.round(timeoutSeconds * 1000));
+  } catch (error) {
     const result = failure(error);
     if (result === null) throw error;
-    return { ...result, text: [`host: ${host}`, ...lines(fields, color)].join("\n"), fields: { ...fields } };
+    return stopped(result);
   }
   const problems = problemCount(fields);
   return {
-    code: problems === 0 ? "ok" : "error",
+    code: problems === 0 ? "ok" : "unhealthy",
     text: [`host: ${host}`, ...lines(fields, color)].join("\n"),
     messages: problems === 0 ? [] : [`fleet: doctor found ${plural(problems)}`],
     fields: { ...fields },
@@ -209,7 +243,7 @@ const serverOf = (v: unknown): ServerCheck | null => {
   const transport = (["stdio", "http", "sse", "remote"] as const).find((t) => t === v.transport) ?? null;
   if (tool === null || transport === null) return null;
   const result = asServerResult(v.result);
-  return { server: printable(v.server)!, tool, transport, result, tools: count(v.tools), latencyMs: count(v.latencyMs), detail: printable(v.detail), fails: v.fails === true || (v.fails !== false && result !== "ok") };
+  return { server: printable(v.server)!, tool, transport, result, tools: count(v.tools), latencyMs: count(v.latencyMs), protocol: printable(v.protocol), detail: printable(v.detail), fails: v.fails === true || (v.fails !== false && result !== "ok") };
 };
 
 /** A remote host's answer cut down to the fields fleet knows and to printable text, because a host can be wrong. */
@@ -242,7 +276,7 @@ function ask(ssh: string, dest: string, host: string, timeoutSeconds: number | u
     // not a document
   }
   const fields = doc === null ? null : fromDocument(doc);
-  if (doc !== null && fields !== null && (doc.code === "ok" || doc.code === "error")) {
+  if (doc !== null && fields !== null && (doc.code === "ok" || doc.code === "unhealthy")) {
     return { host, result: doc.code === "ok" ? "ok" : "problems", doctor: fields };
   }
   const detail =
@@ -257,7 +291,7 @@ const cell = (record: HostDoctor, row: { check: string } | { server: string; too
   if (record.doctor === null) return record.result;
   if ("check" in row) return record.doctor.checks.find((c) => c.name === row.check)?.result === "ok" ? "ok" : record.doctor.checks.some((c) => c.name === row.check) ? "problem" : "-";
   const s = record.doctor.servers.find((x) => x.server === row.server && x.tool === row.tool);
-  return s === undefined ? "-" : s.result === "ok" ? `ok (${s.tools ?? "?"})` : s.result;
+  return s === undefined ? "-" : s.result === "ok" ? `ok (${s.tools ?? "?"})` : shownResult(s);
 };
 
 function grid(records: HostDoctor[], self: string | null, color: boolean): string {
@@ -274,7 +308,7 @@ function grid(records: HostDoctor[], self: string | null, color: boolean): strin
   const widths = [Math.max(5, ...rows.map((r) => r.label.length)), ...heads.map((h, i) => Math.max(h.length, ...body.map((b) => b[i]!.length)))];
   const paintCell = (text: string, width: number) => {
     const padded = text.padEnd(width);
-    return text.startsWith("ok") ? good(color, padded) : text === "-" ? padded : warn(color, padded);
+    return text.startsWith("ok") ? good(color, padded) : text === "-" || text === "login" ? padded : warn(color, padded);
   };
   const out = [["check".padEnd(widths[0]!), ...heads.map((h, i) => h.padEnd(widths[i + 1]!))].join("  ").trimEnd()];
   rows.forEach((row, r) => out.push([row.label.padEnd(widths[0]!), ...body[r]!.map((c, i) => paintCell(c, widths[i + 1]!))].join("  ").trimEnd()));
@@ -283,9 +317,10 @@ function grid(records: HostDoctor[], self: string | null, color: boolean): strin
   for (const rec of records) {
     if (rec.detail !== undefined) details.push(`${rec.host}: ${rec.detail}`);
     for (const c of rec.doctor?.checks ?? []) if (c.result !== "ok" && c.detail !== null) details.push(`${rec.host}: ${c.name}: ${c.detail}`);
-    for (const s of rec.doctor?.servers ?? []) if (s.result !== "ok" && s.detail !== null) details.push(`${rec.host}: ${s.server} (${s.tool}): ${s.detail}`);
+    for (const s of rec.doctor?.servers ?? []) if (s.result !== "ok" && !isLogin(s) && s.detail !== null) details.push(`${rec.host}: ${s.server} (${s.tool}): ${s.detail}`);
     if (rec.result === "timer") details.push(`${rec.host}: no ssh destination; it applies on its own schedule, and doctor cannot reach it`);
   }
+  if (records.some((rec) => rec.doctor?.servers.some(isLogin))) details.push(LOGIN_NOTE);
   return [...out, ...(details.length > 0 ? ["", ...details] : [])].join("\n");
 }
 
@@ -309,13 +344,13 @@ export async function doctorAll(configDir: string, color: boolean, timeoutSecond
   records.push(
     mine === undefined
       ? { host: self, result: "error", doctor: null, detail: (here.messages ?? [here.code]).map((m) => m.replace(/^fleet: /, "")).join("; ") }
-      : here.code === "ok" || here.code === "error"
+      : here.code === "ok" || here.code === "unhealthy"
         ? { host: self, result: here.code === "ok" ? "ok" : "problems", doctor: mine }
         : { host: self, result: "error", doctor: mine, detail: `its doctor gave ${here.code}` },
   );
   records.sort((a, b) => a.host.localeCompare(b.host));
 
   // This host's own failure to start (a bad config, a missing secret) keeps its code, as `status --all` does. Then unreachable, then the rest.
-  const code = here.code !== "ok" && here.code !== "error" ? here.code : records.some((r) => r.result === "unreachable") ? "unreachable" : records.some((r) => r.result === "problems" || r.result === "error") ? "error" : "ok";
+  const code = here.code !== "ok" && here.code !== "unhealthy" ? here.code : records.some((r) => r.result === "unreachable") ? "unreachable" : records.some((r) => r.result === "error") ? "error" : records.some((r) => r.result === "problems") ? "unhealthy" : "ok";
   return { code, text: grid(records, self, color), messages: notes, fields: { ...(mine ?? {}), hosts: records } };
 }

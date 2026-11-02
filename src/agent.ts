@@ -38,6 +38,7 @@ const EXIT_MEANING: Record<ExitName, string> = {
   "needs-secret": "A key, secret or sops is missing or too old",
   "missing-prerequisite": "Node, git, sops, age-keygen, claude or opencode is missing",
   locked: "Another apply is running",
+  unhealthy: "`fleet doctor` ran and found a failed check",
 };
 
 /** The push rule. The `fleet` skill says the same in its own words. */

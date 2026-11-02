@@ -9,6 +9,7 @@ export const EXIT = {
   "needs-secret": 5,
   "missing-prerequisite": 6,
   locked: 7,
+  unhealthy: 8,
 } as const;
 
 export type ExitName = keyof typeof EXIT;
