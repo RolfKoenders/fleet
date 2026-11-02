@@ -9,7 +9,10 @@ import type { Key } from "./input.ts";
 import type { Model } from "./model.ts";
 import { visibleRows } from "./model.ts";
 import type { Size } from "./terminal.ts";
+import type { CatalogView, CommitDiff, History, SecretsView } from "./reads.ts";
 import { drawApp } from "./views/index.ts";
+import { catalogItems } from "./views/catalog.ts";
+import { diffLines } from "./views/timeline.ts";
 
 export type HostLive = {
   phase: "loading" | "done";
@@ -22,6 +25,19 @@ export type HostLive = {
 };
 
 export type ConflictsLive = { phase: "loading" | "done"; items: Conflict[]; detail: string | null; selected: number };
+
+export type TimelineLive = {
+  phase: "loading" | "done";
+  history: History | null;
+  selected: number;
+  /** The diff of each commit asked for, by sha; `loading` while it is being read. */
+  diffs: Record<string, CommitDiff | "loading">;
+  scroll: number;
+};
+
+export type SecretsLive = { phase: "loading" | "done"; view: SecretsView | null; mode: "names" | "hosts"; selected: number };
+
+export type CatalogLive = { phase: "loading" | "done"; view: CatalogView | null; query: string; typing: boolean; selected: number; scroll: number };
 
 export type Overlay = null | { kind: "help" } | { kind: "palette"; query: string; selected: number };
 
@@ -36,6 +52,9 @@ export type State = {
   boot: { start: number | null; done: boolean };
   live: Record<string, HostLive>;
   conflicts: ConflictsLive;
+  timeline: TimelineLive;
+  secrets: SecretsLive;
+  catalog: CatalogLive;
   home: { selected: number };
   matrix: { row: number; col: number; expanded: string[] };
   fault: string | null;
@@ -44,6 +63,10 @@ export type State = {
 export type Msg =
   | { type: "host"; host: string; gen: number; result: HostResult }
   | { type: "conflicts"; result: ConflictsResult }
+  | { type: "history"; result: History }
+  | { type: "commitDiff"; sha: string; result: CommitDiff }
+  | { type: "secrets"; view: SecretsView }
+  | { type: "catalog"; view: CatalogView }
   | { type: "fault"; text: string };
 
 export type Options = { model: Model; probe: Probe; motion: boolean; boot: boolean };
@@ -67,6 +90,19 @@ export function createApp(options: Options): App<State, Msg> {
     send({ type: "conflicts", result: await probe.conflicts(signal) });
   };
 
+  const askHistory: Cmd<Msg> = async ({ send, signal }) => send({ type: "history", result: await probe.history(signal) });
+  const askSecrets: Cmd<Msg> = async ({ send, signal }) => send({ type: "secrets", view: await probe.secrets(signal) });
+  const askCatalog: Cmd<Msg> = async ({ send, signal }) => send({ type: "catalog", view: await probe.catalog(signal) });
+  const askDiff = (sha: string): Cmd<Msg> => async ({ send, signal }) => send({ type: "commitDiff", sha, result: await probe.commitDiff(sha, signal) });
+
+  /** Reads the diff of the selected commit, once. */
+  function wantDiff(state: State): [State, Cmd<Msg>[]] {
+    const t = state.timeline;
+    const commit = t.history?.ok ? t.history.commits[t.selected] : undefined;
+    if (!commit || t.diffs[commit.sha] !== undefined) return [state, []];
+    return [{ ...state, timeline: { ...t, diffs: { ...t.diffs, [commit.sha]: "loading" } } }, [askDiff(commit.sha)]];
+  }
+
   /** Starts asking every host at once; each answers on its own time. */
   function refresh(state: State): [State, Cmd<Msg>[]] {
     const live = { ...state.live };
@@ -84,7 +120,19 @@ export function createApp(options: Options): App<State, Msg> {
     const hasSelf = model.self !== null;
     const conflicts: ConflictsLive = { ...state.conflicts, phase: hasSelf ? "loading" : "done", detail: hasSelf ? null : "this host has no name yet, so its own conflicts cannot be planned" };
     if (hasSelf) cmds.push(askConflicts);
-    return [{ ...state, live, conflicts }, cmds];
+    // What was read before stays on screen until the new answer replaces it.
+    cmds.push(askHistory, askSecrets, askCatalog);
+    return [
+      {
+        ...state,
+        live,
+        conflicts,
+        timeline: { ...state.timeline, phase: "loading", diffs: {} },
+        secrets: { ...state.secrets, phase: "loading" },
+        catalog: { ...state.catalog, phase: "loading" },
+      },
+      cmds,
+    ];
   }
 
   function go(state: State, action: Action): [State, Cmd<Msg>[]] {
@@ -149,6 +197,52 @@ export function createApp(options: Options): App<State, Msg> {
     return { ...state, conflicts: { ...state.conflicts, selected: clamp(state.conflicts.selected + d, 0, Math.max(0, n - 1)) } };
   }
 
+  function moveTimeline(state: State, key: Key): [State, Cmd<Msg>[]] {
+    const t = state.timeline;
+    const n = t.history?.ok ? t.history.commits.length : 0;
+    const d = key.name === "down" || key.text === "j" ? 1 : key.name === "up" || key.text === "k" ? -1 : 0;
+    const page = key.name === "pagedown" ? 1 : key.name === "pageup" ? -1 : 0;
+    let selected = clamp(t.selected + d, 0, Math.max(0, n - 1));
+    if (key.name === "home" || key.text === "g") selected = 0;
+    if (key.name === "end" || key.text === "G") selected = Math.max(0, n - 1);
+    const commit = t.history?.ok ? t.history.commits[selected] : undefined;
+    const longest = commit ? diffLines(t.diffs[commit.sha], 0, false).length : 0;
+    const scroll = selected !== t.selected ? 0 : clamp(t.scroll + page * 8, 0, Math.max(0, longest - 1));
+    return wantDiff({ ...state, timeline: { ...t, selected, scroll } });
+  }
+
+  function moveSecrets(state: State, key: Key): State {
+    const sc = state.secrets;
+    if (key.text === "v") return { ...state, secrets: { ...sc, mode: sc.mode === "names" ? "hosts" : "names", selected: 0 } };
+    const n = sc.mode === "names" ? (sc.view?.entries.length ?? 0) : (sc.view?.hosts.length ?? 0);
+    const d = key.name === "down" || key.text === "j" ? 1 : key.name === "up" || key.text === "k" ? -1 : 0;
+    let selected = clamp(sc.selected + d + (key.name === "pagedown" ? 8 : 0) - (key.name === "pageup" ? 8 : 0), 0, Math.max(0, n - 1));
+    if (key.name === "home" || key.text === "g") selected = 0;
+    if (key.name === "end" || key.text === "G") selected = Math.max(0, n - 1);
+    return { ...state, secrets: { ...sc, selected } };
+  }
+
+  function onFilter(state: State, key: Key): State {
+    const c = state.catalog;
+    const set = (query: string, typing: boolean): State => ({ ...state, catalog: { ...c, query, typing, selected: 0, scroll: 0 } });
+    if (key.name === "escape" || (key.ctrl && key.text === "c")) return set("", false);
+    if (key.name === "enter") return { ...state, catalog: { ...c, typing: false } };
+    if (key.name === "backspace") return set([...c.query].slice(0, -1).join(""), true);
+    if (key.ctrl && key.text === "u") return set("", true);
+    if (key.name === "down" || key.name === "up") return moveCatalog(state, key);
+    if (key.name === "char" && !key.ctrl && !key.alt && key.text) return set(c.query + key.text, true);
+    return state;
+  }
+
+  function moveCatalog(state: State, key: Key): State {
+    const c = state.catalog;
+    const n = catalogItems(c.view, c.query).length;
+    const d = key.name === "down" || (!c.typing && key.text === "j") ? 1 : key.name === "up" || (!c.typing && key.text === "k") ? -1 : 0;
+    const selected = clamp(c.selected + d, 0, Math.max(0, n - 1));
+    const page = key.name === "pagedown" ? 1 : key.name === "pageup" ? -1 : 0;
+    return { ...state, catalog: { ...c, selected, scroll: selected !== c.selected ? 0 : Math.max(0, c.scroll + page * 8) } };
+  }
+
   function onPalette(state: State, key: Key): [State, Cmd<Msg>[]] {
     const o = state.overlay as Extract<Overlay, { kind: "palette" }>;
     const matches = search(palette, o.query);
@@ -168,6 +262,7 @@ export function createApp(options: Options): App<State, Msg> {
 
   function onKey(state: State, key: Key): [State, Cmd<Msg>[]] {
     if (!state.boot.done) return [{ ...state, boot: { ...state.boot, done: true } }, []];
+    if (state.overlay === null && state.screen === "catalog" && state.catalog.typing) return [onFilter(state, key), []];
     if (state.overlay?.kind === "palette") return onPalette(state, key);
     if (state.overlay?.kind === "help") {
       if (key.name === "escape" || key.text === "?" || key.text === "q" || key.name === "enter") return [{ ...state, overlay: null }, []];
@@ -186,13 +281,22 @@ export function createApp(options: Options): App<State, Msg> {
       const i = SCREENS.findIndex((s) => s.id === state.screen);
       return [{ ...state, screen: SCREENS[(i + (key.name === "tab" ? 1 : SCREENS.length - 1)) % SCREENS.length]!.id }, []];
     }
-    if (key.name === "escape") return [{ ...state, screen: "home" }, []];
+    if (key.name === "escape") {
+      if (state.screen === "catalog" && state.catalog.query !== "") return [{ ...state, catalog: { ...state.catalog, query: "", selected: 0, scroll: 0 } }, []];
+      return [{ ...state, screen: "home" }, []];
+    }
     if (state.screen === "home") {
       if (key.name === "enter") return [{ ...state, screen: "matrix", matrix: { ...state.matrix, col: state.home.selected } }, []];
       if (ch === "c") return [{ ...state, screen: "conflicts" }, []];
       return [moveHome(state, key), []];
     }
     if (state.screen === "matrix") return [moveMatrix(state, key), []];
+    if (state.screen === "timeline") return moveTimeline(state, key);
+    if (state.screen === "secrets") return [moveSecrets(state, key), []];
+    if (state.screen === "catalog") {
+      if (ch === "f") return [{ ...state, catalog: { ...state.catalog, typing: true } }, []];
+      return [moveCatalog(state, key), []];
+    }
     return [moveConflicts(state, key), []];
   }
 
@@ -208,6 +312,9 @@ export function createApp(options: Options): App<State, Msg> {
         boot: { start: null, done: !options.boot },
         live: {},
         conflicts: { phase: "loading", items: [], detail: null, selected: 0 },
+        timeline: { phase: "loading", history: null, selected: 0, diffs: {}, scroll: 0 },
+        secrets: { phase: "loading", view: null, mode: "names", selected: 0 },
+        catalog: { phase: "loading", view: null, query: "", typing: false, selected: 0, scroll: 0 },
         home: { selected: Math.max(0, model.hosts.findIndex((h) => h.self)) },
         matrix: { row: 0, col: Math.max(0, model.hosts.findIndex((h) => h.self)), expanded: [] },
         fault: null,
@@ -242,6 +349,17 @@ export function createApp(options: Options): App<State, Msg> {
           const conflicts: ConflictsLive = r.ok ? { phase: "done", items: r.items, detail: null, selected: clamp(state.conflicts.selected, 0, Math.max(0, r.items.length - 1)) } : { phase: "done", items: [], detail: r.detail, selected: 0 };
           return [{ ...state, conflicts }, []];
         }
+        case "history": {
+          const t = state.timeline;
+          const n = message.result.ok ? message.result.commits.length : 0;
+          return wantDiff({ ...state, timeline: { ...t, phase: "done", history: message.result, selected: clamp(t.selected, 0, Math.max(0, n - 1)) } });
+        }
+        case "commitDiff":
+          return [{ ...state, timeline: { ...state.timeline, diffs: { ...state.timeline.diffs, [message.sha]: message.result } } }, []];
+        case "secrets":
+          return [{ ...state, secrets: { ...state.secrets, phase: "done", view: message.view, selected: clamp(state.secrets.selected, 0, Math.max(0, (state.secrets.mode === "names" ? message.view.entries.length : message.view.hosts.length) - 1)) } }, []];
+        case "catalog":
+          return [{ ...state, catalog: { ...state.catalog, phase: "done", view: message.view } }, []];
         case "fault":
           return [{ ...state, fault: message.text }, []];
       }
@@ -251,7 +369,7 @@ export function createApp(options: Options): App<State, Msg> {
 
     tick(state) {
       if (!state.boot.done) return 33;
-      const loading = Object.values(state.live).some((l) => l.phase === "loading") || state.conflicts.phase === "loading";
+      const loading = Object.values(state.live).some((l) => l.phase === "loading") || state.conflicts.phase === "loading" || state.timeline.phase === "loading" || state.secrets.phase === "loading" || state.catalog.phase === "loading";
       return loading && state.motion ? 80 : 1000;
     },
   };

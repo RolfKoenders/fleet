@@ -29,8 +29,8 @@ export function drawHeader(c: Canvas, state: State): void {
   if (w >= 40) c.text(11, 0, "bridge", s.muted);
 
   const total = conflictTotal(state);
-  const wide = w >= 62;
-  let x = wide ? 20 : 11 + (w >= 40 ? 7 : 0);
+  const wide = w >= 100;
+  let x = wide ? 18 : 11 + (w >= 40 ? 7 : 0);
   for (const tab of SCREENS) {
     const active = tab.id === state.screen;
     const badge = tab.id === "conflicts" && total > 0 ? ` ${total}` : "";

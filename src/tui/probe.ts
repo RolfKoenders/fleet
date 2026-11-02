@@ -6,6 +6,8 @@ import type { Conflict } from "../plan.ts";
 import { findTool } from "../tools.ts";
 import type { HostInfo } from "./model.ts";
 import type { Job } from "./worker.ts";
+import { readCatalog, readCommitDiff, readHistory, readSecrets } from "./reads.ts";
+import type { CatalogView, CommitDiff, History, SecretsView } from "./reads.ts";
 
 /** What one host answered. `timer` is a host with no ssh destination, whose status cannot be asked. */
 export type HostResult = {
@@ -22,7 +24,22 @@ export type Probe = {
   host(host: HostInfo, signal: AbortSignal): Promise<HostResult>;
   /** The conflicts on this host, in full. Other hosts report a count only. */
   conflicts(signal: AbortSignal): Promise<ConflictsResult>;
+  /** The config repo's history, one commit's changes, the secret names, and the catalog with the clones already on disk. None of them decrypts, clones, fetches or writes. */
+  history(signal: AbortSignal): Promise<History>;
+  commitDiff(sha: string, signal: AbortSignal): Promise<CommitDiff>;
+  secrets(signal: AbortSignal): Promise<SecretsView>;
+  catalog(signal: AbortSignal): Promise<CatalogView>;
 };
+
+/** The browsing questions answered from the files under `configDir` and the clones under `home`. */
+export function readingProbe(configDir: string, home: string): Pick<Probe, "history" | "commitDiff" | "secrets" | "catalog"> {
+  return {
+    history: async () => readHistory(configDir, home),
+    commitDiff: async (sha) => readCommitDiff(configDir, home, sha),
+    secrets: async () => readSecrets(configDir, home),
+    catalog: async () => readCatalog(configDir, home),
+  };
+}
 
 function inWorker<T>(job: Job, signal: AbortSignal): Promise<T> {
   return new Promise((resolve, reject) => {
@@ -56,6 +73,7 @@ function ssh(path: string, dest: string, home: string, signal: AbortSignal): Pro
 
 export function realProbe(toolDir: string, configDir: string, home: string): Probe {
   return {
+    ...readingProbe(configDir, home),
     async host(host, signal) {
       if (host.self) {
         const r = await inWorker<Reply>({ op: "status", toolDir, configDir, home }, signal);

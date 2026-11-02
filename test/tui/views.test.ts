@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { bridgeFor, cannedProbe, makeConfig, ok } from "./fixture.ts";
+import { bridgeFor, cannedProbe, makeConfig, noReads, ok } from "./fixture.ts";
 import type { Canned } from "./fixture.ts";
 import { createApp } from "../../src/tui/app.ts";
 import { Headless } from "../../src/tui/headless.ts";
@@ -26,6 +26,7 @@ test("home: other hosts fill in as they answer, each on its own, and an unreacha
   const probe: Probe = {
     host: (h: HostInfo) => (h.self ? Promise.resolve(ok()) : h.ssh === null ? Promise.resolve({ result: "timer", status: null }) : new Promise((resolve) => (answers[h.name] = resolve as never))),
     conflicts: async () => ({ ok: true, items: [] }),
+    ...noReads,
   };
   const model = loadModel(makeConfig(), "laptop");
   const b = new Headless(createApp({ model, probe, motion: true, boot: false }), { cols: 100, rows: 32 });
@@ -63,6 +64,7 @@ test("home: r asks every host again, and an answer to the earlier question is ig
   const probe: Probe = {
     host: (h) => (h.name === "server" ? new Promise((resolve) => resolvers.push(resolve as never)) : Promise.resolve(h.ssh === null && !h.self ? { result: "timer" as const, status: null } : ok())),
     conflicts: async () => ({ ok: true, items: [] }),
+    ...noReads,
   };
   const b = new Headless(createApp({ model, probe, motion: true, boot: false }), { cols: 100, rows: 32 });
   b.press("r");
@@ -137,7 +139,7 @@ test("matrix: enter expands a bundle into its skills and again collapses it", as
 test("matrix: reading the config asks no host anything", async () => {
   let asked = 0;
   const base = cannedProbe();
-  const probe: Probe = { host: (h, s) => (asked++, base.host(h, s)), conflicts: (s) => base.conflicts(s) };
+  const probe: Probe = { ...base, host: (h, s) => (asked++, base.host(h, s)) };
   const b = new Headless(createApp({ model: loadModel(makeConfig(), "laptop"), probe, motion: true, boot: false }), { cols: 100, rows: 32 });
   const after = asked;
   b.press("2", "down", "right", "enter", "G", "up", "left");

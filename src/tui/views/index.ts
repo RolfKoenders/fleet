@@ -6,9 +6,12 @@ import { theme } from "../theme.ts";
 import { drawBoot } from "./boot.ts";
 import { drawFooter, drawHeader } from "./chrome.ts";
 import type { Hint } from "./chrome.ts";
+import { drawCatalog } from "./catalog.ts";
 import { drawConflicts } from "./conflicts.ts";
 import { drawHome } from "./home.ts";
 import { drawMatrix } from "./matrix.ts";
+import { drawSecrets } from "./secrets.ts";
+import { drawTimeline } from "./timeline.ts";
 import { drawHelp, drawPalette } from "./overlays.ts";
 import { s } from "./ui.ts";
 
@@ -24,6 +27,12 @@ function hints(state: State): Hint[] {
       return [["←↑↓→", "move"], ["enter", "skills"], ["r", "refresh"], ...COMMON];
     case "conflicts":
       return [["↑↓", "select"], ["r", "refresh"], ...COMMON];
+    case "timeline":
+      return [["↑↓", "commit"], ["pgup/dn", "scroll diff"], ["r", "refresh"], ...COMMON];
+    case "secrets":
+      return [["↑↓", "select"], ["v", "by name/host"], ["r", "refresh"], ...COMMON];
+    case "catalog":
+      return state.catalog.typing ? [["type", "filter"], ["enter", "keep"], ["esc", "clear"]] : [["↑↓", "select"], ["f", "filter"], ["pgup/dn", "scroll"], ["r", "refresh"], ...COMMON];
   }
 }
 
@@ -44,7 +53,10 @@ export function drawApp(state: State, c: Canvas): void {
   const body = c.sub(0, BODY_TOP, c.w, bodyHeight(state.size));
   if (state.screen === "home") drawHome(body, state);
   else if (state.screen === "matrix") drawMatrix(body, state);
-  else drawConflicts(body, state);
+  else if (state.screen === "conflicts") drawConflicts(body, state);
+  else if (state.screen === "timeline") drawTimeline(body, state);
+  else if (state.screen === "secrets") drawSecrets(body, state);
+  else drawCatalog(body, state);
   if (state.overlay) c.paint(0, 0, c.w, c.h - 1, { attr: DIM });
   drawFooter(c, c.h - 1, hints(state));
   if (state.fault !== null) c.text(1, c.h - 2, `a background task failed: ${state.fault}`.slice(0, c.w - 2), { fg: theme.warn });
