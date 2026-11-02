@@ -40,13 +40,22 @@ export function send(event: FleetEvent, env: Env = process.env): void {
 
 let guarded = false;
 
-/** Ends the run of a command whose stderr reader has gone away without an error: stderr is only a view. */
-export function ignoreBrokenStderr(): void {
+/**
+ * Ends the dependence of a command on whoever started it. With events on, the command is a child of the bridge or of
+ * a push, and that reader can go away (a closed terminal, a killed bridge) while the work must go on: a write to a
+ * closed pipe on stderr (the events) or on stdout (the final document) is an error to ignore, not a crash that turns a
+ * finished push into a failed exit, and a hangup is not a reason to stop half way through.
+ */
+export function ignoreBrokenPipes(): void {
   if (guarded) return;
   guarded = true;
-  process.stderr.on("error", () => {
+  const gone = (): void => {
     pipeBroken = true;
-  });
+  };
+  process.stderr.on("error", gone);
+  process.stdout.on("error", gone);
+  process.on("SIGHUP", () => {});
+  process.on("SIGPIPE", () => {});
 }
 
 /** A line of human text: on stderr as it is, or as a `message` event when events are on. */

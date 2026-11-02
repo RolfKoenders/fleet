@@ -1,9 +1,10 @@
 import { spawn, spawnSync } from "node:child_process";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { git, installFakeSsh, installStatusTools, makeClone, makeHome, publish, repoRoot } from "../helpers.ts";
+import { git, installFakeSsh, installStatusTools, makeClone, makeHome, publish, repoRoot, writeExecutable } from "../helpers.ts";
 import { EXIT } from "../../src/exit.ts";
 import { LEAVE, ENTER } from "../../src/tui/terminal.ts";
 
@@ -13,7 +14,7 @@ const skip = hasScript ? false : "script(1) is not installed, so there is no pty
 type Ran = { code: number | null; out: string };
 
 /** Runs `command` in a real pty made by script(1), types `keys` once `ready` shows, signals it after `signal`. */
-function inPty(command: string, opts: { env: Record<string, string>; ready: string; keys?: string; then?: string; signal?: { name: string; pattern: string }; steps?: { until: string; keys: string }[] }): Promise<Ran> {
+function inPty(command: string, opts: { env: Record<string, string>; ready: string; keys?: string; then?: string; signal?: { name: string; pattern: string }; steps?: { until: string; keys: string }[]; /** Signals the process once `until` is true (polled), however far the screen has got. */ after?: { until: () => boolean; signal: { name: string; pattern: string } } }): Promise<Ran> {
   return new Promise((resolve, reject) => {
     const child = spawn("script", ["-qec", `stty cols 100 rows 30; ${command}`, "/dev/null"], { env: { PATH: "/usr/bin:/bin", ...opts.env }, stdio: ["pipe", "pipe", "pipe"] });
     let out = "";
@@ -37,11 +38,18 @@ function inPty(command: string, opts: { env: Record<string, string>; ready: stri
         if (opts.signal) spawnSync("pkill", [`-${opts.signal.name}`, "-f", opts.signal.pattern]);
       }, 300);
     });
+    const poll = opts.after ? setInterval(() => {
+      if (!opts.after!.until()) return;
+      clearInterval(poll);
+      spawnSync("pkill", [`-${opts.after!.signal.name}`, "-f", opts.after!.signal.pattern]);
+    }, 25) : undefined;
     const timer = setTimeout(() => {
+      clearInterval(poll);
       child.kill("SIGKILL");
       reject(new Error(`pty run timed out; saw ${JSON.stringify(out.slice(-300))}`));
     }, 20_000);
     child.on("close", (code) => {
+      clearInterval(poll);
       clearTimeout(timer);
       resolve({ code, out });
     });
@@ -178,3 +186,52 @@ test("pty: P, the typed word and enter run a real push in a temp home, and the l
   assert.equal(git(w.clone, "log", "-1", "--format=%s", "main"), "fleet push from laptop: 1 files");
   assert.ok(cooked(r.out.slice(r.out.indexOf("EXIT="))), "the tty is back in cooked mode");
 });
+
+/**
+ * A push, started from the bridge in a real pty, whose bridge is then killed while it is applying on the slow host. The
+ * push has its own session, so it must go on and finish by itself: commit, publish, apply here and on the host.
+ * Everything runs in a temp home with a fake ssh; `FLEET_NODE` is a wrapper that logs how each fleet process ended.
+ */
+async function killedMidPush(signal: string): Promise<{ w: ReturnType<typeof bridgeWorld>; ended: () => string[]; r: Ran }> {
+  const w = bridgeWorld();
+  assert.ok(w.home.startsWith(tmpdir()), "a temp home");
+  const log = join(w.home, "node-exits.log");
+  const node = join(w.home, "node-wrapper");
+  writeExecutable(node, `#!/bin/sh\n"$REAL_NODE" "$@"; code=$?\ncase "$*" in *main.ts*) echo "$code $*" >> "$NODE_LOG";; esac\nexit $code\n`);
+  writeExecutable(join(w.home, ".local/bin/ssh"), `#!/bin/sh\ncase "$*" in\n  *apply*) echo started >> "$HOME/remote-started"; sleep 3; echo "$*" >> "$HOME/remote-done"; printf '%s' '{"ok":true,"code":"ok","host":"other","messages":[],"created":[{}],"updated":[],"removed":[],"conflicts":[]}';;\n  *) exit 255;;\nesac\n`);
+  writeFileSync(join(w.clone, "notes.md"), "a note\n");
+  const env = { ...w.env, FLEET_NODE: node, REAL_NODE: process.execPath, NODE_LOG: log, GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_SYSTEM: "/dev/null", GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@example.com", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@example.com" };
+  const r = await inPty(w.command, {
+    env,
+    ready: "laptop",
+    keys: "P",
+    steps: [
+      { until: "notes.md", keys: "push" },
+      { until: "push\u001b", keys: "\r" },
+    ],
+    after: { until: () => existsSync(join(w.home, "remote-started")), signal: { name: signal, pattern: w.pattern } },
+  });
+  // The terminal is gone. The push is not: wait for the slow host to be done.
+  const until = Date.now() + 20_000;
+  while (!existsSync(join(w.home, "remote-done")) && Date.now() < until) await new Promise((res) => setTimeout(res, 100));
+  assert.ok(existsSync(join(w.home, "remote-done")), "the apply on the slow host ran to its end");
+  const settle = Date.now() + 10_000;
+  const exits = () => (existsSync(log) ? readFileSync(log, "utf8").split("\n").filter((l) => l !== "") : []);
+  while (!exits().some((l) => / push /.test(l)) && Date.now() < settle) await new Promise((res) => setTimeout(res, 100));
+  return { w, ended: exits, r };
+}
+
+for (const signal of ["HUP", "KILL"]) {
+  test(`pty: a push survives its terminal going away (${signal}) and still finishes: commit, publish, applies`, { skip }, async () => {
+    const { w, ended, r } = await killedMidPush(signal);
+    assert.ok(!r.out.includes("Push finished"), "the bridge was gone before the push ended");
+    const remote = git(w.clone, "remote", "get-url", "origin");
+    assert.equal(git(w.clone, "log", "-1", "--format=%s", "main"), "fleet push from laptop: 1 files", "committed");
+    assert.equal(git(remote, "log", "-1", "--format=%s", "main"), "fleet push from laptop: 1 files", "published");
+    assert.ok(existsSync(join(w.home, ".local/state/fleet/applied.json")), "applied here");
+    assert.match(readFileSync(join(w.home, "remote-done"), "utf8"), /apply --json/, "applied on the other host");
+    const lines = ended();
+    assert.ok(lines.some((l) => /^0 .* push --json/.test(l)), `the push itself ended with exit 0, not a crash on its closed pipes: ${lines.join(" | ")}`);
+    assert.ok(lines.some((l) => /^0 .* apply --json/.test(l)), "and so did the local apply");
+  });
+}
