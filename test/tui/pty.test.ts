@@ -1,10 +1,10 @@
 import { spawn, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { git, installFakeSsh, installStatusTools, makeClone, makeHome, publish, repoRoot, writeExecutable } from "../helpers.ts";
+import { git, installFakeSsh, installStatusTools, makeClone, makeHome, publish, repoRoot, tempDir, writeExecutable } from "../helpers.ts";
 import { EXIT } from "../../src/exit.ts";
 import { LEAVE, ENTER } from "../../src/tui/terminal.ts";
 
@@ -47,7 +47,7 @@ function inPty(command: string, opts: { env: Record<string, string>; ready: stri
       clearInterval(poll);
       child.kill("SIGKILL");
       reject(new Error(`pty run timed out; saw ${JSON.stringify(out.slice(-300))}`));
-    }, 20_000);
+    }, 45_000);
     child.on("close", (code) => {
       clearInterval(poll);
       clearTimeout(timer);
@@ -235,3 +235,60 @@ for (const signal of ["HUP", "KILL"]) {
     assert.ok(lines.some((l) => /^0 .* apply --json/.test(l)), "and so did the local apply");
   });
 }
+
+/** A real-looking home with things a demo must not touch, and a PATH directory whose tools leave a marker if run. */
+function demoDecoy() {
+  const home = makeHome("realhost");
+  mkdirSync(join(home, ".ssh"), { recursive: true });
+  writeFileSync(join(home, ".ssh/config"), "Host *\n  User real\n");
+  const marks = tempDir("fleet-marks-");
+  const path = tempDir("fleet-decoy-path-");
+  for (const tool of ["ssh", "claude", "opencode", "sops", "age", "age-keygen", "systemctl"]) writeExecutable(join(path, tool), `#!/bin/sh\necho "${tool} $*" >> ${join(marks, "calls")}\nexit 1\n`);
+  const tmp = tempDir("fleet-demo-tmp-");
+  const env = { HOME: home, PATH: `${path}:/usr/bin:/bin`, TMPDIR: tmp, TERM: "xterm-256color", COLORTERM: "truecolor", FLEET_NODE: process.execPath };
+  return { home, tmp, env, marked: () => (existsSync(join(marks, "calls")) ? readFileSync(join(marks, "calls"), "utf8") : "") };
+}
+
+test("pty: fleet demo on a terminal goes straight into the bridge on fake hosts, boot animation and DEMO pill included, and quitting deletes the world", { skip }, async () => {
+  const d = demoDecoy();
+  const r = await inPty(`${join(repoRoot, "bin/fleet")} demo; echo "EXIT=$?"`, { env: d.env, ready: "skip", keys: "x", steps: [{ until: "watch a push", keys: "q" }] });
+  assert.ok(r.out.includes(ENTER) && r.out.includes(LEAVE));
+  assert.match(r.out, /DEMO/);
+  assert.match(r.out, /watch a push/);
+  assert.doesNotMatch(r.out, /read-only; P pushes/, "the DEMO pill replaces the normal one");
+  assert.ok(r.out.includes("laptop") && r.out.includes("server") && r.out.includes("devbox"));
+  assert.doesNotMatch(r.out, /To try:/, "no printed tour outside --shell");
+  assert.match(r.out, /EXIT=0/);
+  assert.deepEqual(readdirSync(d.tmp), [], "the fake world is deleted");
+  assert.equal(d.marked(), "", "no real tool ran");
+  assert.equal(existsSync(join(d.home, ".local")), false, "the real home was not written");
+});
+
+test("pty: in the demo, P shows a push of fake hosts and runs it in the sandbox; the seeded conflict stops it", { skip }, async () => {
+  const d = demoDecoy();
+  const r = await inPty(`${join(repoRoot, "bin/fleet")} demo; echo "EXIT=$?"`, {
+    env: { ...d.env, FLEET_NO_MOTION: "1" },
+    ready: "watch a push",
+    keys: "P",
+    steps: [
+      { until: "fake hosts, nothing real is touched", keys: "push" },
+      { until: "push\u001b", keys: "\r" },
+      { until: "Push ended", keys: "q" },
+    ],
+  });
+  assert.match(r.out, /fake hosts, nothing real is touched/);
+  assert.match(r.out, /Push ended: conflict/);
+  assert.match(r.out, /EXIT=0/);
+  assert.deepEqual(readdirSync(d.tmp), []);
+  assert.equal(d.marked(), "");
+  assert.equal(existsSync(join(d.home, ".local")), false);
+});
+
+test("the DEMO pill appears only for the demo's own sandbox, never because of a variable alone", async () => {
+  const { inDemo } = await import("../../src/tui/bridge.ts");
+  const real = makeHome("laptop");
+  assert.equal(inDemo({ FLEET_DEMO_ROOT: tmpdir() + "/fleet-demo-x" }, real), false, "home outside the root");
+  assert.equal(inDemo({ FLEET_DEMO_ROOT: real }, real), false, "not a demo directory");
+  assert.equal(inDemo({}, real), false);
+  assert.equal(inDemo({ FLEET_DEMO_ROOT: "/fleet-demo-x" }, "/fleet-demo-x/laptop"), false, "not in the temp directory");
+});

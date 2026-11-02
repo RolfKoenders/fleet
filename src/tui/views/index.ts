@@ -19,6 +19,13 @@ import { s } from "./ui.ts";
 const COMMON: Hint[] = [["ctrl-k", "palette"], ["?", "help"], ["q", "quit"]];
 
 function hints(state: State): Hint[] {
+  const own = baseHints(state);
+  // First, so a narrow terminal cuts the others before it.
+  const watch = state.demo && state.overlay === null && state.push.phase === "idle" && state.screen !== "push" ? ([["press P", "to watch a push"]] as Hint[]) : [];
+  return [...watch, ...own];
+}
+
+function baseHints(state: State): Hint[] {
   if (state.overlay?.kind === "leave") return [["q", "leave anyway"], ["esc", "stay"]];
   if (state.screen === "push" && state.push.phase === "review") return state.push.focus === "message" ? [["type", "commit message"], ["enter", "next"], ["tab", "back to push"], ["esc", "cancel"]] : [["type push", "confirm"], ["enter", "go"], ["tab", "commit message"], ["ctrl-r", "read again"], ["esc", "cancel"]];
   if (state.overlay?.kind === "palette") return [["↑↓", "choose"], ["enter", "go"], ["esc", "close"]];

@@ -60,23 +60,38 @@ async function interactive(sandbox: Sandbox, onChild: (child: ChildProcess) => v
   await new Promise((resolve) => child.on("close", resolve));
 }
 
+/** The bridge, as the admin host's own `fleet`, on the sandbox's fake hosts. It is the demo's whole interface on a terminal. */
+async function bridge(sandbox: Sandbox, onChild: (child: ChildProcess) => void): Promise<number> {
+  const child = spawn(join(sandbox.admin.home, ".local/bin/fleet"), ["bridge"], { cwd: sandbox.config, env: environment(sandbox), stdio: "inherit" });
+  onChild(child);
+  return new Promise((resolve) => {
+    child.once("error", () => resolve(127));
+    child.once("close", (code) => resolve(code ?? 1));
+  });
+}
+
 /**
- * `fleet demo`: builds the sandbox, then gives the person a shell in it, or, without a terminal (or with
- * `--json`), walks the same steps itself. The sandbox is deleted when the process ends, whichever way it ends.
+ * `fleet demo`: builds the sandbox, then on a terminal goes straight into the bridge on its fake hosts (`--shell` gives
+ * a shell in the sandbox with a printed tour instead). Without a terminal, or with `--json`, it walks the tour steps
+ * itself. The sandbox is deleted when the process ends, whichever way it ends.
  */
-export async function demo(toolDir: string, json: boolean, _shell = false): Promise<Result> {
+export async function demo(toolDir: string, json: boolean, shellMode = false): Promise<Result> {
   const sandbox = buildSandbox(toolDir);
   process.once("exit", () => destroy(sandbox.root));
   const tty = process.stdin.isTTY === true && process.stdout.isTTY === true && !json;
-  // The shell is in the terminal's foreground group and gets ^C itself, so the demo only waits for it.
+  // The child is in the terminal's foreground group and gets ^C itself, so the demo only waits for it.
   let shell: ChildProcess | null = null;
   const leave = (code: number) => () => (shell === null ? process.exit(code) : shell.kill("SIGHUP"));
   process.on("SIGINT", tty ? () => {} : leave(130));
   process.on("SIGTERM", leave(143));
   process.on("SIGHUP", leave(129));
-  if (tty) {
+  if (tty && shellMode) {
     await interactive(sandbox, (child) => (shell = child));
     return { code: "ok" };
+  }
+  if (tty) {
+    const code = await bridge(sandbox, (child) => (shell = child));
+    return code === 0 ? { code: "ok" } : { code: "error", messages: [`fleet: the demo's bridge ended with exit ${code}`] };
   }
   if (!json) out(`fleet demo: a throwaway fleet in ${sandbox.root}, deleted when this run ends\n`);
   const steps = walk(sandbox, !json);

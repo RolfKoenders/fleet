@@ -40,6 +40,7 @@ function drawReview(c: Canvas, state: State): void {
   if (p.phase !== "review") return;
   c.text(2, 0, "Review before you push", s.bold);
   wrap("fleet push commits everything listed here (git add -A), pushes it to GitHub, then applies on every host.", c.w - 4).slice(0, 2).forEach((t, i) => c.text(2, 1 + i, t, s.muted));
+  if (state.demo) c.text(2, 3, "Demo: fake hosts, nothing real is touched.", s.warn);
   const prompt = (typed: string, block: ReturnType<typeof pushBlock>) => {
     const y = c.h - 2;
     const focused = p.focus === "confirm";

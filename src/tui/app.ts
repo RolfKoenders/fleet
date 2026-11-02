@@ -66,6 +66,7 @@ export type Overlay = null | { kind: "help" } | { kind: "leave" } | { kind: "doc
 
 export type State = {
   size: Size;
+  demo: boolean;
   now: number;
   motion: boolean;
   model: Model;
@@ -114,6 +115,8 @@ export type Options = {
   remember?: (host: string, status: StatusFields) => void;
   /** Set where doctor must not run (the demo): the reason, shown when `d` is pressed. */
   noDoctor?: string;
+  /** Set by the demo, and only by it: the hosts are made up, and the bridge says so. */
+  demo?: boolean;
 };
 
 export const BOOT_MS = 1700;
@@ -439,6 +442,7 @@ export function createApp(options: Options): App<State, Msg> {
       }
       const state: State = {
         size,
+        demo: options.demo === true,
         now: 0,
         motion: options.motion,
         model,

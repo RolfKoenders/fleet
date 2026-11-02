@@ -128,17 +128,25 @@ test("destroy refuses a directory that is not a demo sandbox", () => {
   assert.throws(() => destroy(join(repoRoot, "src")), /refusing to delete/);
 });
 
-test("on a terminal it starts a shell with a prompt marker and the tour, and deletes the sandbox on exit", { skip: spawnSync("sh", ["-c", "command -v script"]).status !== 0 && "script is not installed" }, () => {
+test("on a terminal, demo --shell starts a shell with a prompt marker and the tour, and deletes the sandbox on exit", { skip: spawnSync("sh", ["-c", "command -v script"]).status !== 0 && "script is not installed" }, () => {
   const d = decoy();
   const before = snapshot(d.home);
   const env = { HOME: d.home, PATH: `${d.path}:/usr/bin:/bin`, TMPDIR: d.tmp, TERM: "dumb", FLEET_NODE: process.execPath };
-  const r = spawnSync("script", ["-qec", `${bin} demo`, "/dev/null"], { input: "fleet status | head -1\nssh me@server hostname 2>&1 | head -1\nexit\n", encoding: "utf8", env, timeout: 90_000 });
+  const r = spawnSync("script", ["-qec", `${bin} demo --shell`, "/dev/null"], { input: "fleet status | head -1\nssh me@server hostname 2>&1 | head -1\nexit\n", encoding: "utf8", env, timeout: 90_000 });
   assert.match(r.stdout, /To try:/);
   assert.match(r.stdout, /\(fleet demo\) .*\$ /);
   assert.match(r.stdout, /host: laptop/);
   assert.deepEqual(readdirSync(d.tmp), []);
   assert.deepEqual(snapshot(d.home), before);
   assert.equal(d.marked(), "");
+});
+
+test("--shell is only for demo, and is listed in the help", () => {
+  const d = decoy();
+  assert.equal(d.run(["status", "--shell"]).code, EXIT.invalid);
+  const help = d.run(["help"]);
+  assert.match(help.stdout, /demo +Try the bridge on made-up hosts.*--shell/);
+  assert.equal(d.run(["demo", "--shell", "--json"]).code, EXIT.ok, "without a terminal the scripted run stays");
 });
 
 test("an argument is refused", () => {
