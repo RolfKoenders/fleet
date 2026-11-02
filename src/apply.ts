@@ -16,6 +16,7 @@ import type { Relayed, Result } from "./output.ts";
 import { readPin } from "./pin.ts";
 import { emptyPlan, expandTarget, planLinks } from "./plan.ts";
 import type { Conflict, LinkPlan } from "./plan.ts";
+import { trimLog } from "./logtrim.ts";
 import { relaunch, relaunched } from "./relaunch.ts";
 import { renderKeys, resolveSecrets } from "./secrets.ts";
 import { SETTINGS_FILE } from "./settings.ts";
@@ -202,6 +203,7 @@ export function apply(toolDir: string, configDir: string, color: boolean, home: 
   };
   const name = readHostName(home);
   try {
+    trimLog(home);
     send({ event: "stage", host: name, stage: "sync" });
     const synced = syncRepos(toolDir, configDir, home);
     if (isResult(synced)) return synced;
