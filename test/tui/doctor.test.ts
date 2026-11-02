@@ -1,4 +1,5 @@
-import { readFileSync, existsSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -7,7 +8,7 @@ import type { DoctorResult } from "../../src/tui/doctorread.ts";
 import { realProbe } from "../../src/tui/probe.ts";
 import { loadModel } from "../../src/tui/model.ts";
 import { bridgeFor, makeConfig } from "./fixture.ts";
-import { makeHome, tempDir, writeExecutable } from "../helpers.ts";
+import { makeClone, makeHome, runFleet, tempDir, writeExecutable } from "../helpers.ts";
 
 const server = (name: string, tool: string, result: string, over: Record<string, unknown> = {}) => ({ server: name, tool, transport: "stdio", result, tools: result === "ok" ? 12 : null, latencyMs: 30, detail: null, fails: result !== "ok" && result !== "login", ...over });
 
@@ -208,4 +209,26 @@ test("with the real probe, opening the bridge runs no doctor child; only the con
   b.press("d", "y");
   await b.settle();
   assert.equal(readFileSync(join(home, "doctor-runs"), "utf8").trim().split("\n").length, 1);
+});
+
+test("against the real fleet doctor in a temp home: exit 8 (unhealthy) is read from the JSON and is not an error", async () => {
+  // No MCP server is picked, so the real doctor starts nothing; its cheap checks fail in a bare home, which is exit 8.
+  const { clone } = makeClone();
+  mkdirSync(join(clone, "hosts"), { recursive: true });
+  writeFileSync(join(clone, "hosts/laptop.yaml"), "{}\n");
+  const home = makeHome("laptop");
+  assert.ok(home.startsWith(tmpdir()));
+  const direct = runFleet(clone, ["doctor", "--json"], { home });
+  assert.equal(direct.code, 8, direct.stderr);
+  assert.equal(JSON.parse(direct.stdout).code, "unhealthy");
+  const r = await realProbe(clone, clone, home).doctor!(false, new AbortController().signal);
+  assert.ok(r.ok, JSON.stringify(r));
+  assert.deepEqual(Object.keys(r.hosts), ["laptop"]);
+  const all = await realProbe(clone, clone, home).doctor!(true, new AbortController().signal);
+  assert.ok(all.ok);
+  const b = await bridgeFor(makeConfig(), { doctor: async () => r });
+  b.press("2", "d", "y");
+  await b.settle();
+  b.advance(50);
+  assert.doesNotMatch(b.frame(), /could not be read/);
 });
