@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -217,7 +217,7 @@ test("against the real fleet doctor in a temp home: exit 8 (unhealthy) is read f
   mkdirSync(join(clone, "hosts"), { recursive: true });
   writeFileSync(join(clone, "hosts/laptop.yaml"), "{}\n");
   const home = makeHome("laptop");
-  assert.ok(home.startsWith(tmpdir()));
+  assert.ok(home.startsWith(realpathSync(tmpdir())));
   const direct = runFleet(clone, ["doctor", "--json"], { home });
   assert.equal(direct.code, 8, direct.stderr);
   assert.equal(JSON.parse(direct.stdout).code, "unhealthy");

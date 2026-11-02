@@ -1,5 +1,5 @@
 import { spawn, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -194,7 +194,7 @@ test("pty: P, the typed word and enter run a real push in a temp home, and the l
  */
 async function killedMidPush(signal: string): Promise<{ w: ReturnType<typeof bridgeWorld>; ended: () => string[]; r: Ran }> {
   const w = bridgeWorld();
-  assert.ok(w.home.startsWith(tmpdir()), "a temp home");
+  assert.ok(w.home.startsWith(realpathSync(tmpdir())), "a temp home");
   const log = join(w.home, "node-exits.log");
   const node = join(w.home, "node-wrapper");
   writeExecutable(node, `#!/bin/sh\n"$REAL_NODE" "$@"; code=$?\ncase "$*" in *main.ts*) echo "$code $*" >> "$NODE_LOG";; esac\nexit $code\n`);
