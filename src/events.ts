@@ -79,3 +79,34 @@ export function readLine(line: string, host: string): FleetEvent {
   }
   return { event: "message", host, text: printable(line) };
 }
+
+/**
+ * Reads one line of the event stream of a command we ran ourselves (push), keeping its events as they are, hosts
+ * included. A line that is not an event of this version is a message of no host.
+ */
+export function parseEvent(line: string): FleetEvent {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(line);
+  } catch {
+    parsed = null;
+  }
+  const o = parsed as Record<string, unknown> | null;
+  const str = (v: unknown, fallback = ""): string => (typeof v === "string" ? printable(v) : fallback);
+  const num = (v: unknown): number => (typeof v === "number" && Number.isFinite(v) && v >= 0 && v < 1e6 ? Math.floor(v) : 0);
+  const host = typeof o?.host === "string" ? printable(o.host) : null;
+  if (o !== null && typeof o === "object" && o.v === EVENT_VERSION) {
+    if (o.event === "message") return { event: "message", host, text: str(o.text) };
+    if (o.event === "stage") return { event: "stage", host, stage: str(o.stage), ...(o.of === undefined ? {} : { of: num(o.of) }) };
+    if (o.event === "step") return { event: "step", host, step: str(o.step), target: str(o.target), n: num(o.n), of: num(o.of) };
+    if (o.event === "hosts" && Array.isArray(o.hosts)) {
+      const via = (v: unknown): "local" | "ssh" | "timer" => (v === "local" || v === "timer" ? v : "ssh");
+      return { event: "hosts", hosts: (o.hosts as Record<string, unknown>[]).map((h) => ({ host: str(h?.host), via: via(h?.via) })) };
+    }
+    if (o.event === "host" && host !== null) {
+      const state = o.state === "done" || o.state === "skip" ? o.state : "start";
+      return { event: "host", host, state, ...(typeof o.result === "string" ? { result: str(o.result) } : {}), ...(typeof o.changes === "number" ? { changes: num(o.changes) } : {}) };
+    }
+  }
+  return { event: "message", host: null, text: printable(line) };
+}
