@@ -146,13 +146,14 @@ test("fleet bridge --json is invalid, with or without a terminal", { skip }, asy
   assert.ok(!p.out.includes(ENTER));
 });
 
-test("bare fleet still prints help, and the help lists bridge as a read command", () => {
+test("bare fleet still prints help, and the help lists bridge as a command that changes things", () => {
   const w = bridgeWorld();
   const r = spawnSync(join(w.clone, "bin/fleet"), [], { env: { PATH: "/usr/bin:/bin", ...w.env }, encoding: "utf8", input: "" });
   assert.equal(r.status, 0);
   assert.match(r.stdout, /^ {2}bridge +Open the full-screen view/m);
   const agent = spawnSync(join(w.clone, "bin/fleet"), ["agent"], { env: { PATH: "/usr/bin:/bin", ...w.env }, encoding: "utf8", input: "" });
-  assert.match(agent.stdout, /### Read-only[\s\S]*fleet bridge[\s\S]*### Changes things/);
+  assert.match(agent.stdout, /### Changes things[\s\S]*fleet bridge/);
+  assert.doesNotMatch(agent.stdout, /### Read-only[\s\S]*fleet bridge[\s\S]*### Changes things/);
 });
 
 test("pty: P, the typed word and enter run a real push in a temp home, and the lanes tick off", { skip }, async () => {
