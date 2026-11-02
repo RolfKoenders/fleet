@@ -3,6 +3,7 @@ import type { Canvas, Style } from "../buffer.ts";
 import type { State } from "../app.ts";
 import { spinner, theme } from "../theme.ts";
 import { truncate, wrap } from "../width.ts";
+import { looksSecret } from "../pushrun.ts";
 import type { Lane, Phase, PushRun } from "../pushrun.ts";
 import { pad, plural, s, segments } from "./ui.ts";
 import type { Seg } from "./ui.ts";
@@ -13,19 +14,48 @@ export const CONFIRM_WORD = "push";
 const STAGE_WORDS: Record<string, string> = { sync: "syncing repos", plan: "planning", write: "writing" };
 const STEP_WORDS: Record<string, string> = { "write-link": "link", "remove-link": "unlink", "write-keys": "keys", "add-server": "add server", "remove-server": "remove server" };
 
-/** Paths that look like they hold a secret in the clear. An encrypted `.enc.yaml` is how secrets are meant to be pushed. */
-const SENSITIVE = /(^|\/)(\.env[^/]*|[^/]*\.pem|[^/]*\.key|id_[a-z0-9]+|[^/]*secret[^/]*|[^/]*token[^/]*)$/i;
-const looksSecret = (path: string): boolean => SENSITIVE.test(path) && !path.endsWith(".enc.yaml");
+/** The longest commit message the box takes. */
+export const MESSAGE_MAX = 200;
+
+type Review = Extract<State["push"], { phase: "review" }>;
+
+/** Why a push cannot start from this review, or null when typing the word would start it. */
+export type Block = { kind: "preview" | "secrets" | "message"; text: string; files: string[] };
+
+/**
+ * Pressing enter on the word does nothing while this is not null. A file that looks like a plaintext secret blocks it
+ * (`fleet push` itself does not look: this is the bridge's own care), and so does a commit message that is only the
+ * confirmation word, which is far more likely a slip than a message.
+ */
+export function pushBlock(p: Review): Block | null {
+  if (p.preview === null || !p.preview.ok) return { kind: "preview", text: "the preview has not been read", files: [] };
+  const files = [...new Set(p.preview.preview.repos.flatMap((r) => r.flagged))];
+  if (files.length > 0) return { kind: "secrets", text: `${plural(files.length, "file")} look${files.length === 1 ? "s" : ""} like a plaintext secret`, files };
+  if (p.message.trim().toLowerCase() === CONFIRM_WORD) return { kind: "message", text: `the commit message is only '${CONFIRM_WORD}', which is the word that confirms; change it or clear it`, files: [] };
+  return null;
+}
 
 function drawReview(c: Canvas, state: State): void {
   const p = state.push;
   if (p.phase !== "review") return;
   c.text(2, 0, "Review before you push", s.bold);
   wrap("fleet push commits everything listed here (git add -A), pushes it to GitHub, then applies on every host.", c.w - 4).slice(0, 2).forEach((t, i) => c.text(2, 1 + i, t, s.muted));
-  const prompt = (typed: string, ready: boolean) => {
+  if (state.demo) c.text(2, 3, "Demo: fake hosts, nothing real is touched.", s.warn);
+  const prompt = (typed: string, block: ReturnType<typeof pushBlock>) => {
     const y = c.h - 2;
-    segments(c, 2, y, [[`Type ${CONFIRM_WORD} and press enter to go: `, ready ? s.text : s.muted], [typed, s.brandBold], ["▏", s.brand]]);
-    if (typed !== "" && typed !== CONFIRM_WORD) c.text(2, y + 1, `that is not '${CONFIRM_WORD}'`, s.warn);
+    const focused = p.focus === "confirm";
+    segments(c, 2, y, [[`Type ${CONFIRM_WORD} and press enter to go: `, block === null ? s.text : s.muted], [typed, s.brandBold], [focused ? "▏" : "", s.brand]]);
+    if (block !== null && block.kind !== "preview") c.text(2, y + 1, truncate(`Blocked: ${block.text}.${block.kind === "secrets" ? ` ${block.files.slice(0, 3).join(", ")}${block.files.length > 3 ? ", ..." : ""}. Remove or gitignore ${block.files.length === 1 ? "it" : "them"}, then ctrl-r reads again.` : ""}`, c.w - 4), s.bad);
+    else if (typed !== "" && typed !== CONFIRM_WORD) c.text(2, y + 1, `that is not '${CONFIRM_WORD}'`, s.warn);
+  };
+  const messageLine = () => {
+    const y = c.h - 3;
+    const focused = p.focus === "message";
+    const empty = p.message === "";
+    const tail: Seg[] = empty
+      ? [[focused ? "▏" : "", s.brand], [focused ? " empty: fleet writes one" : "none: fleet writes one, such as 'fleet push from <host>: 3 files'", s.faint]]
+      : [[truncate(p.message, c.w - 22), s.brandBold], [focused ? "▏" : "", s.brand]];
+    segments(c, 2, y, [["Commit message: ", focused ? s.text : s.muted], ...tail], c.w - 4);
   };
   if (p.preview === null) {
     segments(c, 2, 4, [[`${spinner(state.now, state.motion)} `, s.brand], ["reading the config repo and planning this host", s.sub]]);
@@ -39,29 +69,32 @@ function drawReview(c: Canvas, state: State): void {
   }
   const { repos, plan } = p.preview.preview;
   const order = state.model.hosts.map((h) => `${h.name} (${h.self ? "here" : h.ssh === null ? "timer" : "ssh"})`).join(" then ");
-  const budget = Math.max(2, c.h - 12);
+  const budget = Math.max(2, c.h - 13);
   let y = 4;
   c.text(2, y++, "TO COMMIT AND PUBLISH", { fg: theme.muted, attr: BOLD });
   const fileBudget = Math.max(1, Math.floor(budget * 0.55));
   let left = fileBudget;
   for (const repo of repos) {
+    // The files that block a push are listed first, so a long list never hides them.
+    const files = [...repo.files].sort((a, b) => Number(looksSecret(b.path) && !b.status.includes("D")) - Number(looksSecret(a.path) && !a.status.includes("D")));
     const where = repo.branch === null ? "not on a branch" : `${repo.branch}, ${repo.ahead ?? "?"} ahead, ${repo.behind ?? "?"} behind`;
     segments(c, 2, y++, [[repo.shown, s.sub], [`  ${repo.files.length === 0 ? "clean" : plural(repo.files.length, "changed file")}  (${where})`, repo.files.length === 0 ? s.muted : s.text]], c.w - 4);
-    const shown = repo.files.slice(0, left);
+    const shown = files.slice(0, left);
     left -= shown.length;
     for (const f of shown) {
-      const secret = looksSecret(f.path);
+      const secret = looksSecret(f.path) && !f.status.includes("D");
       segments(c, 4, y++, [[pad(f.status, 3), s.warn], [truncate(f.path, c.w - 12), secret ? s.bad : s.text], ...(secret ? ([["  looks like a secret", s.bad]] as Seg[]) : [])], c.w - 6);
     }
     if (repo.files.length > shown.length) c.text(4, y++, `and ${repo.files.length - shown.length} more (git status in that repo lists them)`, s.faint);
   }
   y++;
   c.text(2, y++, "PLAN FOR THIS HOST (fleet diff)", { fg: theme.muted, attr: BOLD });
-  const room = Math.max(1, c.h - 4 - y);
+  const room = Math.max(1, c.h - 5 - y);
   for (const line of plan.slice(0, room)) c.text(4, y++, truncate(line, c.w - 6), /^conflict|^fix/.test(line) ? s.warn : s.sub);
   if (plan.length > room) c.text(4, y++, `and ${plan.length - room} more lines`, s.faint);
-  c.text(2, c.h - 3, truncate(`Then in order: ${order}`, c.w - 4), s.muted);
-  prompt(p.typed, true);
+  c.text(2, c.h - 4, truncate(`Then in order: ${order}`, c.w - 4), s.muted);
+  messageLine();
+  prompt(p.typed, pushBlock(p));
 }
 
 const phaseGlyph = (phase: Phase, state: State): Seg => (phase === "done" ? ["✓", s.ok] : phase === "failed" ? ["✕", s.bad] : phase === "running" ? [spinner(state.now, state.motion), s.brand] : ["·", s.faint]);

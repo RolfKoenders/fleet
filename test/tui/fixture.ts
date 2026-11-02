@@ -2,11 +2,11 @@ import { spawnSync } from "node:child_process";
 import { cpSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { createApp } from "../../src/tui/app.ts";
-import type { Msg, State } from "../../src/tui/app.ts";
+import type { Msg, Options, State } from "../../src/tui/app.ts";
 import { Headless } from "../../src/tui/headless.ts";
 import { loadModel } from "../../src/tui/model.ts";
 import { readingProbe } from "../../src/tui/probe.ts";
-import type { ConflictsResult, HostResult, Probe } from "../../src/tui/probe.ts";
+import type { ConflictsResult, HostResult, Probe, RemoteConflicts } from "../../src/tui/probe.ts";
 import { sourceDir } from "../../src/sources.ts";
 import type { StatusFields } from "../../src/status.ts";
 import { makeHome, repoRoot, tempDir } from "../helpers.ts";
@@ -35,7 +35,7 @@ export const status = (over: Partial<StatusFields> = {}): StatusFields => ({
 
 export const ok = (over: Partial<StatusFields> = {}): HostResult => ({ result: "ok", status: status(over) });
 
-export type Canned = { hosts?: Record<string, HostResult | "never">; conflicts?: ConflictsResult; reads?: Pick<Probe, "history" | "commitDiff" | "secrets" | "catalog"> };
+export type Canned = { remote?: Record<string, RemoteConflicts>; doctor?: Probe["doctor"]; hosts?: Record<string, HostResult | "never">; conflicts?: ConflictsResult; reads?: Pick<Probe, "history" | "commitDiff" | "secrets" | "catalog"> };
 
 /** Reads that find nothing, for tests of other screens. */
 export const noReads: NonNullable<Canned["reads"]> = {
@@ -57,6 +57,8 @@ export function cannedProbe(canned: Canned = {}): Probe {
     async conflicts() {
       return canned.conflicts ?? { ok: true, items: [] };
     },
+    ...(canned.remote ? { hostConflicts: async (host: { name: string }) => canned.remote![host.name] ?? { ok: false as const, reason: "error" as const, detail: "no canned answer" } } : {}),
+    ...(canned.doctor ? { doctor: canned.doctor } : {}),
   };
 }
 
@@ -125,12 +127,15 @@ export function cloneSource(home: string): string {
   return dir;
 }
 
+/** The one file under the home that the bridge is allowed to write, relative to the home. */
+export const CACHE_FILE = ".local/state/fleet/bridge-hosts.json";
+
 export const SIZE = { cols: 100, rows: 32 };
 
-export async function bridgeFor(configDir: string, canned: Canned = {}, options: { home?: string; size?: { cols: number; rows: number }; motion?: boolean; boot?: boolean; settle?: boolean } = {}): Promise<Headless<State, Msg>> {
+export async function bridgeFor(configDir: string, canned: Canned = {}, options: { home?: string; size?: { cols: number; rows: number }; motion?: boolean; boot?: boolean; settle?: boolean; app?: Partial<Options> } = {}): Promise<Headless<State, Msg>> {
   const model = loadModel(configDir, "laptop");
   const reads = options.home === undefined ? canned.reads : readingProbe(configDir, options.home);
-  const app = createApp({ model, probe: cannedProbe({ ...canned, ...(reads ? { reads } : {}) }), motion: options.motion ?? true, boot: options.boot ?? false });
+  const app = createApp({ model, probe: cannedProbe({ ...canned, ...(reads ? { reads } : {}) }), motion: options.motion ?? true, boot: options.boot ?? false, ...options.app });
   const h = new Headless(app, options.size ?? SIZE);
   if (options.settle !== false) await h.settle();
   h.advance(100);

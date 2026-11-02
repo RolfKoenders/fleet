@@ -43,8 +43,8 @@ test("every command fleet has is in the primer, once, as read-only or as changin
   assert.match(readOnly, /^### Read-only$/m);
   const listed = (text: string) => [...text.matchAll(/^- `fleet ([a-z]+)/gm)].map((m) => m[1]);
   assert.deepEqual([...listed(readOnly), ...listed(changing)].sort(), help.commands.map((c) => c.name).sort());
-  assert.deepEqual(listed(readOnly).sort(), ["agent", "bridge", "demo", "diff", "help", "status"]);
-  assert.deepEqual(listed(changing).sort(), ["adopt", "apply", "doctor", "init", "new", "push", "secrets", "skills", "update"]);
+  assert.deepEqual(listed(readOnly).sort(), ["agent", "demo", "diff", "help", "status"]);
+  assert.deepEqual(listed(changing).sort(), ["adopt", "apply", "bridge", "doctor", "init", "new", "push", "secrets", "skills", "update"]);
 });
 
 test("the exit codes are the ones the code defines, with their numbers", () => {

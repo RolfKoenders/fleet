@@ -16,7 +16,7 @@ export function conflictTotal(state: State): number {
   let n = state.conflicts.items.length;
   for (const h of state.model.hosts) {
     const r = state.live[h.name]?.result;
-    if (!h.self && r?.status && r.status.conflicts) n += r.status.conflicts;
+    if (!h.self && r?.status && r.status.conflicts && !state.live[h.name]?.seen) n += r.status.conflicts;
   }
   return n;
 }
@@ -48,8 +48,12 @@ export function drawHeader(c: Canvas, state: State): void {
   // Truthful: the bridge only reads until a person has typed the confirmation for a push.
   const p = state.push.phase;
   const pill = p === "running" ? " pushing " : p === "review" ? " reviewing a push " : " read-only; P pushes ";
-  if (w >= 80) c.text(w - stringWidth(pill) - 1, 0, pill, { fg: p === "running" ? theme.warn : theme.muted, bg: theme.surface });
-  if (asking(state) > 0 && w >= 100) c.text(w - stringWidth(pill) - 4, 0, spinner(state.now, state.motion), s.brand);
+  if (state.demo) {
+    // Loud on purpose, and in place of the normal pill: nothing on this screen is real.
+    const demo = " DEMO ";
+    c.text(w - stringWidth(demo) - 1, 0, demo, { fg: theme.surface, bg: theme.warn, attr: BOLD });
+  } else if (w >= 80) c.text(w - stringWidth(pill) - 1, 0, pill, { fg: p === "running" ? theme.warn : theme.muted, bg: theme.surface });
+  if (asking(state) > 0 && w >= 100) c.text(w - stringWidth(state.demo ? " DEMO " : pill) - 4, 0, spinner(state.now, state.motion), s.brand);
 }
 
 export type Hint = [key: string, label: string];

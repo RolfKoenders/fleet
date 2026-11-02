@@ -48,6 +48,10 @@ export type PushRun = {
 
 const LOG_LINES = 40;
 
+/** Paths that look like they hold a secret in the clear. An encrypted `.enc.yaml` is how secrets are meant to be pushed. */
+const SENSITIVE = /(^|\/)(\.env[^/]*|[^/]*\.pem|[^/]*\.key|id_[a-z0-9]+|[^/]*secret[^/]*|[^/]*token[^/]*)$/i;
+export const looksSecret = (path: string): boolean => SENSITIVE.test(path) && !path.endsWith(".enc.yaml");
+
 const printable = (text: string): string => text.replace(/[^\x20-\x7e]/g, "?").slice(0, 300);
 
 export const lane = (host: string, via: Lane["via"]): Lane => ({ host, via, state: "waiting", result: null, changes: 0, stage: null, step: null, of: null, note: null });

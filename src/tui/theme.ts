@@ -1,7 +1,7 @@
 import { mix } from "./color.ts";
 
 /** The look of the bridge, taken from the logo: fleet green, a cool grey, near-white text, on ink. */
-export const theme = {
+const dark = {
   brand: 0x3fb950,
   brandBright: 0x7ee787,
   brandDeep: 0x196c2e,
@@ -20,6 +20,15 @@ export const theme = {
   /** Marks something a host file added itself, against one it took from the defaults. */
   host: 0x79c0ff,
 } as const;
+
+/** The same roles for a light terminal, chosen with FLEET_THEME=light. Dark is the design; this is a best effort. */
+const light: Record<keyof typeof dark, number> = {
+  brand: 0x1a7f37, brandBright: 0x116329, brandDeep: 0xaceebb, text: 0x1f2328, sub: 0x424a53, muted: 0x656d76,
+  faint: 0xafb8c1, border: 0xd0d7de, surface: 0xf6f8fa, raised: 0xeaeef2, selected: 0xdafbe1,
+  ok: 0x1a7f37, warn: 0x9a6700, bad: 0xcf222e, info: 0x0969da, host: 0x0550ae,
+};
+
+export const theme: Record<keyof typeof dark, number> = process.env.FLEET_THEME === "light" ? light : dark;
 
 /** Colour across a wordmark, from fleet green to a cool teal. */
 export const wordmark = (i: number, n: number): number => mix(theme.brandBright, theme.info, n <= 1 ? 0 : i / (n - 1) * 0.7);

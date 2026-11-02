@@ -7,24 +7,25 @@ import type { PreviewResult, Pusher } from "../../src/tui/pusher.ts";
 import type { PushEnd } from "../../src/tui/pushrun.ts";
 import { cannedProbe, makeConfig, SIZE } from "./fixture.ts";
 
-export const PREVIEW: PreviewResult = {
-  ok: true,
-  preview: {
-    code: "ok",
-    plan: ["create ~/.claude/skills/triage -> /cfg/skills/triage", "update mcpServers.docs"],
-    repos: [
-      { shown: "~/.local/share/fleet/sources/mine", branch: "main", ahead: 0, behind: 0, files: [] },
-      { shown: "/home/me/fleet-config", branch: "main", ahead: 1, behind: 0, files: [{ status: "M", path: "catalog/skills.yaml" }, { status: "??", path: "notes.md" }, { status: "??", path: ".env.local" }] },
-    ],
-  },
-};
+const repos = (files: { status: string; path: string }[], flagged: string[]) => [
+  { shown: "~/.local/share/fleet/sources/mine", branch: "main", ahead: 0, behind: 0, files: [], flagged: [] },
+  { shown: "/home/me/fleet-config", branch: "main", ahead: 1, behind: 0, files, flagged },
+];
+const CLEAN_FILES = [{ status: "M", path: "catalog/skills.yaml" }, { status: "??", path: "notes.md" }];
+const plan = ["create ~/.claude/skills/triage -> /cfg/skills/triage", "update mcpServers.docs"];
+
+export const PREVIEW: PreviewResult = { ok: true, preview: { code: "ok", plan, repos: repos(CLEAN_FILES, []) } };
+
+/** The same, with a file that looks like a plaintext secret among the changes. */
+export const PREVIEW_SECRET: PreviewResult = { ok: true, preview: { code: "ok", plan, repos: repos([...CLEAN_FILES, { status: "??", path: ".env.local" }], [".env.local"]) } };
 
 /** A pusher the test drives: `emit` sends an event as the child would, `end` finishes the push. */
-export type FakePusher = { runs: number; previews: number; emit: (e: FleetEvent) => void; end: (e: PushEnd) => void; pusher: Pusher };
+export type FakePusher = { runs: number; messages: (string | undefined)[]; previews: number; emit: (e: FleetEvent) => void; end: (e: PushEnd) => void; pusher: Pusher };
 
 export function fakePusher(preview: PreviewResult = PREVIEW): FakePusher {
   const f: FakePusher = {
     runs: 0,
+    messages: [],
     previews: 0,
     emit: (_: FleetEvent): void => {},
     end: (_: PushEnd): void => {},
@@ -33,8 +34,9 @@ export function fakePusher(preview: PreviewResult = PREVIEW): FakePusher {
         f.previews++;
         return preview;
       },
-      run(onEvent: (e: FleetEvent) => void) {
+      run(onEvent: (e: FleetEvent) => void, message?: string) {
         f.runs++;
+        f.messages.push(message);
         f.emit = onEvent;
         return new Promise<PushEnd>((resolve) => (f.end = resolve));
       },

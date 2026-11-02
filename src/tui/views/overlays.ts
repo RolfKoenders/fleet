@@ -25,6 +25,7 @@ const HELP: [string, string][] = [
   ["ctrl-k  :", "command palette"],
   ["P", "review a push, then type push to run it"],
   ["r", "ask every host again"],
+  ["d", "doctor: ask each MCP server if it works (asks first; fills the matrix)"],
   ["c", "home: go to conflicts"],
   ["v  f", "secrets: by name or host; catalog: filter"],
   ["pgup pgdn", "timeline and catalog: scroll the detail"],
@@ -90,4 +91,31 @@ export function drawLeave(root: Canvas, state: State): void {
   let y = 2;
   for (const line of lines) for (const t of wrap(line, c.w - 6).concat(line === "" ? [""] : [])) c.text(3, y++, t, { ...s.text, ...bg });
   segments(c, 3, c.h - 2, [["q", { ...s.brandBold, ...bg }], [" leave anyway    ", { ...s.muted, ...bg }], ["esc", { ...s.brandBold, ...bg }], [" stay", { ...s.muted, ...bg }]]);
+}
+
+/** The confirmation before doctor, which is the one thing here that starts real servers. */
+export function drawDoctor(root: Canvas, state: State): void {
+  const c = frame(root, 72, 15, "run doctor?");
+  const bg = { bg: theme.surface };
+  const off = state.overlay?.kind === "doctor" ? state.overlay.off : null;
+  const hosts = state.model.hosts.length;
+  const lines: [string, "text" | "warn" | "muted"][] = off !== null
+    ? [[`Doctor is not offered here: ${off}.`, "text"]]
+    : [
+        ["fleet doctor starts the MCP servers each host has picked, with their real credentials, and may make npx download packages.", "warn"],
+        ["", "text"],
+        [hosts > 1 ? "On the other hosts it runs over ssh, one after another. It can take minutes." : "It can take a while.", "muted"],
+        ["Nothing starts until you press a key below. Opening the bridge never starts a server.", "muted"],
+      ];
+  let y = 2;
+  for (const [line, tone] of lines) for (const t of wrap(line, c.w - 6).concat(line === "" ? [""] : [])) c.text(3, y++, t, { ...(tone === "warn" ? s.warn : tone === "muted" ? s.muted : s.text), ...bg });
+  if (off !== null) {
+    segments(c, 3, c.h - 2, [["esc", { ...s.brandBold, ...bg }], [" close", { ...s.muted, ...bg }]]);
+    return;
+  }
+  segments(c, 3, c.h - 2, [
+    ["y", { ...s.brandBold, ...bg }], [hosts > 1 ? " all hosts    " : " run    ", { ...s.muted, ...bg }],
+    ...(hosts > 1 ? ([["t", { ...s.brandBold, ...bg }], [" this host only    ", { ...s.muted, ...bg }]] as [string, never][]) : []),
+    ["esc", { ...s.brandBold, ...bg }], [" cancel", { ...s.muted, ...bg }],
+  ]);
 }

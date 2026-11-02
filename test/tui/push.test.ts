@@ -1,9 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { fakePusher, ok, playToMiddle, pushBridge, tick } from "./pushfixture.ts";
+import { fakePusher, ok, PREVIEW_SECRET, playToMiddle, pushBridge, tick } from "./pushfixture.ts";
 
 test("P opens a review that shows the dirty files and the plan, and starts nothing", async () => {
-  const f = fakePusher();
+  const f = fakePusher(PREVIEW_SECRET);
   const h = await pushBridge(f.pusher);
   h.press("P");
   await h.settle();
@@ -176,4 +176,79 @@ test("narrow windows drop the diagram and keep the lanes", async () => {
   assert.doesNotMatch(frame, /GitHub/);
   assert.match(frame, /✓ laptop/);
   assert.match(frame, /server/);
+});
+
+test("a typed commit message is passed to the push, trimmed, and none passes nothing", async () => {
+  const f = fakePusher();
+  const h = await pushBridge(f.pusher);
+  h.press("P");
+  await h.settle();
+  h.press("tab");
+  h.type("  Add the triage skill ");
+  assert.match(h.frame(), /Commit message: +Add the triage skill/);
+  h.press("enter");
+  assert.equal(f.runs, 0, "enter in the message box only moves on to the word");
+  h.type("push").press("enter");
+  await tick();
+  assert.deepEqual(f.messages, ["Add the triage skill"]);
+
+  const g = fakePusher();
+  const k = await pushBridge(g.pusher);
+  k.press("P");
+  await k.settle();
+  k.type("push").press("enter");
+  await tick();
+  assert.deepEqual(g.messages, [undefined]);
+});
+
+test("a message never starts a push, and the word typed into the message box is caught", async () => {
+  const f = fakePusher();
+  const h = await pushBridge(f.pusher);
+  h.press("P");
+  await h.settle();
+  h.press("tab");
+  h.type("Fix the link").press("enter", "enter", "enter");
+  await tick();
+  assert.equal(f.runs, 0, "a message and enters do not push");
+  // Someone types the word while the message box has the focus.
+  h.press("tab");
+  h.press("ctrl+u");
+  h.type("push");
+  assert.match(h.frame(), /Commit message: push/);
+  h.press("enter");
+  h.type("push").press("enter");
+  await tick();
+  assert.equal(f.runs, 0, "a message that is only the word does not go");
+  assert.match(h.frame(), /Blocked: the commit message is only 'push'/);
+  // Fixing the message lets it through.
+  h.press("tab");
+  h.press("ctrl+u");
+  h.type("push the triage skill").press("enter", "enter");
+  await tick();
+  assert.equal(f.runs, 1);
+  assert.deepEqual(f.messages, ["push the triage skill"]);
+});
+
+test("a file that looks like a plaintext secret blocks the push and says why, until it is gone", async () => {
+  const f = fakePusher(PREVIEW_SECRET);
+  const h = await pushBridge(f.pusher);
+  h.press("P");
+  await h.settle();
+  h.advance(33);
+  h.type("push").press("enter");
+  await tick();
+  assert.equal(f.runs, 0);
+  const frame = h.frame();
+  assert.match(frame, /Blocked: 1 file looks like a plaintext secret\. \.env\.local\. Remove or gitignore it/);
+  assert.match(frame, /\.env\.local.*looks like a secret/);
+  // It was removed: read again.
+  const clean = fakePusher();
+  (f.pusher as { preview: unknown }).preview = clean.pusher.preview;
+  h.press("ctrl+r");
+  await h.settle();
+  h.advance(33);
+  assert.doesNotMatch(h.frame(), /Blocked/);
+  h.press("enter");
+  await tick();
+  assert.equal(f.runs, 1);
 });

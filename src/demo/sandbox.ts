@@ -34,7 +34,7 @@ const HOST_NAMES = [
 const COMMANDS = ["sh", "bash", "git", "node", "ls", "cat", "grep", "sed", "awk", "head", "tail", "wc", "sort", "diff", "cmp", "tr", "cut", "find", "rm", "mkdir", "touch", "cp", "mv", "ln", "chmod", "pwd", "printf", "echo", "env", "date", "sleep", "readlink", "dirname", "basename", "tee", "test", "true", "false", "id", "uname", "clear", "less", "which"];
 
 /** Variables of the caller that are passed on, because they only shape how output looks. */
-const PASSED = ["TERM", "LANG", "LC_ALL", "COLORTERM", "NO_COLOR", "FORCE_COLOR"];
+const PASSED = ["TERM", "LANG", "LC_ALL", "COLORTERM", "NO_COLOR", "FORCE_COLOR", "FLEET_NO_MOTION", "FLEET_THEME"];
 
 export const fakeCallsLog = (root: string): string => join(root, "fake-calls.log");
 

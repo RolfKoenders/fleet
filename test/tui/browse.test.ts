@@ -3,7 +3,7 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { bridgeFor, cloneSource, makeRepo, ok } from "./fixture.ts";
+import { bridgeFor, CACHE_FILE, cloneSource, makeRepo, ok } from "./fixture.ts";
 import { paintDiff } from "../../src/tui/buffer.ts";
 import { bridge } from "../../src/tui/bridge.ts";
 import { items, search } from "../../src/tui/palette.ts";
@@ -26,7 +26,8 @@ async function open(clone = false) {
   return { ...r, b };
 }
 
-const tree = (dir: string): string[] => readdirSync(dir, { recursive: true }).map(String).sort();
+// The host cache is the one file the bridge may write under the home.
+const tree = (dir: string): string[] => readdirSync(dir, { recursive: true }).map(String).filter((p) => p !== CACHE_FILE).sort();
 
 test("timeline: the history is listed newest first, with a marker where each host last applied", async () => {
   const { b } = await open();

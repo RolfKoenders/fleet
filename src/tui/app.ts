@@ -1,11 +1,12 @@
 import type { App, Cmd, Core } from "./runtime.ts";
 import type { Conflict } from "../plan.ts";
-import type { ConflictsResult, HostResult, Probe } from "./probe.ts";
+import type { ConflictsResult, HostResult, Probe, RemoteConflicts } from "./probe.ts";
 import type { FleetEvent } from "../events.ts";
+import type { StatusFields } from "../status.ts";
 import type { PreviewResult, Pusher } from "./pusher.ts";
 import { finish, reduce, startRun } from "./pushrun.ts";
 import type { PushEnd, PushRun } from "./pushrun.ts";
-import { CONFIRM_WORD } from "./views/push.ts";
+import { CONFIRM_WORD, MESSAGE_MAX, pushBlock } from "./views/push.ts";
 import { homeLayout } from "./layout.ts";
 import { items, search } from "./palette.ts";
 import type { Action, Screen } from "./palette.ts";
@@ -14,10 +15,13 @@ import type { Key } from "./input.ts";
 import type { Model } from "./model.ts";
 import { visibleRows } from "./model.ts";
 import type { Size } from "./terminal.ts";
+import type { CachedHost } from "./cache.ts";
+import type { DoctorResult } from "./doctorread.ts";
 import type { CatalogView, CommitDiff, History, SecretsView } from "./reads.ts";
 import { drawApp } from "./views/index.ts";
 import { catalogItems } from "./views/catalog.ts";
 import { diffLines } from "./views/timeline.ts";
+import { conflictEntries } from "./views/conflicts.ts";
 
 export type HostLive = {
   phase: "loading" | "done";
@@ -27,14 +31,19 @@ export type HostLive = {
   /** When the answer arrived, on the runtime's clock. */
   at: number | null;
   result: HostResult | null;
+  /** Set while `result` is what an earlier run of the bridge saw and no answer to this run has come: how long ago, and when it was loaded. It is not live. */
+  seen: { agoSeconds: number; since: number } | null;
 };
 
-export type ConflictsLive = { phase: "loading" | "done"; items: Conflict[]; detail: string | null; selected: number };
+export type RemoteLive = { phase: "loading" | "done"; gen: number; result: RemoteConflicts | null };
+
+/** `selected` runs over this host's conflicts, then the other hosts', in host order (see `conflictEntries`). */
+export type ConflictsLive = { phase: "loading" | "done"; items: Conflict[]; detail: string | null; selected: number; remote: Record<string, RemoteLive> };
 
 /** Where a push is: not started, being reviewed (nothing runs until the word is typed), running, or over. */
 export type PushState =
   | { phase: "idle" }
-  | { phase: "review"; gen: number; preview: PreviewResult | null; typed: string }
+  | { phase: "review"; gen: number; preview: PreviewResult | null; typed: string; message: string; focus: "confirm" | "message" }
   | { phase: "running" | "finished"; run: PushRun };
 
 export type TimelineLive = {
@@ -50,10 +59,14 @@ export type SecretsLive = { phase: "loading" | "done"; view: SecretsView | null;
 
 export type CatalogLive = { phase: "loading" | "done"; view: CatalogView | null; query: string; typing: boolean; selected: number; scroll: number };
 
-export type Overlay = null | { kind: "help" } | { kind: "leave" } | { kind: "palette"; query: string; selected: number };
+/** Doctor is only ever asked for through a confirmation. `scope` is what was asked: this host or every host. */
+export type DoctorLive = { phase: "idle" | "running" | "done"; gen: number; scope: "this" | "all"; result: DoctorResult | null };
+
+export type Overlay = null | { kind: "help" } | { kind: "leave" } | { kind: "doctor"; off: string | null } | { kind: "palette"; query: string; selected: number };
 
 export type State = {
   size: Size;
+  demo: boolean;
   now: number;
   motion: boolean;
   model: Model;
@@ -64,6 +77,7 @@ export type State = {
   live: Record<string, HostLive>;
   conflicts: ConflictsLive;
   push: PushState;
+  doctor: DoctorLive;
   /** Counts the reviews, so the answer to an old one is ignored. */
   reviews: number;
   timeline: TimelineLive;
@@ -77,7 +91,9 @@ export type State = {
 export type Msg =
   | { type: "host"; host: string; gen: number; result: HostResult }
   | { type: "conflicts"; result: ConflictsResult }
+  | { type: "remoteConflicts"; host: string; gen: number; result: RemoteConflicts }
   | { type: "preview"; gen: number; result: PreviewResult }
+  | { type: "doctor"; gen: number; result: DoctorResult }
   | { type: "push"; event: FleetEvent }
   | { type: "pushEnd"; end: PushEnd }
   | { type: "history"; result: History }
@@ -87,7 +103,21 @@ export type Msg =
   | { type: "fault"; text: string };
 
 /** `pusher` is absent where pushing is not offered. */
-export type Options = { model: Model; probe: Probe; pusher?: Pusher; motion: boolean; boot: boolean };
+export type Options = {
+  model: Model;
+  probe: Probe;
+  pusher?: Pusher;
+  motion: boolean;
+  boot: boolean;
+  /** What an earlier run saw of each host, shown (as old) until the host answers. */
+  cached?: Record<string, CachedHost>;
+  /** Called with each good answer, so it can be remembered for the next run. */
+  remember?: (host: string, status: StatusFields) => void;
+  /** Set where doctor must not run (the demo): the reason, shown when `d` is pressed. */
+  noDoctor?: string;
+  /** Set by the demo, and only by it: the hosts are made up, and the bridge says so. */
+  demo?: boolean;
+};
 
 export const BOOT_MS = 1700;
 /** A tick this far behind means the terminal or the link cannot keep up with the animation. */
@@ -108,21 +138,43 @@ export function createApp(options: Options): App<State, Msg> {
     send({ type: "conflicts", result: await probe.conflicts(signal) });
   };
 
+  const askRemote = (name: string, gen: number): Cmd<Msg> => async ({ send, signal }) => {
+    const host = model.hosts.find((h) => h.name === name)!;
+    const result = probe.hostConflicts ? await probe.hostConflicts(host, signal) : ({ ok: false, reason: "error", detail: "this view cannot ask other hosts" } as const);
+    send({ type: "remoteConflicts", host: name, gen, result });
+  };
+
   const askPreview = (gen: number): Cmd<Msg> => async ({ send, signal }) => {
     send({ type: "preview", gen, result: pusher ? await pusher.preview(signal) : { ok: false, detail: "pushing is not offered in this view" } });
   };
   // The one place a push starts. It is the real `fleet push`; its events come back as messages.
-  const startPush: Cmd<Msg> = async ({ send }) => {
-    const end = await pusher!.run((event) => send({ type: "push", event }));
+  const startPush = (message: string): Cmd<Msg> => async ({ send }) => {
+    const end = await pusher!.run((event) => send({ type: "push", event }), message === "" ? undefined : message);
     send({ type: "pushEnd", end });
   };
+
+  // The one place doctor is asked. It starts real servers, so it is only reached from the confirmation.
+  const askDoctor = (gen: number, all: boolean): Cmd<Msg> => async ({ send, signal }) => {
+    send({ type: "doctor", gen, result: await probe.doctor!(all, signal) });
+  };
+  const doctorOff = (): string | null => options.noDoctor ?? (probe.doctor === undefined ? "this view has no way to run it" : null);
+
+  function onDoctorOverlay(state: State, key: Key): [State, Cmd<Msg>[]] {
+    const close: State = { ...state, overlay: null };
+    if (key.name === "escape" || key.text === "n" || key.text === "q" || (key.ctrl && key.text === "c")) return [close, []];
+    if (state.overlay?.kind !== "doctor" || state.overlay.off !== null) return [state, []];
+    const scope = key.text === "t" ? "this" : key.name === "enter" || key.text === "y" ? "all" : null;
+    if (scope === null) return [state, []];
+    const gen = state.doctor.gen + 1;
+    return [{ ...close, doctor: { phase: "running", gen, scope, result: null } }, [askDoctor(gen, scope === "all" && model.hosts.length > 1)]];
+  }
 
   /** Opens the review, which reads and changes nothing. A push in flight is watched, not started again. */
   function review(state: State): [State, Cmd<Msg>[]] {
     const closed: State = { ...state, overlay: null, screen: "push" };
     if (state.push.phase === "running") return [closed, []];
     const gen = state.reviews + 1;
-    return [{ ...closed, reviews: gen, push: { phase: "review", gen, preview: null, typed: "" } }, [askPreview(gen)]];
+    return [{ ...closed, reviews: gen, push: { phase: "review", gen, preview: null, typed: "", message: "", focus: "confirm" } }, [askPreview(gen)]];
   }
 
   /** Quitting while a push runs asks first; the push is never stopped by it. */
@@ -135,13 +187,23 @@ export function createApp(options: Options): App<State, Msg> {
     const p = state.push as Extract<PushState, { phase: "review" }>;
     if (key.ctrl && key.text === "c") return [state, [({ quit }) => quit(0)]];
     if (key.name === "escape") return [{ ...state, push: { phase: "idle" } }, []];
-    const set = (typed: string): [State, Cmd<Msg>[]] => [{ ...state, push: { ...p, typed } }, []];
-    if (key.name === "backspace") return set([...p.typed].slice(0, -1).join(""));
-    if (key.name === "char" && !key.ctrl && !key.alt && key.text) return set((p.typed + key.text).slice(0, 24));
+    // Read the files again, after a secret was removed or gitignored.
+    if (key.ctrl && key.text === "r") {
+      const gen = state.reviews + 1;
+      return [{ ...state, reviews: gen, push: { ...p, gen, preview: null } }, [askPreview(gen)]];
+    }
+    const field = p.focus;
+    if (key.name === "tab" || key.name === "backtab") return [{ ...state, push: { ...p, focus: field === "confirm" ? "message" : "confirm" } }, []];
+    const edit = (text: string, max: number): [State, Cmd<Msg>[]] => [{ ...state, push: { ...p, ...(field === "confirm" ? { typed: text.slice(0, max) } : { message: text.slice(0, max) }) } }, []];
+    const text = field === "confirm" ? p.typed : p.message;
+    if (key.name === "backspace") return edit([...text].slice(0, -1).join(""), 24);
+    if (key.ctrl && key.text === "u") return edit("", 24);
+    if (key.name === "char" && !key.ctrl && !key.alt && key.text && !/[\u0000-\u001f\u007f]/.test(key.text)) return edit(text + key.text, field === "confirm" ? 24 : MESSAGE_MAX);
     if (key.name === "enter") {
-      // Only the typed word, only after the preview was read, ever starts it.
-      if (p.typed !== CONFIRM_WORD || p.preview === null || !p.preview.ok || pusher === undefined) return [state, []];
-      return [{ ...state, push: { phase: "running", run: startRun(model.hosts, state.now) } }, [startPush]];
+      // Enter in the message box only moves on to the word. Whatever is typed there is a message, never the word.
+      if (field === "message") return [{ ...state, push: { ...p, focus: "confirm" } }, []];
+      if (p.typed !== CONFIRM_WORD || pusher === undefined || pushBlock(p) !== null) return [state, []];
+      return [{ ...state, push: { phase: "running", run: startRun(model.hosts, state.now) } }, [startPush(p.message.trim())]];
     }
     return [state, []];
   }
@@ -167,10 +229,10 @@ export function createApp(options: Options): App<State, Msg> {
       const gen = (live[h.name]?.gen ?? 0) + 1;
       // A host with no ssh destination cannot be asked, so there is nothing to wait for.
       if (!h.self && h.ssh === null) {
-        live[h.name] = { phase: "done", gen, since: state.now, at: state.now, result: { result: "timer", status: null } };
+        live[h.name] = { phase: "done", gen, since: state.now, at: state.now, result: { result: "timer", status: null }, seen: null };
         continue;
       }
-      live[h.name] = { phase: "loading", gen, since: state.now, at: live[h.name]?.at ?? null, result: live[h.name]?.result ?? null };
+      live[h.name] = { phase: "loading", gen, since: state.now, at: live[h.name]?.at ?? null, result: live[h.name]?.result ?? null, seen: live[h.name]?.seen ?? null };
       cmds.push(askHost(h.name, gen));
     }
     const hasSelf = model.self !== null;
@@ -209,6 +271,8 @@ export function createApp(options: Options): App<State, Msg> {
         return refresh(closed);
       case "help":
         return [{ ...closed, overlay: { kind: "help" } }, []];
+      case "doctor":
+        return [{ ...closed, overlay: state.doctor.phase === "running" ? null : { kind: "doctor", off: doctorOff() } }, []];
       case "push":
         return review(closed);
       case "quit":
@@ -250,7 +314,7 @@ export function createApp(options: Options): App<State, Msg> {
   }
 
   function moveConflicts(state: State, key: Key): State {
-    const n = state.conflicts.items.length;
+    const n = conflictEntries(state).length;
     const d = key.name === "down" || key.text === "j" ? 1 : key.name === "up" || key.text === "k" ? -1 : 0;
     return { ...state, conflicts: { ...state.conflicts, selected: clamp(state.conflicts.selected + d, 0, Math.max(0, n - 1)) } };
   }
@@ -325,6 +389,7 @@ export function createApp(options: Options): App<State, Msg> {
       if (key.text === "q" || key.name === "enter" || (key.ctrl && key.text === "c")) return [state, [({ quit }) => quit(0)]];
       return [state, []];
     }
+    if (state.overlay?.kind === "doctor") return onDoctorOverlay(state, key);
     if (state.overlay === null && state.screen === "catalog" && state.catalog.typing) return [onFilter(state, key), []];
     if (state.overlay?.kind === "palette") return onPalette(state, key);
     if (state.overlay?.kind === "help") {
@@ -340,6 +405,7 @@ export function createApp(options: Options): App<State, Msg> {
     if (ch === "P") return review(state);
     if (ch === "?") return [{ ...state, overlay: { kind: "help" } }, []];
     if (ch === "r") return refresh(state);
+    if (ch === "d") return go(state, { do: "doctor" });
     const tab = SCREENS.find((s) => s.key === ch);
     if (tab) return [{ ...state, screen: tab.id }, []];
     if (key.name === "tab" || key.name === "backtab") {
@@ -368,17 +434,25 @@ export function createApp(options: Options): App<State, Msg> {
 
   return {
     init(size) {
+      const live: Record<string, HostLive> = {};
+      for (const h of model.hosts) {
+        const kept = options.cached?.[h.name];
+        // This host is read in place and answers at once, so only the others are remembered.
+        if (kept && !h.self) live[h.name] = { phase: "loading", gen: 0, since: 0, at: null, result: kept.result, seen: { agoSeconds: kept.agoSeconds, since: 0 } };
+      }
       const state: State = {
         size,
+        demo: options.demo === true,
         now: 0,
         motion: options.motion,
         model,
         screen: "home",
         overlay: null,
         boot: { start: null, done: !options.boot },
-        live: {},
-        conflicts: { phase: "loading", items: [], detail: null, selected: 0 },
+        live,
+        conflicts: { phase: "loading", items: [], detail: null, selected: 0, remote: {} },
         push: { phase: "idle" },
+        doctor: { phase: "idle", gen: 0, scope: "all", result: null },
         reviews: 0,
         timeline: { phase: "loading", history: null, selected: 0, diffs: {}, scroll: 0 },
         secrets: { phase: "loading", view: null, mode: "names", selected: 0 },
@@ -410,16 +484,38 @@ export function createApp(options: Options): App<State, Msg> {
         case "host": {
           const current = state.live[message.host];
           if (!current || current.gen !== message.gen) return [state, []];
-          return [{ ...state, live: { ...state.live, [message.host]: { ...current, phase: "done", at: state.now, result: message.result } } }, []];
+          const remember = options.remember;
+          const keep: Cmd<Msg>[] = remember && message.result.result === "ok" && message.result.status && !model.hosts.find((h) => h.name === message.host)?.self ? [() => remember(message.host, message.result.status!)] : [];
+          // A host that says it has conflicts is asked for them in full (read-only there too); one that says none has nothing to list.
+          const self = model.hosts.find((h) => h.name === message.host)?.self ?? false;
+          const n = message.result.status?.conflicts ?? 0;
+          const remote = { ...state.conflicts.remote };
+          const cmds = [...keep];
+          if (!self && n > 0) {
+            const rgen = (remote[message.host]?.gen ?? 0) + 1;
+            remote[message.host] = { phase: "loading", gen: rgen, result: remote[message.host]?.result ?? null };
+            cmds.push(askRemote(message.host, rgen));
+          } else delete remote[message.host];
+          return [{ ...state, conflicts: { ...state.conflicts, remote }, live: { ...state.live, [message.host]: { ...current, phase: "done", at: state.now, result: message.result, seen: null } } }, cmds];
         }
         case "conflicts": {
           const r = message.result;
-          const conflicts: ConflictsLive = r.ok ? { phase: "done", items: r.items, detail: null, selected: clamp(state.conflicts.selected, 0, Math.max(0, r.items.length - 1)) } : { phase: "done", items: [], detail: r.detail, selected: 0 };
+          const conflicts: ConflictsLive = r.ok ? { ...state.conflicts, phase: "done", items: r.items, detail: null, selected: clamp(state.conflicts.selected, 0, Math.max(0, r.items.length - 1)) } : { ...state.conflicts, phase: "done", items: [], detail: r.detail, selected: 0 };
           return [{ ...state, conflicts }, []];
+        }
+        case "remoteConflicts": {
+          const cur = state.conflicts.remote[message.host];
+          if (!cur || cur.gen !== message.gen) return [state, []];
+          const conflicts = { ...state.conflicts, remote: { ...state.conflicts.remote, [message.host]: { ...cur, phase: "done" as const, result: message.result } } };
+          return [{ ...state, conflicts: { ...conflicts, selected: clamp(conflicts.selected, 0, Math.max(0, conflictEntries({ ...state, conflicts }).length - 1)) } }, []];
         }
         case "preview": {
           if (state.push.phase !== "review" || state.push.gen !== message.gen) return [state, []];
           return [{ ...state, push: { ...state.push, preview: message.result } }, []];
+        }
+        case "doctor": {
+          if (state.doctor.gen !== message.gen) return [state, []];
+          return [{ ...state, doctor: { ...state.doctor, phase: "done", result: message.result } }, []];
         }
         case "push": {
           if (state.push.phase !== "running") return [state, []];
@@ -452,7 +548,7 @@ export function createApp(options: Options): App<State, Msg> {
     tick(state) {
       if (!state.boot.done) return 33;
       const loading = Object.values(state.live).some((l) => l.phase === "loading") || state.conflicts.phase === "loading" || state.timeline.phase === "loading" || state.secrets.phase === "loading" || state.catalog.phase === "loading";
-      const pushing = state.push.phase === "running" || (state.push.phase === "review" && state.push.preview === null);
+      const pushing = state.push.phase === "running" || state.doctor.phase === "running" || (state.push.phase === "review" && state.push.preview === null);
       return (loading || pushing) && state.motion ? 80 : 1000;
     },
   };

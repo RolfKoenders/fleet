@@ -18,6 +18,7 @@ export type Action =
   | { do: "row"; name: string; kind: "bundle" | "server" }
   | { do: "refresh" }
   | { do: "push" }
+  | { do: "doctor" }
   | { do: "help" }
   | { do: "quit" };
 
@@ -46,6 +47,7 @@ export function items(model: Model): Item[] {
     ...model.bundles.map((b): Item => ({ kind: "bundle", label: b.name, command: null, note: FROM_CONFIG, action: { do: "row", name: b.name, kind: "bundle" } })),
     ...model.servers.map((s): Item => ({ kind: "server", label: s.name, command: null, note: FROM_CONFIG, action: { do: "row", name: s.name, kind: "server" } })),
     { kind: "action", label: "Push", command: "fleet push", note: "", action: { do: "push" } },
+    { kind: "action", label: "Doctor", command: "fleet doctor --all", note: "", action: { do: "doctor" } },
     { kind: "action", label: "Refresh hosts", command: "fleet status --all", note: "", action: { do: "refresh" } },
     { kind: "action", label: "Help", command: null, note: "keys and legend", action: { do: "help" } },
     { kind: "action", label: "Quit", command: null, note: "leaves the bridge", action: { do: "quit" } },

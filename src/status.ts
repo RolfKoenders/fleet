@@ -2,7 +2,7 @@ import { spawnSync } from "node:child_process";
 import { readdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { planCounts } from "./apply.ts";
+import { planConflicts, planCounts } from "./apply.ts";
 import { MissingToolError, repoState } from "./git.ts";
 import type { RepoState } from "./git.ts";
 import { readHostName } from "./host.ts";
@@ -182,6 +182,19 @@ export function status(toolDir: string, configDir: string, color: boolean, home:
   return { code: "ok", text, messages, fields: { ...fields } };
 }
 
+/**
+ * `fleet status --conflicts`: this host's conflicts in full, planned offline the way `status` counts them. Reads only: no
+ * clone, no fetch, nothing written. A host that has conflicts still answers `ok`; the list is the answer.
+ */
+export function statusConflicts(configDir: string, color: boolean, home: string = homedir()): Result {
+  const host = readHostName(home);
+  if (host === null) return { code: "invalid", messages: ["fleet: no host name set; `fleet init <host>` writes one"] };
+  const planned = planConflicts(configDir, home);
+  if (!Array.isArray(planned)) return planned;
+  const text = planned.length === 0 ? "no conflicts" : planned.flatMap((c) => [`${paint(color, "yellow", c.kind)} ${c.path}: ${c.detail}`, `  fix: ${c.fix}`]).join("\n");
+  return { code: "ok", text, fields: { conflicts: planned.map(({ kind, path, detail, fix }) => ({ kind, path, detail, fix })) } };
+}
+
 /** One host's answer. `timer` is a host with no `ssh` destination, which applies on its own schedule. */
 export type HostStatus = {
   host: string;
@@ -198,7 +211,7 @@ export const count = (value: unknown): number | null => (typeof value === "numbe
  * A remote host's status, cut down to the fields fleet knows and to printable text, because it is shown on a
  * terminal and a host can be wrong. Null when the document has no fleet clone state, such as a failed status.
  */
-function fromDocument(doc: Obj): StatusFields | null {
+export function statusFromDocument(doc: Obj): StatusFields | null {
   const repos = isObject(doc.repos) ? doc.repos : {};
   const fleet = repos.fleet;
   if (!isObject(fleet) || typeof fleet.clean !== "boolean") return null;
@@ -236,7 +249,7 @@ export function hostStatusFrom(host: string, r: SshOutcome, notes: string[]): Ho
   } catch {
     // not a document
   }
-  const fields = doc === null ? null : fromDocument(doc);
+  const fields = doc === null ? null : statusFromDocument(doc);
   if (fields !== null) return { host, result: "ok", status: fields };
   const detail =
     doc !== null && typeof doc.code === "string"
