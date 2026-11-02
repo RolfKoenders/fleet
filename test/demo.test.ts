@@ -131,7 +131,7 @@ test("destroy refuses a directory that is not a demo sandbox", () => {
 test("on a terminal it starts a shell with a prompt marker and the tour, and deletes the sandbox on exit", { skip: spawnSync("sh", ["-c", "command -v script"]).status !== 0 && "script is not installed" }, () => {
   const d = decoy();
   const before = snapshot(d.home);
-  const env = { HOME: d.home, PATH: `${d.path}:/usr/bin:/bin`, TMPDIR: d.tmp, TERM: "dumb" };
+  const env = { HOME: d.home, PATH: `${d.path}:/usr/bin:/bin`, TMPDIR: d.tmp, TERM: "dumb", FLEET_NODE: process.execPath };
   const r = spawnSync("script", ["-qec", `${bin} demo`, "/dev/null"], { input: "fleet status | head -1\nssh me@server hostname 2>&1 | head -1\nexit\n", encoding: "utf8", env, timeout: 90_000 });
   assert.match(r.stdout, /To try:/);
   assert.match(r.stdout, /\(fleet demo\) .*\$ /);
