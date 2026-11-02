@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, closeSync, existsSync, symlinkSync, mkdirSync, openSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync, writeSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -8,7 +8,8 @@ import type { S } from "./initworld.ts";
 import { installStatusTools, makeClone, makeHome, repoRoot, runFleet, writeExecutable } from "./helpers.ts";
 import { EXIT } from "../src/exit.ts";
 import { HOMEBREW_BIN, HOMEBREW_KEG_NODES, probeDirs, SHELL_NODE_CANDIDATES, SHELL_PROBE_PATH } from "../src/tools.ts";
-import { LAUNCHD_LABEL, LAUNCHD_PLIST, parseOs } from "../src/scheduler.ts";
+import { LAUNCHD_LABEL, LAUNCHD_PLIST, macosVersionProblem, parseOs } from "../src/scheduler.ts";
+import { LOG_KEEP, LOG_LIMIT, trimLog } from "../src/logtrim.ts";
 
 /*
  * Nothing here runs on a Mac. A host is made to look like one with fakes in its `~/.local/bin`, which is
@@ -48,6 +49,7 @@ if (verb === "bootout") { fs.rmSync(loaded, { force: true }); process.exit(0); }
 /** Makes `home` look like a Mac to the scripts `init` runs: BSD `stat`, `uname` and `launchctl`. */
 function makeMac(home: string): void {
   installFake(home, "launchctl", FAKE_LAUNCHCTL);
+  writeExecutable(join(home, ".local/bin/sw_vers"), `#!/bin/sh\nif [ "$1" = "-productVersion" ]; then cat "$HOME/fake-macos-version" 2>/dev/null || echo 14.5; else exit 1; fi\n`);
   writeExecutable(join(home, ".local/bin/uname"), `#!/bin/sh\nif [ "$1" = "-s" ]; then echo Darwin; else exec /usr/bin/uname "$@"; fi\n`);
   writeExecutable(
     join(home, ".local/bin/stat"),
@@ -234,4 +236,110 @@ test("the shell scripts and the TypeScript name the same Homebrew places", () =>
     const tail = text.slice(at).split("\n").slice(1, wanted.length + 1).map((l) => l.trim().replace(/ \\$/, ""));
     assert.deepEqual(tail, wanted, `${file} tries the Homebrew Nodes after PATH`);
   }
+});
+
+test("the label is the reverse-DNS one, in the plist's name and its Label", () => {
+  assert.equal(LAUNCHD_LABEL, "io.github.rolfkoenders.fleet.apply");
+  assert.equal(LAUNCHD_PLIST, "Library/LaunchAgents/io.github.rolfkoenders.fleet.apply.plist");
+});
+
+test("macOS 12.3 is the oldest version accepted", () => {
+  for (const ok of ["12.3", "12.3.1", "12.7.6", "13", "13.0", "14.5", "15.1.1", "26.0"]) assert.equal(macosVersionProblem(ok), null, ok);
+  for (const old of ["12.2", "12.2.1", "12", "11.7.10", "10.15.7"]) assert.match(macosVersionProblem(old) ?? "", /needs 12\.3 or newer/, old);
+  for (const bad of ["", "unknown", "12.x"]) assert.match(macosVersionProblem(bad) ?? "", /could not read/, bad);
+});
+
+test("init stops with missing-prerequisite on a Mac older than 12.3, and changes nothing", () => {
+  for (const [version, message] of [["12.2.1", /macOS 12\.3 or newer: this host runs macOS 12\.2\.1/], ["", /could not read the macOS version/]] as const) {
+    const s = mac();
+    writeFileSync(join(s.lab, "fake-macos-version"), version);
+    const { r, doc } = s.json();
+    assert.equal(r.code, EXIT["missing-prerequisite"]);
+    assert.match((doc.checklist as string[]).join("\n"), message);
+    assert.equal(existsSync(plistPath(s)) || existsSync(join(s.lab, "fleet-config")), false, "nothing changed on the host");
+    assert.deepEqual(launchctl(s), []);
+  }
+  const s = mac();
+  writeFileSync(join(s.lab, "fake-macos-version"), "12.3\n");
+  assert.equal(s.run().code, EXIT.ok, "12.3 itself is accepted");
+});
+
+test("a Linux host is never asked for a macOS version", () => {
+  const s = setup();
+  writeExecutable(join(s.lab, ".local/bin/sw_vers"), `#!/bin/sh\necho called >> "$HOME/sw_vers-calls.log"; echo 10.0\n`);
+  assert.equal(s.run().code, EXIT.ok);
+  assert.equal(existsSync(join(s.lab, "sw_vers-calls.log")), false);
+});
+
+const logIn = (home: string) => join(home, "Library/Logs/fleet.log");
+function writeLog(home: string, bytes: number): string {
+  mkdirSync(join(home, "Library/Logs"), { recursive: true });
+  const text = Array.from({ length: Math.ceil(bytes / 20) }, (_, i) => `line ${String(i).padStart(14, "0")}\n`).join("").slice(0, bytes);
+  writeFileSync(logIn(home), text);
+  return text;
+}
+
+test("on macOS a log over 1 MB is cut to its last lines, in the same file", () => {
+  const home = makeHome("laptop");
+  const text = writeLog(home, LOG_LIMIT + 5000);
+  const inode = statSync(logIn(home)).ino;
+  assert.equal(trimLog(home, "darwin"), true);
+  const after = readFileSync(logIn(home), "utf8");
+  assert.equal(statSync(logIn(home)).ino, inode, "the inode stays, because launchd holds it open");
+  assert.ok(after.length <= LOG_KEEP && after.length > LOG_KEEP - 100, `kept ${after.length}`);
+  assert.ok(text.endsWith(after), "what is left is the end of the log");
+  assert.match(after, /^line \d{14}\n/, "it starts at a whole line");
+});
+
+test("a descriptor that appends, like launchd's, writes at the new end after a trim", () => {
+  const home = makeHome("laptop");
+  writeLog(home, LOG_LIMIT + 10);
+  const fd = openSync(logIn(home), "a");
+  assert.equal(trimLog(home, "darwin"), true);
+  writeSync(fd, "after trim\n");
+  closeSync(fd);
+  const after = readFileSync(logIn(home), "utf8");
+  assert.ok(after.endsWith("after trim\n") && !after.includes("\0"));
+});
+
+test("a log at or under 1 MB, a missing log, and any other OS are left alone", () => {
+  const home = makeHome("laptop");
+  assert.equal(trimLog(home, "darwin"), false, "no file is not an error");
+  const text = writeLog(home, LOG_LIMIT);
+  assert.equal(trimLog(home, "darwin"), false);
+  assert.equal(readFileSync(logIn(home), "utf8"), text);
+  writeLog(home, LOG_LIMIT + 1000);
+  assert.equal(trimLog(home, "linux"), false);
+  assert.equal(statSync(logIn(home)).size, LOG_LIMIT + 1000);
+});
+
+test("apply on Linux does not touch a big ~/Library/Logs/fleet.log", () => {
+  const { clone } = makeClone();
+  const home = makeHome("laptop");
+  writeLog(home, LOG_LIMIT + 1000);
+  runFleet(clone, ["apply", "--json"], { home });
+  assert.equal(statSync(logIn(home)).size, LOG_LIMIT + 1000);
+});
+
+test("a symlinked log is not followed, and an unwritable one is skipped", () => {
+  const home = makeHome("laptop");
+  mkdirSync(join(home, "Library/Logs"), { recursive: true });
+  const target = join(home, "elsewhere.log");
+  writeFileSync(target, "x".repeat(LOG_LIMIT + 1000));
+  symlinkSync(target, logIn(home));
+  assert.equal(trimLog(home, "darwin"), false);
+  assert.equal(statSync(target).size, LOG_LIMIT + 1000);
+  rmSync(logIn(home));
+  writeLog(home, LOG_LIMIT + 1000);
+  chmodSync(logIn(home), 0o400);
+  if (process.getuid?.() !== 0) assert.equal(trimLog(home, "darwin"), false);
+  assert.equal(statSync(logIn(home)).size, LOG_LIMIT + 1000);
+});
+
+test("a log with no newline in its tail is kept whole from the cut", () => {
+  const home = makeHome("laptop");
+  mkdirSync(join(home, "Library/Logs"), { recursive: true });
+  writeFileSync(logIn(home), "y".repeat(LOG_LIMIT + 1000));
+  assert.equal(trimLog(home, "darwin"), true);
+  assert.equal(statSync(logIn(home)).size, LOG_KEEP);
 });

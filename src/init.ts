@@ -13,7 +13,7 @@ import type { Pin } from "./pin.ts";
 import type { Conflict } from "./plan.ts";
 import { syncAndPush } from "./push.ts";
 import { hostNames } from "./recipients.ts";
-import { parseOs, schedulerFor } from "./scheduler.ts";
+import { MACOS_VERSION_COMMAND, macosVersionProblem, parseOs, schedulerFor } from "./scheduler.ts";
 import type { Os } from "./scheduler.ts";
 import { namesIn } from "./secrets.ts";
 import { secrets } from "./secretscli.ts";
@@ -152,6 +152,7 @@ const CHECKLIST = {
   repo: (url: string) => `git and GitHub: git must read and push ${url}. With an SSH key: git config --global url."git@github.com:".insteadOf "https://github.com/". With a token: gh auth setup-git`,
   sops: (os: Os) => `sops 3.11 or newer: ${os === "darwin" ? "brew install sops age" : "sudo pacman -S sops age"}, or the static binary from the release page in ~/.local/bin, its sha256 checked`,
   age: (os: Os) => `age-keygen: ${os === "darwin" ? "brew install age" : "sudo pacman -S age, sudo apt install age"}, or the static tarball in ~/.local/bin`,
+  macos: (problem: string) => `macOS 12.3 or newer: ${problem}`,
   os: (name: string) => `an OS fleet supports: it runs on Linux and macOS, and this host reports '${name}'`,
 };
 
@@ -160,6 +161,7 @@ function prerequisites(ctx: Ctx): Outcome {
   const body = `
 have() { command -v "$1" >/dev/null 2>&1; }
 echo "os=$(uname -s 2>/dev/null)"
+if [ "$(uname -s 2>/dev/null)" = Darwin ]; then echo "macos=$(${MACOS_VERSION_COMMAND} 2>/dev/null)"; fi
 node=
 for c in "\${FLEET_NODE:-}" "$HOME/.local/share/fnm/aliases/default/bin/node" "$HOME/.local/bin/node" "$(command -v node 2>/dev/null || true)" ${SHELL_NODE_CANDIDATES.join(" ")}; do
   if [ -n "$c" ] && [ -x "$c" ] && "$c" -e 'process.exit(process.features.typescript ? 0 : 1)' 2>/dev/null; then node=$c; break; fi
@@ -198,6 +200,10 @@ exit 0
   ctx.os = os;
 
   const items: string[] = [];
+  if (os === "darwin") {
+    const old = macosVersionProblem(facts.get("macos") ?? "");
+    if (old !== null) items.push(CHECKLIST.macos(old));
+  }
   if (!facts.has("node")) items.push(CHECKLIST.node(os));
   if (!facts.has("git")) items.push(CHECKLIST.git(os));
   else {

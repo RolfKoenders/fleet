@@ -22,7 +22,7 @@ Without systemd, run `fleet apply` by hand or from cron.
 
 ## macOS (experimental)
 
-macOS support is written from Apple's documentation and tested against fakes. It has not yet been run on a Mac, so expect to find problems, and report them. Use macOS 12.3 or newer: the scripts use `readlink -f`.
+Fleet has never run on a real Mac. macOS support is written from Apple's documentation and tested against fakes, so expect to find problems, and report them. Use macOS 12.3 or newer: the scripts use `readlink -f`. `fleet init` reads the version with `sw_vers -productVersion` and stops with a missing prerequisite on an older one.
 
 Install what fleet needs with Homebrew, on Apple Silicon (`/opt/homebrew`) or Intel (`/usr/local`):
 
@@ -33,9 +33,11 @@ xcode-select --install   # for git, if you have no other
 
 Fleet finds Homebrew's tools without a login shell, so the timer works without `brew shellenv`.
 
-On a Mac the timer is a LaunchAgent, `~/Library/LaunchAgents/dev.fleet.apply.plist`. It runs `fleet apply` when it loads (at login) and at :00 and :30 each hour, and a run missed while the Mac slept happens when it wakes. The output goes to `~/Library/Logs/fleet.log`. Check it with `fleet status`, or `launchctl print gui/$(id -u)/dev.fleet.apply`.
+On a Mac the timer is a LaunchAgent, `~/Library/LaunchAgents/io.github.rolfkoenders.fleet.apply.plist`. It runs `fleet apply` when it loads (at login) and at :00 and :30 each hour, and a run missed while the Mac slept happens when it wakes. The output goes to `~/Library/Logs/fleet.log`. When that file passes 1 MB, the start of each apply cuts it down in place to its last 256 KB, at a line boundary. A log that is a symlink is left alone. Check it with `fleet status`, or `launchctl print gui/$(id -u)/io.github.rolfkoenders.fleet.apply`.
 
-A LaunchAgent runs only while its user is logged in at the desktop. `fleet init` over ssh to a Mac nobody is logged in to writes the file and stops, saying so. Log in on the Mac once, turn on automatic login if it is a headless machine, and run `fleet init <host>` again.
+A LaunchAgent runs only while its user is logged in at the desktop. `fleet init` over ssh to a Mac nobody is logged in to writes the file and stops with exit code 1, asking you to log in at the Mac, then run `fleet init <host>` again.
+
+Headless Macs, with nobody ever logged in, are out of scope: there is no timer for them. Two workarounds: turn on automatic login for the agent user, or leave the Mac without a timer and run `fleet push` from another machine over ssh to apply on it.
 
 Git must be able to read and push your config repo without a prompt, from a launchd job. A key kept in the macOS Keychain may need `UseKeychain yes` and `AddKeysToAgent yes` in `~/.ssh/config` (Apple documents those two options); whether a launchd job can then use it is not yet checked. `fleet init` tests a push before it installs the timer.
 
