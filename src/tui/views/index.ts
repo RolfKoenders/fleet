@@ -13,7 +13,7 @@ import { drawMatrix } from "./matrix.ts";
 import { drawPush } from "./push.ts";
 import { drawSecrets } from "./secrets.ts";
 import { drawTimeline } from "./timeline.ts";
-import { drawHelp, drawLeave, drawPalette } from "./overlays.ts";
+import { drawDoctor, drawHelp, drawLeave, drawPalette } from "./overlays.ts";
 import { s } from "./ui.ts";
 
 const COMMON: Hint[] = [["ctrl-k", "palette"], ["?", "help"], ["q", "quit"]];
@@ -23,13 +23,14 @@ function hints(state: State): Hint[] {
   if (state.screen === "push" && state.push.phase === "review") return state.push.focus === "message" ? [["type", "commit message"], ["enter", "next"], ["tab", "back to push"], ["esc", "cancel"]] : [["type push", "confirm"], ["enter", "go"], ["tab", "commit message"], ["ctrl-r", "read again"], ["esc", "cancel"]];
   if (state.overlay?.kind === "palette") return [["↑↓", "choose"], ["enter", "go"], ["esc", "close"]];
   if (state.overlay?.kind === "help") return [["esc", "close"]];
+  if (state.overlay?.kind === "doctor") return state.overlay.off === null ? [["y", "run"], ["t", "this host only"], ["esc", "cancel"]] : [["esc", "close"]];
   switch (state.screen) {
     case "home":
-      return [[homeLayout(state.size).mode === "cards" ? "←↑↓→" : "↑↓", "select"], ["enter", "matrix"], ["r", "refresh"], ["P", "push"], ...COMMON];
+      return [[homeLayout(state.size).mode === "cards" ? "←↑↓→" : "↑↓", "select"], ["enter", "matrix"], ["r", "refresh"], ["d", "doctor"], ["P", "push"], ...COMMON];
     case "push":
       return [["P", state.push.phase === "running" ? "watch" : "review a push"], ["esc", "home"], ...COMMON];
     case "matrix":
-      return [["←↑↓→", "move"], ["enter", "skills"], ["r", "refresh"], ...COMMON];
+      return [["←↑↓→", "move"], ["enter", "skills"], ["d", "doctor"], ["r", "refresh"], ...COMMON];
     case "conflicts":
       return [["↑↓", "select"], ["r", "refresh"], ...COMMON];
     case "timeline":
@@ -69,4 +70,5 @@ export function drawApp(state: State, c: Canvas): void {
   if (state.overlay?.kind === "help") drawHelp(c);
   if (state.overlay?.kind === "palette") drawPalette(c, state);
   if (state.overlay?.kind === "leave") drawLeave(c, state);
+  if (state.overlay?.kind === "doctor") drawDoctor(c, state);
 }

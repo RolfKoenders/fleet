@@ -1,9 +1,13 @@
 import { spawn } from "node:child_process";
+import { join } from "node:path";
 import { Worker } from "node:worker_threads";
+import { readHostName } from "../host.ts";
 import { hostStatusFrom, printable, sshArguments } from "../status.ts";
 import type { StatusFields } from "../status.ts";
 import type { Conflict } from "../plan.ts";
-import { findTool } from "../tools.ts";
+import { findTool, probedNode } from "../tools.ts";
+import { readDoctor } from "./doctorread.ts";
+import type { DoctorResult } from "./doctorread.ts";
 import type { HostInfo } from "./model.ts";
 import type { Job } from "./worker.ts";
 import { readCatalog, readCommitDiff, readHistory, readSecrets } from "./reads.ts";
@@ -29,6 +33,11 @@ export type Probe = {
   commitDiff(sha: string, signal: AbortSignal): Promise<CommitDiff>;
   secrets(signal: AbortSignal): Promise<SecretsView>;
   catalog(signal: AbortSignal): Promise<CatalogView>;
+  /**
+   * `fleet doctor --json` (with `--all` for every host), run as a child. Unlike every other question this one starts
+   * the MCP servers the hosts have picked, with their real credentials, so only a confirmed key press ever asks it.
+   */
+  doctor?(all: boolean, signal: AbortSignal): Promise<DoctorResult>;
 };
 
 /** The browsing questions answered from the files under `configDir` and the clones under `home`. */
@@ -71,6 +80,25 @@ function ssh(path: string, dest: string, home: string, signal: AbortSignal): Pro
   });
 }
 
+/** The longest `fleet doctor --all` may take: every server of every host at its own timeout. */
+const DOCTOR_LIMIT_MS = 15 * 60_000;
+
+/** Runs `fleet doctor --json` in the tool at `toolDir` as `home`, and reads its document. The exit code is not looked at. */
+function runDoctor(toolDir: string, configDir: string, home: string, self: string | null, all: boolean, signal: AbortSignal): Promise<DoctorResult> {
+  return new Promise((resolve) => {
+    const child = spawn(join(toolDir, "bin/fleet"), ["doctor", "--json", ...(all ? ["--all"] : [])], {
+      stdio: ["ignore", "pipe", "ignore"],
+      signal,
+      timeout: DOCTOR_LIMIT_MS,
+      env: { ...process.env, FLEET_EVENTS: "0", FLEET_NODE: probedNode(), FLEET_CONFIG: configDir, HOME: home },
+    });
+    let stdout = "";
+    child.stdout.setEncoding("utf8").on("data", (d: string) => (stdout += d));
+    child.once("error", (error) => resolve({ ok: false, detail: `cannot run fleet doctor: ${printable(error.message) ?? "unknown error"}` }));
+    child.once("close", () => resolve(readDoctor(stdout, self)));
+  });
+}
+
 export function realProbe(toolDir: string, configDir: string, home: string): Probe {
   return {
     ...readingProbe(configDir, home),
@@ -89,6 +117,7 @@ export function realProbe(toolDir: string, configDir: string, home: string): Pro
       const detail = answer.detail ?? printable((notes[0] ?? "").replace(/^fleet: [^:]*: /, "")) ?? undefined;
       return { result: answer.result as HostResult["result"], status: answer.status, ...(answer.result === "ok" ? {} : { detail: detail ?? "" }) };
     },
+    doctor: (all, signal) => runDoctor(toolDir, configDir, home, readHostName(home), all, signal),
     async conflicts(signal) {
       const r = await inWorker<Reply>({ op: "conflicts", toolDir, configDir, home }, signal);
       if (r?.code === "ok" && r.conflicts) return { ok: true, items: r.conflicts };

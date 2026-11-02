@@ -35,7 +35,7 @@ export const status = (over: Partial<StatusFields> = {}): StatusFields => ({
 
 export const ok = (over: Partial<StatusFields> = {}): HostResult => ({ result: "ok", status: status(over) });
 
-export type Canned = { hosts?: Record<string, HostResult | "never">; conflicts?: ConflictsResult; reads?: Pick<Probe, "history" | "commitDiff" | "secrets" | "catalog"> };
+export type Canned = { doctor?: Probe["doctor"]; hosts?: Record<string, HostResult | "never">; conflicts?: ConflictsResult; reads?: Pick<Probe, "history" | "commitDiff" | "secrets" | "catalog"> };
 
 /** Reads that find nothing, for tests of other screens. */
 export const noReads: NonNullable<Canned["reads"]> = {
@@ -57,6 +57,7 @@ export function cannedProbe(canned: Canned = {}): Probe {
     async conflicts() {
       return canned.conflicts ?? { ok: true, items: [] };
     },
+    ...(canned.doctor ? { doctor: canned.doctor } : {}),
   };
 }
 

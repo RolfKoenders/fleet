@@ -16,6 +16,7 @@ import type { Model } from "./model.ts";
 import { visibleRows } from "./model.ts";
 import type { Size } from "./terminal.ts";
 import type { CachedHost } from "./cache.ts";
+import type { DoctorResult } from "./doctorread.ts";
 import type { CatalogView, CommitDiff, History, SecretsView } from "./reads.ts";
 import { drawApp } from "./views/index.ts";
 import { catalogItems } from "./views/catalog.ts";
@@ -54,7 +55,10 @@ export type SecretsLive = { phase: "loading" | "done"; view: SecretsView | null;
 
 export type CatalogLive = { phase: "loading" | "done"; view: CatalogView | null; query: string; typing: boolean; selected: number; scroll: number };
 
-export type Overlay = null | { kind: "help" } | { kind: "leave" } | { kind: "palette"; query: string; selected: number };
+/** Doctor is only ever asked for through a confirmation. `scope` is what was asked: this host or every host. */
+export type DoctorLive = { phase: "idle" | "running" | "done"; gen: number; scope: "this" | "all"; result: DoctorResult | null };
+
+export type Overlay = null | { kind: "help" } | { kind: "leave" } | { kind: "doctor"; off: string | null } | { kind: "palette"; query: string; selected: number };
 
 export type State = {
   size: Size;
@@ -68,6 +72,7 @@ export type State = {
   live: Record<string, HostLive>;
   conflicts: ConflictsLive;
   push: PushState;
+  doctor: DoctorLive;
   /** Counts the reviews, so the answer to an old one is ignored. */
   reviews: number;
   timeline: TimelineLive;
@@ -82,6 +87,7 @@ export type Msg =
   | { type: "host"; host: string; gen: number; result: HostResult }
   | { type: "conflicts"; result: ConflictsResult }
   | { type: "preview"; gen: number; result: PreviewResult }
+  | { type: "doctor"; gen: number; result: DoctorResult }
   | { type: "push"; event: FleetEvent }
   | { type: "pushEnd"; end: PushEnd }
   | { type: "history"; result: History }
@@ -101,6 +107,8 @@ export type Options = {
   cached?: Record<string, CachedHost>;
   /** Called with each good answer, so it can be remembered for the next run. */
   remember?: (host: string, status: StatusFields) => void;
+  /** Set where doctor must not run (the demo): the reason, shown when `d` is pressed. */
+  noDoctor?: string;
 };
 
 export const BOOT_MS = 1700;
@@ -130,6 +138,22 @@ export function createApp(options: Options): App<State, Msg> {
     const end = await pusher!.run((event) => send({ type: "push", event }), message === "" ? undefined : message);
     send({ type: "pushEnd", end });
   };
+
+  // The one place doctor is asked. It starts real servers, so it is only reached from the confirmation.
+  const askDoctor = (gen: number, all: boolean): Cmd<Msg> => async ({ send, signal }) => {
+    send({ type: "doctor", gen, result: await probe.doctor!(all, signal) });
+  };
+  const doctorOff = (): string | null => options.noDoctor ?? (probe.doctor === undefined ? "this view has no way to run it" : null);
+
+  function onDoctorOverlay(state: State, key: Key): [State, Cmd<Msg>[]] {
+    const close: State = { ...state, overlay: null };
+    if (key.name === "escape" || key.text === "n" || key.text === "q" || (key.ctrl && key.text === "c")) return [close, []];
+    if (state.overlay?.kind !== "doctor" || state.overlay.off !== null) return [state, []];
+    const scope = key.text === "t" ? "this" : key.name === "enter" || key.text === "y" ? "all" : null;
+    if (scope === null) return [state, []];
+    const gen = state.doctor.gen + 1;
+    return [{ ...close, doctor: { phase: "running", gen, scope, result: null } }, [askDoctor(gen, scope === "all" && model.hosts.length > 1)]];
+  }
 
   /** Opens the review, which reads and changes nothing. A push in flight is watched, not started again. */
   function review(state: State): [State, Cmd<Msg>[]] {
@@ -233,6 +257,8 @@ export function createApp(options: Options): App<State, Msg> {
         return refresh(closed);
       case "help":
         return [{ ...closed, overlay: { kind: "help" } }, []];
+      case "doctor":
+        return [{ ...closed, overlay: state.doctor.phase === "running" ? null : { kind: "doctor", off: doctorOff() } }, []];
       case "push":
         return review(closed);
       case "quit":
@@ -349,6 +375,7 @@ export function createApp(options: Options): App<State, Msg> {
       if (key.text === "q" || key.name === "enter" || (key.ctrl && key.text === "c")) return [state, [({ quit }) => quit(0)]];
       return [state, []];
     }
+    if (state.overlay?.kind === "doctor") return onDoctorOverlay(state, key);
     if (state.overlay === null && state.screen === "catalog" && state.catalog.typing) return [onFilter(state, key), []];
     if (state.overlay?.kind === "palette") return onPalette(state, key);
     if (state.overlay?.kind === "help") {
@@ -364,6 +391,7 @@ export function createApp(options: Options): App<State, Msg> {
     if (ch === "P") return review(state);
     if (ch === "?") return [{ ...state, overlay: { kind: "help" } }, []];
     if (ch === "r") return refresh(state);
+    if (ch === "d") return go(state, { do: "doctor" });
     const tab = SCREENS.find((s) => s.key === ch);
     if (tab) return [{ ...state, screen: tab.id }, []];
     if (key.name === "tab" || key.name === "backtab") {
@@ -409,6 +437,7 @@ export function createApp(options: Options): App<State, Msg> {
         live,
         conflicts: { phase: "loading", items: [], detail: null, selected: 0 },
         push: { phase: "idle" },
+        doctor: { phase: "idle", gen: 0, scope: "all", result: null },
         reviews: 0,
         timeline: { phase: "loading", history: null, selected: 0, diffs: {}, scroll: 0 },
         secrets: { phase: "loading", view: null, mode: "names", selected: 0 },
@@ -453,6 +482,10 @@ export function createApp(options: Options): App<State, Msg> {
           if (state.push.phase !== "review" || state.push.gen !== message.gen) return [state, []];
           return [{ ...state, push: { ...state.push, preview: message.result } }, []];
         }
+        case "doctor": {
+          if (state.doctor.gen !== message.gen) return [state, []];
+          return [{ ...state, doctor: { ...state.doctor, phase: "done", result: message.result } }, []];
+        }
         case "push": {
           if (state.push.phase !== "running") return [state, []];
           return [{ ...state, push: { phase: "running", run: reduce(state.push.run, message.event) } }, []];
@@ -484,7 +517,7 @@ export function createApp(options: Options): App<State, Msg> {
     tick(state) {
       if (!state.boot.done) return 33;
       const loading = Object.values(state.live).some((l) => l.phase === "loading") || state.conflicts.phase === "loading" || state.timeline.phase === "loading" || state.secrets.phase === "loading" || state.catalog.phase === "loading";
-      const pushing = state.push.phase === "running" || (state.push.phase === "review" && state.push.preview === null);
+      const pushing = state.push.phase === "running" || state.doctor.phase === "running" || (state.push.phase === "review" && state.push.preview === null);
       return (loading || pushing) && state.motion ? 80 : 1000;
     },
   };
