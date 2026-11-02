@@ -21,7 +21,11 @@ main() {
     "$HOME/.local/bin/node" \
     "$(command -v node 2>/dev/null || true)" \
     /opt/homebrew/bin/node \
+    /opt/homebrew/opt/node@26/bin/node \
+    /opt/homebrew/opt/node@24/bin/node \
     /opt/homebrew/opt/node@22/bin/node \
+    /usr/local/opt/node@26/bin/node \
+    /usr/local/opt/node@24/bin/node \
     /usr/local/opt/node@22/bin/node
   do
     if [ -n "$node" ] && [ -x "$node" ] && "$node" -e 'process.exit(process.features.typescript ? 0 : 1)' 2>/dev/null; then

@@ -4,12 +4,12 @@ import { delimiter, join } from "node:path";
 
 /**
  * Homebrew keeps its binaries in `/opt/homebrew/bin` on Apple Silicon and `/usr/local/bin` on Intel, which
- * is already a system directory here. The versioned Node formulas (`node@22`) are keg-only, so they are in
+ * is already a system directory here. The versioned Node formulas (`node@26`, `node@24`, `node@22`) are keg-only, newest first, so they are in
  * `opt/<formula>/bin` and on no directory above. `bin/fleet` and `install.sh` are shell and repeat these
  * lists; a test keeps them equal.
  */
 export const HOMEBREW_BIN = "/opt/homebrew/bin";
-export const HOMEBREW_KEG_NODES = ["/opt/homebrew/opt/node@22/bin/node", "/usr/local/opt/node@22/bin/node"];
+export const HOMEBREW_KEG_NODES = ["/opt/homebrew", "/usr/local"].flatMap((prefix) => [26, 24, 22].map((v) => `${prefix}/opt/node@${v}/bin/node`));
 
 /** The directories searched before `PATH`, in order. The home ones come first, so a host's own copy wins. */
 export const probeDirs = (home: string = homedir()): string[] => [join(home, ".local/bin"), join(home, ".opencode/bin"), "/usr/bin", "/usr/local/bin", HOMEBREW_BIN];
