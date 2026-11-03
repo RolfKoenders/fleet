@@ -13,8 +13,20 @@ const skip = hasScript ? false : "script(1) is not installed, so there is no pty
 
 type Ran = { code: number | null; out: string };
 
+/** Where `until` next appears in `out` from `from` on, as the index just past it. */
+function find(out: string, until: string | RegExp, from: number): { end: number } | null {
+  if (typeof until === "string") {
+    const i = out.indexOf(until, from);
+    return i < 0 ? null : { end: i + until.length };
+  }
+  const re = new RegExp(until.source, until.flags.includes("g") ? until.flags : `${until.flags}g`);
+  re.lastIndex = from;
+  const m = re.exec(out);
+  return m ? { end: m.index + m[0].length } : null;
+}
+
 /** Runs `command` in a real pty made by script(1), types `keys` once `ready` shows, signals it after `signal`. */
-function inPty(command: string, opts: { env: Record<string, string>; ready: string; keys?: string; then?: string; signal?: { name: string; pattern: string }; steps?: { until: string; keys: string }[]; /** Signals the process once `until` is true (polled), however far the screen has got. */ after?: { until: () => boolean; signal: { name: string; pattern: string } } }): Promise<Ran> {
+function inPty(command: string, opts: { env: Record<string, string>; ready: string; keys?: string; then?: string; signal?: { name: string; pattern: string }; steps?: { until: string | RegExp; keys: string }[]; /** Signals the process once `until` is true (polled), however far the screen has got. */ after?: { until: () => boolean; signal: { name: string; pattern: string } } }): Promise<Ran> {
   return new Promise((resolve, reject) => {
     const child = spawn("script", ["-qec", `stty cols 100 rows 30; ${command}`, "/dev/null"], { env: { PATH: "/usr/bin:/bin", ...opts.env }, stdio: ["pipe", "pipe", "pipe"] });
     let out = "";
@@ -25,8 +37,9 @@ function inPty(command: string, opts: { env: Record<string, string>; ready: stri
     child.stdout.setEncoding("utf8").on("data", (d: string) => {
       out += d;
       const step = steps[0];
-      if (step && out.indexOf(step.until, seen) >= 0) {
-        seen = out.indexOf(step.until, seen) + step.until.length;
+      const found = step && find(out, step.until, seen);
+      if (step && found) {
+        seen = found.end;
         steps.shift();
         setTimeout(() => child.stdin.write(step.keys), 150);
       }
@@ -271,8 +284,10 @@ test("pty: in the demo, P shows a push of fake hosts and runs it in the sandbox;
     ready: "watch a push",
     keys: "P",
     steps: [
-      { until: "fake hosts, nothing real is touched", keys: "push" },
-      { until: "push\u001b", keys: "\r" },
+      // The prompt is drawn only once the preview is in, so the word typed now counts.
+      { until: "press enter to go", keys: "push" },
+      // The typed word echoes with the cursor after it; the footer's "type push" never has one.
+      { until: /push(\u001b\[[0-9;]*m)*▏/, keys: "\r" },
       { until: "Push ended", keys: "q" },
     ],
   });
