@@ -18,22 +18,50 @@
     }).join("")).join("\n");
   }
 
-  // Hero: the boot animation, then the status dots breathe.
-  const boot = document.getElementById("boot");
-  let bootTimer;
-  function playBoot() {
-    clearInterval(bootTimer);
-    const last = F.boot.length - 1;
-    const rest = () => (boot.innerHTML = html(F.boot[last], (t) => (t === "●" ? "led" : "")));
-    if (still) return rest();
-    let i = 0;
-    bootTimer = setInterval(() => {
-      if (i >= last) { clearInterval(bootTimer); return rest(); }
-      boot.innerHTML = html(F.boot[i++], (_, a) => (a & BOLD ? "glow" : ""));
-    }, 33);
+  /**
+   * Plays `count` frames at 30 a second, by the clock rather than by counting timer ticks, so a busy or
+   * throttled page drops frames instead of slowing down or catching up in a burst. `draw(i)` shows frame i.
+   */
+  function player(count, draw, { hold = 0, loop = false, done } = {}) {
+    let raf = 0, start = 0, offset = 0, playing = false, last = -1;
+    const step = (now) => {
+      const t = offset + now - start;
+      const i = Math.min(count - 1, Math.floor(t / 33));
+      if (i !== last) { last = i; draw(i); }
+      if (i < count - 1 || t < count * 33 + hold) { raf = requestAnimationFrame(step); return; }
+      playing = false;
+      if (loop) { offset = 0; last = -1; play(); } else done?.();
+    };
+    function play() {
+      if (playing) return;
+      playing = true;
+      start = performance.now();
+      raf = requestAnimationFrame(step);
+    }
+    function pause() {
+      if (!playing) return;
+      playing = false;
+      cancelAnimationFrame(raf);
+      offset += performance.now() - start;
+    }
+    function restart() { pause(); offset = 0; last = -1; play(); }
+    return { play, pause, restart };
   }
-  boot.addEventListener("click", playBoot);
-  document.fonts.ready.then(playBoot);
+
+  /** Calls `on` while `el` is at least `share` on screen, and `off` when it leaves. */
+  function whileVisible(el, share, on, off) {
+    new IntersectionObserver((es) => (es[0].isIntersecting ? on() : off()), { threshold: share }).observe(el);
+  }
+
+  // Hero: the boot animation, a beat after the page settles, then the status dots breathe.
+  const boot = document.getElementById("boot");
+  const bootRest = () => (boot.innerHTML = html(F.boot[F.boot.length - 1], (t) => (t === "●" ? "led" : "")));
+  const bootPlayer = player(F.boot.length, (i) => {
+    if (i === F.boot.length - 1) return bootRest();
+    boot.innerHTML = html(F.boot[i], (_, a) => (a & BOLD ? "glow" : ""));
+  });
+  boot.addEventListener("click", () => (still ? bootRest() : bootPlayer.restart()));
+  document.fonts.ready.then(() => (still ? bootRest() : setTimeout(bootPlayer.play, 450)));
 
   // Nav border once scrolled.
   const nav = document.querySelector(".nav");
@@ -50,7 +78,8 @@
     });
   });
 
-  // Reveal sections as they scroll in.
+  // Reveal sections as they scroll in. REVEAL_MS is how long the fade takes (style.css .reveal), with its delay.
+  const REVEAL_MS = 950;
   const io = new IntersectionObserver((es) => es.forEach((e) => e.isIntersecting && (e.target.classList.add("in"), io.unobserve(e.target))), { threshold: 0.12 });
   document.querySelectorAll(".section-head, .fan, .window, .feat, .steps li, .commands, .cta > *").forEach((el, i) => {
     el.classList.add("reveal");
@@ -79,12 +108,20 @@
     const r = repo.getBoundingClientRect();
     const x0 = r.right - box.left, y0 = r.top + r.height / 2 - box.top;
     svg.setAttribute("viewBox", `0 0 ${box.width} ${box.height}`);
-    svg.innerHTML = `<defs><linearGradient id="wire" x1="0" x2="1"><stop offset="0" stop-color="#3fb950"/><stop offset="1" stop-color="#3fb950" stop-opacity=".25"/></linearGradient></defs>`;
+    // The gradient is in page units: one sized to its path would vanish on the straight middle wire, whose box
+    // has no height. The same goes for a CSS filter, so the glow is a wide faint path behind each wire.
+    const x1 = hosts[0].getBoundingClientRect().left - box.left;
+    svg.innerHTML = `<defs><linearGradient id="wire" gradientUnits="userSpaceOnUse" x1="${x0}" x2="${x1}"><stop offset="0" stop-color="#3fb950"/><stop offset="1" stop-color="#3fb950" stop-opacity=".55"/></linearGradient></defs>`;
     paths = hosts.map((h) => {
       const b = h.getBoundingClientRect();
       const x1 = b.left - box.left, y1 = b.top + b.height / 2 - box.top, mx = (x0 + x1) / 2;
+      const d = `M${x0} ${y0} C${mx} ${y0} ${mx} ${y1} ${x1} ${y1}`;
+      const halo = document.createElementNS(NS, "path");
+      halo.setAttribute("d", d);
+      halo.setAttribute("class", "halo");
+      svg.appendChild(halo);
       const p = document.createElementNS(NS, "path");
-      p.setAttribute("d", `M${x0} ${y0} C${mx} ${y0} ${mx} ${y1} ${x1} ${y1}`);
+      p.setAttribute("d", d);
       svg.appendChild(p);
       return p;
     });
@@ -92,7 +129,7 @@
   function packet(path, ms) {
     return new Promise((done) => {
       const c = document.createElementNS(NS, "circle");
-      c.setAttribute("r", "4");
+      c.setAttribute("r", "5");
       c.setAttribute("class", "packet");
       svg.appendChild(c);
       const len = path.getTotalLength();
@@ -124,9 +161,9 @@
       await wait(700);
       for (const [k, li] of items.entries()) {
         li.classList.add("lit");
-        paths.forEach((p) => p.classList.add("live"));
+        svg.classList.add("live");
         await Promise.all(hosts.map(async (h, i) => {
-          if (wide() && !still) await packet(paths[i], 900 + i * 120);
+          if (wide() && !still) await packet(paths[i], 1300 + i * 150);
           else await wait(500);
           const chip = document.createElement("span");
           chip.className = "chip";
@@ -138,7 +175,7 @@
         li.classList.remove("lit");
         await wait(120);
       }
-      paths.forEach((p) => p.classList.remove("live"));
+      svg.classList.remove("live");
       for (const h of hosts) { h.classList.add("synced"); await wait(160); }
       if (still) return;
       await wait(4500);
@@ -147,9 +184,10 @@
   wire();
   addEventListener("resize", wire);
   document.fonts.ready.then(wire);
-  new IntersectionObserver((es) => es[0].isIntersecting && runFan(), { threshold: 0.4 }).observe(fan);
+  // Starts once the section has faded in, so the first packets are not drawn half transparent.
+  new IntersectionObserver((es) => es[0].isIntersecting && setTimeout(runFan, still ? 0 : REVEAL_MS), { threshold: 0.4 }).observe(fan);
 
-  // The bridge window: real screens, the push played at the bridge's own frame rate.
+  // The bridge window: real screens, and a push played frame by frame.
   const term = document.getElementById("term");
   const wrap = term.parentElement;
   const caption = document.getElementById("caption");
@@ -174,24 +212,29 @@
     const w = wrap.clientWidth - 24;
     term.style.fontSize = `${Math.min(15, w / (frame.cols * ratio))}px`;
   }
-  let pushTimer;
+  // The push plays only while the window is on screen, from the start the first time it is seen.
+  const drawPush = (i) => { current = F.push[i]; fit(current); term.innerHTML = html(current); };
+  const pushPlayer = player(F.push.length, drawPush, { hold: 3500, loop: true });
+  let screenNow = "push", seen = false;
   function show(screen) {
-    clearTimeout(pushTimer);
+    screenNow = screen;
+    pushPlayer.pause();
     document.querySelectorAll(".tabs button").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.screen === screen)));
     caption.textContent = CAPTIONS[screen];
     if (screen !== "push") { current = F.screens[screen]; fit(current); term.innerHTML = html(current); return; }
-    let i = still ? F.push.length - 1 : 0;
-    const tick = () => {
-      current = F.push[i];
-      fit(current);
-      term.innerHTML = html(current);
-      if (still) return;
-      const end = i === F.push.length - 1;
-      i = end ? 0 : i + 1;
-      pushTimer = setTimeout(tick, end ? 3000 : 33);
-    };
-    tick();
+    if (still) return drawPush(F.push.length - 1);
+    drawPush(0);
+    if (seen) pushPlayer.restart();
   }
+  let wake;
+  whileVisible(term, 0.35, () => {
+    // The first time, wait for the window to fade in; after that, carry on at once.
+    const first = !seen;
+    seen = true;
+    if (screenNow !== "push" || still) return;
+    clearTimeout(wake);
+    wake = setTimeout(pushPlayer.play, first ? REVEAL_MS : 0);
+  }, () => { clearTimeout(wake); pushPlayer.pause(); });
   document.querySelectorAll(".tabs button").forEach((b) => b.addEventListener("click", () => show(b.dataset.screen)));
   addEventListener("resize", () => current && fit(current));
   document.fonts.ready.then(() => { measure(); show("push"); });

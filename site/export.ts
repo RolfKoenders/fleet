@@ -34,9 +34,10 @@ function encode(b: Buffer): Frame {
   return { cols: b.cols, rows: b.rows, lines };
 }
 
-// The boot animation, 30 frames a second until it rests.
+// The boot animation in slow motion: sampled every 20 ms and played at 30 frames a second, so it takes about
+// 2.5 s instead of the terminal's 1.5 s. On a page it has to catch an eye that is still landing.
 const boot: Frame[] = [];
-for (let t = 0; t <= 1500; t += 33) {
+for (let t = 0; t <= 1500; t += 20) {
   const buf = new Buffer(39, 10);
   drawBoot(new Canvas(buf), t);
   boot.push(encode(buf));
@@ -76,7 +77,8 @@ b.type("doc");
 b.advance(200);
 screens.palette = snap(b);
 
-// A push, played at 30 frames a second from typing the message to the last host.
+// A push, played at 30 frames a second from the review to the last host. The fake pusher answers at once, so
+// the pauses here are paced for someone watching a web page, a little slower than a real push.
 const f = fakePusher();
 const p = await pushBridge(f.pusher, SIZE);
 const push: Frame[] = [];
@@ -88,13 +90,13 @@ const play = (ms: number) => {
 };
 p.press("P");
 await p.settle();
-play(900);
+play(2200);
 const typing = (text: string) => {
   for (const ch of text) {
     p.type(ch);
-    play(66);
+    play(90);
   }
-  play(300);
+  play(700);
 };
 p.press("tab");
 typing("Add the triage skill");
@@ -103,24 +105,24 @@ typing("push");
 p.press("enter");
 await tick();
 f.emit({ event: "stage", host: null, stage: "validate" });
-play(300);
+play(800);
 f.emit({ event: "hosts", hosts: [{ host: "laptop", via: "local" }, { host: "box", via: "ssh" }, { host: "edge", via: "timer" }, { host: "server", via: "ssh" }] });
 f.emit({ event: "stage", host: null, stage: "publish", of: 2 });
 f.emit({ event: "step", host: null, step: "publish", target: "~/fleet-config", n: 1, of: 2 });
-play(300);
+play(700);
 f.emit({ event: "step", host: null, step: "publish", target: "~/fleet-config", n: 2, of: 2 });
 f.emit({ event: "stage", host: null, stage: "apply", of: 4 });
-play(200);
+play(500);
 const apply = (host: string, steps: number, result = "ok") => {
   f.emit({ event: "host", host, state: "start" });
-  play(150);
+  play(400);
   if (steps > 0) f.emit({ event: "stage", host, stage: "write", of: steps });
   for (let n = 1; n <= steps; n++) {
     f.emit({ event: "step", host, step: "write-link", target: "~/.claude/skills/triage", n, of: steps });
-    play(99);
+    play(260);
   }
   f.emit({ event: "host", host, state: "done", result, changes: steps });
-  play(200);
+  play(500);
 };
 apply("laptop", 3);
 apply("box", 2);
@@ -128,7 +130,7 @@ apply("edge", 0, "timer");
 apply("server", 4);
 f.end(pushOk([["laptop", 3], ["box", 2], ["edge", 0], ["server", 4]]));
 await p.settle();
-play(2000);
+play(1000);
 
 // Rows repeat a great deal from frame to frame, so each frame keeps only indexes into one table of rows.
 const rows: Span[][] = [];
