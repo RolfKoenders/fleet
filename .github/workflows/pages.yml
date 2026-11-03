@@ -3,7 +3,7 @@ name: pages
 on:
   push:
     branches: [main]
-    paths: ["site/**", "src/tui/**", "assets/**", ".github/workflows/pages.yml"]
+    paths: ["site/**", "assets/social-preview.png", ".github/workflows/pages.yml"]
   workflow_dispatch:
 
 permissions:
@@ -20,17 +20,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "24"
-      # The frames come from the real TUI, so the page always shows the bridge as it is on main.
-      - run: npm run site
+      # The site is static: frames.js holds frames recorded from the TUI, so nothing here builds or imports it.
       - name: Assemble the site
         run: |
           set -eu
           mkdir -p _site
-          cp site/index.html site/style.css site/main.js site/frames.js _site/
-          cp -r site/fonts _site/
+          cp -r site/. _site/
           cp assets/social-preview.png _site/
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
