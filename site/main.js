@@ -6,6 +6,10 @@
   const TEXT = 0xe6edf3, INK = 0x0d1117;
   const hex = (n) => "#" + n.toString(16).padStart(6, "0");
   const esc = (s) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;");
+  // Latin and the box drawing and block ranges are in the terminal font; anything else may come from a fallback
+  // font with other metrics, so each such character gets a cell of its own, one ch wide.
+  const RISKY = /[^\u0000-\u024f\u2500-\u259f]/gu;
+  const cells = (s) => esc(s).replace(RISKY, (ch) => `<i class="c">${ch}</i>`);
 
   /** One frame as HTML. `decorate` may add classes to a run, from its text and style. */
   function html(frame, decorate) {
@@ -14,7 +18,7 @@
       if (attr & REVERSE) { f = bg === -1 ? INK : bg; b = fg === -1 ? TEXT : fg; }
       const style = (f !== -1 ? `color:${hex(f)};` : "") + (b !== -1 ? `background:${hex(b)};` : "");
       const cls = [attr & BOLD && "b", attr & DIM && "d", attr & ITALIC && "i", attr & UNDERLINE && "u", decorate?.(text, attr)].filter(Boolean).join(" ");
-      return `<span${cls ? ` class="${cls}"` : ""}${style ? ` style="${style}"` : ""}>${esc(text)}</span>`;
+      return `<span${cls ? ` class="${cls}"` : ""}${style ? ` style="${style}"` : ""}>${cells(text)}</span>`;
     }).join("")).join("\n");
   }
 
