@@ -1,0 +1,246 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>fleet: one config for every machine your agents run on</title>
+  <meta name="description" content="Fleet keeps the setup of your coding agents the same on every machine: instructions, skills, MCP servers, settings and encrypted secrets, from one private git repo.">
+  <meta property="og:title" content="fleet">
+  <meta property="og:description" content="One config for every machine your coding agents run on.">
+  <meta property="og:image" content="https://rolfkoenders.github.io/fleet/social-preview.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="theme-color" content="#0b0f14">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 120 84'%3E%3Cpath d='M8 20h22l10 10v32H8Z' fill='none' stroke='%233fb950' stroke-width='5'/%3E%3Cpath d='M40 42C62 42 62 16 84 16M40 42H84M40 42C62 42 62 68 84 68' fill='none' stroke='%237d8590' stroke-width='4'/%3E%3Crect x='84' y='9' width='32' height='14' rx='2' fill='none' stroke='%23e6edf3' stroke-width='4'/%3E%3Crect x='84' y='35' width='32' height='14' rx='2' fill='none' stroke='%23e6edf3' stroke-width='4'/%3E%3Crect x='84' y='61' width='32' height='14' rx='2' fill='none' stroke='%23e6edf3' stroke-width='4'/%3E%3C/svg%3E">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="backdrop" aria-hidden="true"></div>
+
+  <header class="nav">
+    <a class="brand" href="#top" aria-label="fleet home">
+      <svg viewBox="0 0 120 84" aria-hidden="true"><path d="M8 20h22l10 10v32H8Z" fill="none" stroke="#3fb950" stroke-width="5"/><path d="M15 38h18M15 46h18M15 54h11" stroke="#3fb950" stroke-width="4"/><path d="M40 42C62 42 62 16 84 16M40 42H84M40 42C62 42 62 68 84 68" fill="none" stroke="#7d8590" stroke-width="4"/><g fill="none" stroke="#e6edf3" stroke-width="4"><rect x="84" y="9" width="32" height="14" rx="2"/><rect x="84" y="35" width="32" height="14" rx="2"/><rect x="84" y="61" width="32" height="14" rx="2"/></g></svg>
+      <span>fleet</span>
+    </a>
+    <nav>
+      <a href="#how">How it works</a>
+      <a href="#bridge">The bridge</a>
+      <a href="#start">Get started</a>
+      <a href="https://github.com/RolfKoenders/fleet/tree/main/docs">Docs</a>
+      <a class="gh" href="https://github.com/RolfKoenders/fleet">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+        GitHub
+      </a>
+    </nav>
+  </header>
+
+  <main id="top">
+    <!-- Hero: the bridge's own boot animation, drawn from real frames. -->
+    <section class="hero">
+      <button class="boot" id="boot" type="button" aria-label="Replay the boot animation" title="Click to replay"></button>
+      <p class="eyebrow"><span class="pulse"></span> for your coding agents</p>
+      <h1>One config.<br><span class="grad">Every machine.</span></h1>
+      <p class="lede">Fleet keeps the setup of your coding agents the same everywhere. Instructions, skills, MCP servers, settings and encrypted secrets live in one private git repo, and every machine is made to match it.</p>
+      <div class="install">
+        <div class="cmd" data-copy="curl -fsSL https://raw.githubusercontent.com/RolfKoenders/fleet/main/install.sh | sh">
+          <span class="prompt">$</span>
+          <code>curl -fsSL https://raw.githubusercontent.com/RolfKoenders/fleet/main/install.sh | sh</code>
+          <button type="button" class="copy" aria-label="Copy install command">copy</button>
+        </div>
+        <div class="ctas">
+          <a class="btn primary" href="#start">Get started</a>
+          <a class="btn" href="#bridge">Watch a push <span aria-hidden="true">↓</span></a>
+        </div>
+      </div>
+    </section>
+
+    <!-- How it works: the logo's fan-out, as a diagram. -->
+    <section class="how" id="how">
+      <div class="section-head">
+        <p class="kicker">How it works</p>
+        <h2>Write it once. Every machine follows.</h2>
+        <p>Your config is a git repo you own. <code>fleet push</code> publishes it and applies it on every host it can reach over ssh. Every machine also pulls and applies on its own every 30 minutes.</p>
+      </div>
+
+      <div class="fan" id="fan">
+        <div class="repo card">
+          <div class="card-title"><span class="dot"></span>fleet-config <span class="muted">private</span></div>
+          <ul class="tree">
+            <li data-k="0"><span class="ic">≡</span>config/AGENTS.md</li>
+            <li data-k="1"><span class="ic">◆</span>skills/</li>
+            <li data-k="2"><span class="ic">⇄</span>catalog/mcp.yaml</li>
+            <li data-k="3"><span class="ic">⚙</span>config/settings</li>
+            <li data-k="4"><span class="ic">🔒︎</span>secrets/*.enc.yaml</li>
+            <li class="muted"><span class="ic">▤</span>hosts/</li>
+          </ul>
+        </div>
+
+        <div class="gap" aria-hidden="true"></div>
+        <svg class="wires" aria-hidden="true"></svg>
+
+        <div class="hosts">
+          <div class="host card" data-h="0">
+            <div class="card-title"><span class="led"></span>laptop <span class="muted">Linux · Claude Code</span></div>
+            <div class="chips"></div>
+          </div>
+          <div class="host card" data-h="1">
+            <div class="card-title"><span class="led"></span>server <span class="muted">ssh · opencode</span></div>
+            <div class="chips"></div>
+          </div>
+          <div class="host card" data-h="2">
+            <div class="card-title"><span class="led"></span>mac <span class="muted">macOS · both</span></div>
+            <div class="chips"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- The bridge: real frames from the TUI. -->
+    <section class="bridge" id="bridge">
+      <div class="section-head">
+        <p class="kicker">fleet bridge</p>
+        <h2>Every host on one screen.</h2>
+        <p>A full-screen view of your whole fleet. It only reads until you confirm a push. Everything below is drawn by the bridge's own code, frame by frame.</p>
+      </div>
+
+      <div class="window">
+        <div class="window-bar">
+          <span class="lights"><i></i><i></i><i></i></span>
+          <div class="tabs" role="tablist">
+            <button role="tab" data-screen="push" aria-selected="true">Push</button>
+            <button role="tab" data-screen="home">Home</button>
+            <button role="tab" data-screen="matrix">Matrix</button>
+            <button role="tab" data-screen="conflicts">Conflicts</button>
+            <button role="tab" data-screen="palette">Palette</button>
+          </div>
+          <span class="window-title">fleet bridge</span>
+        </div>
+        <div class="term-wrap"><pre class="term" id="term" aria-label="fleet bridge screen"></pre></div>
+      </div>
+      <p class="caption" id="caption"></p>
+    </section>
+
+    <!-- What fleet manages, and the promise it makes. -->
+    <section class="features">
+      <div class="section-head">
+        <p class="kicker">What it keeps in line</p>
+        <h2>Everything your agents need. Nothing they shouldn't.</h2>
+      </div>
+      <div class="grid">
+        <article class="feat wide accent">
+          <div class="feat-ic">!</div>
+          <h3>Conflicts, never overwrites</h3>
+          <p>If a machine holds something different from your config, fleet stops and tells you exactly what and how to fix it. Hand edits and tool-written changes are never silently replaced.</p>
+          <pre class="mini"><span class="y">✕</span> ~/.claude/CLAUDE.md is a file, not a link
+  <span class="g">fix</span> move it aside, then run <span class="w">fleet apply</span></pre>
+        </article>
+        <article class="feat">
+          <div class="feat-ic">≡</div>
+          <h3>Shared instructions</h3>
+          <p>One <code>AGENTS.md</code> and per-host rules, linked into Claude Code and opencode.</p>
+        </article>
+        <article class="feat">
+          <div class="feat-ic">◆</div>
+          <h3>Pinned skills</h3>
+          <p>Skills from your repo or upstream sources, pinned to a commit and grouped into bundles per host.</p>
+        </article>
+        <article class="feat">
+          <div class="feat-ic">⇄</div>
+          <h3>MCP servers</h3>
+          <p>One catalog, included or excluded per host. <code>fleet doctor</code> starts each one and checks it answers.</p>
+        </article>
+        <article class="feat">
+          <div class="feat-ic">⚿</div>
+          <h3>Encrypted secrets</h3>
+          <p>sops and age keep tokens encrypted in git. Each machine decrypts only what it is a recipient of.</p>
+        </article>
+        <article class="feat">
+          <div class="feat-ic">↻</div>
+          <h3>Self-healing</h3>
+          <p>A systemd or launchd timer pulls and applies every 30 minutes, so machines you forgot about catch up.</p>
+        </article>
+        <article class="feat">
+          <div class="feat-ic">⇉</div>
+          <h3>Push over ssh</h3>
+          <p><code>fleet push</code> publishes, then applies on each host in turn and stops at the first conflict.</p>
+        </article>
+        <article class="feat">
+          <div class="feat-ic">{}</div>
+          <h3>Agent native</h3>
+          <p><code>--json</code> on every command, and <code>fleet agent</code> prints recipes so your agent can run it for you.</p>
+        </article>
+      </div>
+    </section>
+
+    <!-- Getting started, straight from the README. -->
+    <section class="start" id="start">
+      <div class="section-head">
+        <p class="kicker">Get started</p>
+        <h2>From zero to a fleet in four commands.</h2>
+      </div>
+      <ol class="steps">
+        <li>
+          <div class="step-n">1</div>
+          <div class="step-body">
+            <h3>Install fleet</h3>
+            <p>No runtime dependencies beyond Node, git and sops.</p>
+            <div class="cmd small" data-copy="curl -fsSL https://raw.githubusercontent.com/RolfKoenders/fleet/main/install.sh | sh"><span class="prompt">$</span><code>curl -fsSL …/install.sh | sh</code><button type="button" class="copy">copy</button></div>
+          </div>
+        </li>
+        <li>
+          <div class="step-n">2</div>
+          <div class="step-body">
+            <h3>Create your config</h3>
+            <p>A commented example repo. Edit it yourself, or ask your agent to run <code>fleet agent</code> and follow the onboarding recipe.</p>
+            <div class="cmd small" data-copy="fleet new ~/fleet-config"><span class="prompt">$</span><code>fleet new ~/fleet-config</code><button type="button" class="copy">copy</button></div>
+          </div>
+        </li>
+        <li>
+          <div class="step-n">3</div>
+          <div class="step-body">
+            <h3>Set up this machine</h3>
+            <p>Init prints an age key once. Save it in your password manager.</p>
+            <div class="cmd small" data-copy="fleet init laptop"><span class="prompt">$</span><code>fleet init laptop</code><button type="button" class="copy">copy</button></div>
+          </div>
+        </li>
+        <li>
+          <div class="step-n">4</div>
+          <div class="step-body">
+            <h3>Add the rest</h3>
+            <p>Bring other machines in from this one, then change and publish.</p>
+            <div class="cmd small" data-copy="fleet init server"><span class="prompt">$</span><code>fleet init server</code><button type="button" class="copy">copy</button></div>
+          </div>
+        </li>
+      </ol>
+
+      <div class="commands">
+        <div class="cmdrow"><code>fleet diff</code><span>Show what an apply would change</span></div>
+        <div class="cmdrow"><code>fleet push</code><span>Publish the config and apply it everywhere</span></div>
+        <div class="cmdrow"><code>fleet status --all</code><span>Ask every machine over ssh</span></div>
+        <div class="cmdrow"><code>fleet bridge</code><span>The full-screen view of every host</span></div>
+        <div class="cmdrow"><code>fleet doctor</code><span>Start each MCP server and check it answers</span></div>
+        <div class="cmdrow"><code>fleet secrets</code><span>Edit, set or rekey encrypted secrets</span></div>
+        <div class="cmdrow"><code>fleet adopt</code><span>Take ownership of what already matches</span></div>
+        <div class="cmdrow"><code>fleet agent</code><span>What an agent needs to know</span></div>
+      </div>
+    </section>
+
+    <section class="cta">
+      <h2>Try it without touching anything.</h2>
+      <p>The demo runs the bridge on made-up hosts in a throwaway sandbox.</p>
+      <div class="cmd big" data-copy="fleet demo"><span class="prompt">$</span><code>fleet demo</code><button type="button" class="copy">copy</button></div>
+      <p class="reqs">Linux with systemd, or macOS 12.3+ · Node 22.18+ · git · sops 3.11+ · Claude Code or opencode</p>
+    </section>
+  </main>
+
+  <footer>
+    <span>fleet · MIT licensed</span>
+    <span><a href="https://github.com/RolfKoenders/fleet">GitHub</a> · <a href="https://github.com/RolfKoenders/fleet/blob/main/docs/faq.md">FAQ</a> · <a href="https://github.com/RolfKoenders/fleet/blob/main/docs/bridge.md">The bridge</a></span>
+  </footer>
+
+  <script src="frames.js"></script>
+  <script src="main.js"></script>
+</body>
+</html>
