@@ -4,8 +4,7 @@
   "type": "module",
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "node --test \"test/**/*.test.ts\"",
-    "site": "HOME=\"$(mktemp -d)\" node site/export.ts"
+    "test": "node --test \"test/**/*.test.ts\""
   },
   "devDependencies": {
     "@types/node": "^22.18.0",

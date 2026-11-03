@@ -277,6 +277,7 @@ footer a:hover { color: var(--text); }
   .window-title { display: none; }
 }
 
+/* Reduce motion: nothing slides, pulses or scrolls smoothly. The terminal playback in main.js still runs. */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
   html { scroll-behavior: auto; }

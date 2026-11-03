@@ -1,7 +1,10 @@
 // The landing page. Terminal frames come from frames.js, which site/export.ts renders from the real TUI.
 (() => {
   const F = window.FLEET_FRAMES;
-  const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  // With reduce motion on, the terminal playback still runs: it is text changing in place, not movement. What does
+  // move (the slide-in on scroll, the pulsing dots, smooth scrolling) is turned off in style.css, so there is no
+  // fade to wait for either.
+  const calm = matchMedia("(prefers-reduced-motion: reduce)").matches;
   const BOLD = 1, DIM = 2, ITALIC = 4, UNDERLINE = 8, REVERSE = 16;
   const TEXT = 0xe6edf3, INK = 0x0d1117;
   const hex = (n) => "#" + n.toString(16).padStart(6, "0");
@@ -64,8 +67,8 @@
     if (i === F.boot.length - 1) return bootRest();
     boot.innerHTML = html(F.boot[i], (_, a) => (a & BOLD ? "glow" : ""));
   });
-  boot.addEventListener("click", () => (still ? bootRest() : bootPlayer.restart()));
-  document.fonts.ready.then(() => (still ? bootRest() : setTimeout(bootPlayer.play, 450)));
+  boot.addEventListener("click", () => bootPlayer.restart());
+  document.fonts.ready.then(() => setTimeout(bootPlayer.play, 450));
 
   // Nav border once scrolled.
   const nav = document.querySelector(".nav");
@@ -167,7 +170,7 @@
         li.classList.add("lit");
         svg.classList.add("live");
         await Promise.all(hosts.map(async (h, i) => {
-          if (wide() && !still) await packet(paths[i], 1300 + i * 150);
+          if (wide()) await packet(paths[i], 1300 + i * 150);
           else await wait(500);
           const chip = document.createElement("span");
           chip.className = "chip";
@@ -181,7 +184,6 @@
       }
       svg.classList.remove("live");
       for (const h of hosts) { h.classList.add("synced"); await wait(160); }
-      if (still) return;
       await wait(4500);
     }
   }
@@ -189,7 +191,7 @@
   addEventListener("resize", wire);
   document.fonts.ready.then(wire);
   // Starts once the section has faded in, so the first packets are not drawn half transparent.
-  new IntersectionObserver((es) => es[0].isIntersecting && setTimeout(runFan, still ? 0 : REVEAL_MS), { threshold: 0.4 }).observe(fan);
+  new IntersectionObserver((es) => es[0].isIntersecting && setTimeout(runFan, calm ? 0 : REVEAL_MS), { threshold: 0.4 }).observe(fan);
 
   // The bridge window: real screens, and a push played frame by frame.
   const term = document.getElementById("term");
@@ -226,7 +228,6 @@
     document.querySelectorAll(".tabs button").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.screen === screen)));
     caption.textContent = CAPTIONS[screen];
     if (screen !== "push") { current = F.screens[screen]; fit(current); term.innerHTML = html(current); return; }
-    if (still) return drawPush(F.push.length - 1);
     drawPush(0);
     if (seen) pushPlayer.restart();
   }
@@ -235,9 +236,9 @@
     // The first time, wait for the window to fade in; after that, carry on at once.
     const first = !seen;
     seen = true;
-    if (screenNow !== "push" || still) return;
+    if (screenNow !== "push") return;
     clearTimeout(wake);
-    wake = setTimeout(pushPlayer.play, first ? REVEAL_MS : 0);
+    wake = setTimeout(pushPlayer.play, first && !calm ? REVEAL_MS : 0);
   }, () => { clearTimeout(wake); pushPlayer.pause(); });
   document.querySelectorAll(".tabs button").forEach((b) => b.addEventListener("click", () => show(b.dataset.screen)));
   addEventListener("resize", () => current && fit(current));
