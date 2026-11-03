@@ -1,5 +1,5 @@
 #!/bin/sh
-# Non-interactive SSH and systemd user units do not load fnm or ~/.profile, so Node is found by
+# Non-interactive SSH, systemd user units and launchd agents do not load fnm or ~/.profile, so Node is found by
 # absolute path, not by trusting PATH. Override with FLEET_NODE=/path/to/node.
 set -eu
 
@@ -16,7 +16,14 @@ for node in \
   "${FLEET_NODE:-}" \
   "$HOME/.local/share/fnm/aliases/default/bin/node" \
   "$HOME/.local/bin/node" \
-  "$(command -v node 2>/dev/null || true)"
+  "$(command -v node 2>/dev/null || true)" \
+  /opt/homebrew/bin/node \
+  /opt/homebrew/opt/node@26/bin/node \
+  /opt/homebrew/opt/node@24/bin/node \
+  /opt/homebrew/opt/node@22/bin/node \
+  /usr/local/opt/node@26/bin/node \
+  /usr/local/opt/node@24/bin/node \
+  /usr/local/opt/node@22/bin/node
 do
   if usable "$node"; then
     # The probed path, not a resolved one, so the fnm alias survives upgrades.

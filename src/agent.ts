@@ -38,6 +38,7 @@ const EXIT_MEANING: Record<ExitName, string> = {
   "needs-secret": "A key, secret or sops is missing or too old",
   "missing-prerequisite": "Node, git, sops, age-keygen, claude or opencode is missing",
   locked: "Another apply is running",
+  unhealthy: "`fleet doctor` ran and found a failed check",
 };
 
 /** The push rule. The `fleet` skill says the same in its own words. */
@@ -86,7 +87,7 @@ ${list(commands.filter((c) => c.effect === "read"))}
 
 ### Changes things
 
-These write to this host, to the config repo or to other hosts. Run one only when the user asked for it.
+These write to this host, to the config repo or to other hosts, or (\`doctor\`) start the MCP servers the catalog defines, with their real credentials. \`bridge\` is a terminal view that reads until a person asks it to push or to run doctor, which is why it is here. Run one only when the user asked for it.
 
 ${list(commands.filter((c) => c.effect === "change"))}
 

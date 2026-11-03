@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { FAKE_VERSIONS, git, installStatusTools, makeClone, makeHome, repoRoot, runFleet, toolCalls } from "./helpers.ts";
+import { LAUNCHD_LABEL } from "../src/scheduler.ts";
 import { EXIT } from "../src/exit.ts";
 
 const EM_DASH = String.fromCharCode(0x2014);
@@ -43,8 +44,8 @@ test("every command fleet has is in the primer, once, as read-only or as changin
   assert.match(readOnly, /^### Read-only$/m);
   const listed = (text: string) => [...text.matchAll(/^- `fleet ([a-z]+)/gm)].map((m) => m[1]);
   assert.deepEqual([...listed(readOnly), ...listed(changing)].sort(), help.commands.map((c) => c.name).sort());
-  assert.deepEqual(listed(readOnly).sort(), ["agent", "diff", "help", "status"]);
-  assert.deepEqual(listed(changing).sort(), ["adopt", "apply", "init", "new", "push", "secrets", "skills", "update"]);
+  assert.deepEqual(listed(readOnly).sort(), ["agent", "demo", "diff", "help", "status"]);
+  assert.deepEqual(listed(changing).sort(), ["adopt", "apply", "bridge", "doctor", "init", "new", "push", "secrets", "skills", "update"]);
 });
 
 test("the exit codes are the ones the code defines, with their numbers", () => {
@@ -113,7 +114,8 @@ test("fleet agent calls the fake tools it was given, not real ones", () => {
   const s = setup();
   s.run();
   assert.deepEqual(toolCalls(s.home, "claude"), [["--version"]]);
-  assert.deepEqual(toolCalls(s.home, "systemctl"), [["--user", "is-active", "fleet.timer"]]);
+  if (process.platform === "darwin") assert.deepEqual(toolCalls(s.home, "launchctl"), [["print", `gui/${process.getuid!()}/${LAUNCHD_LABEL}`]]);
+  else assert.deepEqual(toolCalls(s.home, "systemctl"), [["--user", "is-active", "fleet.timer"]]);
   assert.deepEqual(toolCalls(s.home, "sops"), [["--version", "--disable-version-check"]]);
 });
 

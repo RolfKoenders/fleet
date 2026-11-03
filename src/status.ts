@@ -2,12 +2,13 @@ import { spawnSync } from "node:child_process";
 import { readdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { planCounts } from "./apply.ts";
+import { planConflicts, planCounts } from "./apply.ts";
 import { MissingToolError, repoState } from "./git.ts";
 import type { RepoState } from "./git.ts";
 import { readHostName } from "./host.ts";
 import { paint } from "./output.ts";
 import type { Result } from "./output.ts";
+import { statusOs, timerWord } from "./scheduler.ts";
 import { SOPS_VERSION_ARGS } from "./sops.ts";
 import { readState } from "./state.ts";
 import { hostTargets } from "./targets.ts";
@@ -21,8 +22,9 @@ export type ToolVersions = { claude: string | null; opencode: string | null; sop
 /** What `fleet status --json` reports about one host, besides `host`. Null is "could not be read". */
 export type StatusFields = {
   repos: { fleet: RepoState };
-  applied: { at: string | null; ageSeconds: number | null };
-  /** What `systemctl --user is-active fleet.timer` printed. */
+  /** `config` is the commit of the config repo the last apply was made from. Null for an older state, or one made outside a git repo. */
+  applied: { at: string | null; ageSeconds: number | null; config: string | null };
+  /** What `systemctl --user is-active fleet.timer` printed, or `active` or `inactive` for the LaunchAgent on macOS. */
   timer: string | null;
   /** Links and keys apply would create, update or remove. */
   pending: number | null;
@@ -70,22 +72,27 @@ function t3Version(home: string): string | null {
   return entries.filter((e) => e.isDirectory() && VERSION_DIR.test(e.name)).map((e) => e.name).sort(byVersion).at(-1) ?? null;
 }
 
-function timerState(home: string): string | null {
-  const path = findTool("systemctl", process.env, home);
-  if (path === null) return null;
-  const r = spawnSync(path, ["--user", "is-active", "fleet.timer"], { encoding: "utf8", timeout: TIMEOUT_MS, stdio: ["ignore", "pipe", "ignore"] });
-  if (r.error) return null;
-  const word = (r.stdout ?? "").trim().split("\n")[0] ?? "";
-  return /^[a-z-]+$/.test(word) ? word : null;
+/** What the host's scheduler says about the timer: `systemctl --user is-active` on Linux, whether the LaunchAgent is loaded on macOS. */
+export function timerState(home: string): string | null {
+  return timerWord(
+    statusOs(home),
+    (path, args) => {
+      const r = spawnSync(path, args, { encoding: "utf8", timeout: TIMEOUT_MS, stdio: ["ignore", "pipe", "ignore"] });
+      return r.error ? null : { status: r.status, stdout: r.stdout ?? "" };
+    },
+    (name) => findTool(name, process.env, home),
+  );
 }
 
 function appliedAge(home: string, messages: string[]): StatusFields["applied"] {
-  const none = { at: null, ageSeconds: null };
+  const none = { at: null, ageSeconds: null, config: null };
   try {
-    const at = readState(home)?.appliedAt;
+    const state = readState(home);
+    const at = state?.appliedAt;
     const time = typeof at === "string" ? Date.parse(at) : Number.NaN;
     if (Number.isNaN(time)) return none;
-    return { at: at as string, ageSeconds: Math.max(0, Math.floor((Date.now() - time) / 1000)) };
+    const config = state?.repos?.config;
+    return { at: at as string, ageSeconds: Math.max(0, Math.floor((Date.now() - time) / 1000)), config: typeof config === "string" ? config : null };
   } catch (error) {
     messages.push(`fleet: the applied state cannot be read: ${(error as Error).message}`);
     return none;
@@ -130,6 +137,7 @@ function lines(fields: StatusFields, color: boolean, clone: string | null): stri
     `  ahead: ${fleet.ahead ?? "n/a"}`,
     `  behind: ${fleet.behind ?? "n/a"}`,
     fields.applied.at === null ? "applied: never" : `applied: ${ago(fields.applied.ageSeconds ?? 0)} (${fields.applied.at})`,
+    ...(fields.applied.at === null ? [] : [`  config: ${fields.applied.config ?? "unknown"}`]),
     `timer: ${timer}`,
     `pending: ${shown(fields.pending)}`,
     `conflicts: ${fields.conflicts === null || fields.conflicts === 0 ? shown(fields.conflicts) : paint(color, "yellow", String(fields.conflicts))}`,
@@ -174,8 +182,21 @@ export function status(toolDir: string, configDir: string, color: boolean, home:
   return { code: "ok", text, messages, fields: { ...fields } };
 }
 
+/**
+ * `fleet status --conflicts`: this host's conflicts in full, planned offline the way `status` counts them. Reads only: no
+ * clone, no fetch, nothing written. A host that has conflicts still answers `ok`; the list is the answer.
+ */
+export function statusConflicts(configDir: string, color: boolean, home: string = homedir()): Result {
+  const host = readHostName(home);
+  if (host === null) return { code: "invalid", messages: ["fleet: no host name set; `fleet init <host>` writes one"] };
+  const planned = planConflicts(configDir, home);
+  if (!Array.isArray(planned)) return planned;
+  const text = planned.length === 0 ? "no conflicts" : planned.flatMap((c) => [`${paint(color, "yellow", c.kind)} ${c.path}: ${c.detail}`, `  fix: ${c.fix}`]).join("\n");
+  return { code: "ok", text, fields: { conflicts: planned.map(({ kind, path, detail, fix }) => ({ kind, path, detail, fix })) } };
+}
+
 /** One host's answer. `timer` is a host with no `ssh` destination, which applies on its own schedule. */
-type HostStatus = {
+export type HostStatus = {
   host: string;
   result: "ok" | "unreachable" | "timer" | "error";
   status: StatusFields | null;
@@ -183,14 +204,14 @@ type HostStatus = {
   detail?: string;
 };
 
-const printable = (value: unknown): string | null => (typeof value === "string" ? value.slice(0, 200).replace(/[^\x20-\x7e]/g, "?") : null);
-const count = (value: unknown): number | null => (typeof value === "number" && Number.isInteger(value) && value >= 0 ? value : null);
+export const printable = (value: unknown): string | null => (typeof value === "string" ? value.slice(0, 200).replace(/[^\x20-\x7e]/g, "?") : null);
+export const count = (value: unknown): number | null => (typeof value === "number" && Number.isInteger(value) && value >= 0 ? value : null);
 
 /**
  * A remote host's status, cut down to the fields fleet knows and to printable text, because it is shown on a
  * terminal and a host can be wrong. Null when the document has no fleet clone state, such as a failed status.
  */
-function fromDocument(doc: Obj): StatusFields | null {
+export function statusFromDocument(doc: Obj): StatusFields | null {
   const repos = isObject(doc.repos) ? doc.repos : {};
   const fleet = repos.fleet;
   if (!isObject(fleet) || typeof fleet.clean !== "boolean") return null;
@@ -198,7 +219,7 @@ function fromDocument(doc: Obj): StatusFields | null {
   const tools = isObject(doc.tools) ? doc.tools : {};
   return {
     repos: { fleet: { branch: printable(fleet.branch), sha: printable(fleet.sha) ?? "", clean: fleet.clean, ahead: count(fleet.ahead), behind: count(fleet.behind) } },
-    applied: { at: printable(applied.at), ageSeconds: count(applied.ageSeconds) },
+    applied: { at: printable(applied.at), ageSeconds: count(applied.ageSeconds), config: printable(applied.config) },
     timer: printable(doc.timer),
     pending: count(doc.pending),
     conflicts: count(doc.conflicts),
@@ -206,16 +227,17 @@ function fromDocument(doc: Obj): StatusFields | null {
   };
 }
 
-const REMOTE_COMMAND = "~/.local/bin/fleet status --json";
+export const REMOTE_COMMAND = "~/.local/bin/fleet status --json";
 
-/** Runs `fleet status --json` on one host, as `push` runs `apply` there. ssh exiting 255 is unreachable. */
-function ask(ssh: string, dest: string, host: string, notes: string[]): HostStatus {
-  const r = spawnSync(ssh, ["-o", "BatchMode=yes", "-o", "ConnectTimeout=10", dest, REMOTE_COMMAND], {
-    encoding: "utf8",
-    stdio: ["ignore", "pipe", "pipe"],
-    timeout: 60_000,
-  });
-  const firstLine = (r.stderr ?? "").trim().split("\n")[0] ?? "";
+/** The arguments `ssh` is run with to ask `dest` for its status. */
+export const sshArguments = (dest: string): string[] => ["-o", "BatchMode=yes", "-o", "ConnectTimeout=10", dest, REMOTE_COMMAND];
+
+/** What running `ssh` came to, from either the blocking or the async way of running it. */
+export type SshOutcome = { error?: Error | undefined; status: number | null; stdout: string; stderr: string };
+
+/** Reads one host's answer to `fleet status --json`. ssh exiting 255 is unreachable. */
+export function hostStatusFrom(host: string, r: SshOutcome, notes: string[]): HostStatus {
+  const firstLine = r.stderr.trim().split("\n")[0] ?? "";
   if (r.error || r.status === 255) {
     notes.push(`fleet: ${host}: unreachable over ssh (${r.error?.message ?? (firstLine || "no reason given")})`);
     return { host, result: "unreachable", status: null };
@@ -227,7 +249,7 @@ function ask(ssh: string, dest: string, host: string, notes: string[]): HostStat
   } catch {
     // not a document
   }
-  const fields = doc === null ? null : fromDocument(doc);
+  const fields = doc === null ? null : statusFromDocument(doc);
   if (fields !== null) return { host, result: "ok", status: fields };
   const detail =
     doc !== null && typeof doc.code === "string"
@@ -235,6 +257,16 @@ function ask(ssh: string, dest: string, host: string, notes: string[]): HostStat
       : `its output was not a fleet status document (exit ${r.status ?? "none"})`;
   notes.push(`fleet: ${host}: ${detail}`);
   return { host, result: "error", status: null, detail };
+}
+
+/** Runs `fleet status --json` on one host, as `push` runs `apply` there. */
+function ask(ssh: string, dest: string, host: string, notes: string[]): HostStatus {
+  const r = spawnSync(ssh, sshArguments(dest), {
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+    timeout: 60_000,
+  });
+  return hostStatusFrom(host, { error: r.error, status: r.status, stdout: r.stdout ?? "", stderr: r.stderr ?? "" }, notes);
 }
 
 const EXIT_ORDER = ["unreachable", "error"] as const;

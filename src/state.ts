@@ -12,6 +12,7 @@ export type AppliedState = {
   version: 1;
   host: string;
   appliedAt: string;
+  /** The commit each repo was at when last applied: `fleet` is the tool, `config` the config repo. Older files have no `config`. */
   repos: Record<string, string>;
   links: LinkRecord[];
   keys: KeyRecord[];

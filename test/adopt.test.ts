@@ -110,10 +110,14 @@ test("adopt mcp is a no-op for the next apply and diff when nothing else is pend
   s.put(".claude.json", { mcpServers: { stats: { type: "http", url: "https://stats.example.com/mcp" } } });
   s.put(".config/opencode/opencode.jsonc", { mcp: { stats: { type: "remote", url: "https://stats.example.com/mcp" } } });
   assert.equal(s.run(["adopt", "mcp", "stats"]).code, EXIT.ok);
-  const stateBefore = s.read(STATE);
+  const adopted = s.state();
   const r = s.run(["apply"]);
   assert.equal(r.code, EXIT.ok, r.stderr);
   assert.equal(r.stdout.trim(), "nothing to do");
+  // The first apply records which config commit it saw; it changes nothing else.
+  assert.deepEqual({ ...s.state(), appliedAt: "", repos: {} }, { ...adopted, appliedAt: "", repos: {} });
+  const stateBefore = s.read(STATE);
+  assert.equal(s.run(["apply"]).code, EXIT.ok);
   assert.equal(s.read(STATE), stateBefore);
   assert.deepEqual(claudeCalls(s.home), []);
   assert.equal(s.run(["adopt", "mcp", "stats"]).code, EXIT.ok);

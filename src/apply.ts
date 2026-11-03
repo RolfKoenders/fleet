@@ -3,6 +3,7 @@ import { homedir } from "node:os";
 import { dirname } from "node:path";
 import { isManagedTool } from "./dirs.ts";
 import { InvalidConfigError, loadConfig } from "./config.ts";
+import { note, send } from "./events.ts";
 import { addServer, ensurePrivate, findClaude, isClaudeServer, removeServer, serverName, shadowWarnings } from "./claudemcp.ts";
 import { findTool } from "./tools.ts";
 import { MissingToolError, repoState, syncRepo, UnreachableError } from "./git.ts";
@@ -15,6 +16,7 @@ import type { Relayed, Result } from "./output.ts";
 import { readPin } from "./pin.ts";
 import { emptyPlan, expandTarget, planLinks } from "./plan.ts";
 import type { Conflict, LinkPlan } from "./plan.ts";
+import { trimLog } from "./logtrim.ts";
 import { relaunch, relaunched } from "./relaunch.ts";
 import { renderKeys, resolveSecrets } from "./secrets.ts";
 import { SETTINGS_FILE } from "./settings.ts";
@@ -29,6 +31,15 @@ type Plan = { links: LinkPlan; keys: KeyPlan; warnings: string[] };
 type Planned = { host: string; plan: Plan; state: AppliedState | null };
 
 const conflictsOf = (plan: Plan) => [...plan.keys.conflicts, ...plan.links.conflicts];
+
+/** The commit the config repo is at, or null when it is not a git repository or git is missing: then nothing is recorded. */
+function configCommit(configDir: string): string | null {
+  try {
+    return repoState(configDir).sha;
+  } catch {
+    return null;
+  }
+}
 
 /** The result for a failure every command reports the same way, or null for one it does not know. */
 export function failure(error: unknown): Result | null {
@@ -133,6 +144,12 @@ export function planCounts(configDir: string, home: string): { pending: number; 
   return { pending, conflicts: conflictsOf(planned.plan).length };
 }
 
+/** The conflicts `diff` would list, read the way `status` reads them: offline, writing nothing. */
+export function planConflicts(configDir: string, home: string): Conflict[] | Result {
+  const planned = prepare(configDir, home, "offline");
+  return isResult(planned) ? planned : conflictsOf(planned.plan);
+}
+
 export function diff(configDir: string, color: boolean, home: string = homedir()): Result {
   const planned = prepare(configDir, home, "diff");
   if (isResult(planned)) return planned;
@@ -156,7 +173,7 @@ function syncRepos(toolDir: string, configDir: string, home: string): { conflict
     // With local work in the config repo, its pin is not known to be what GitHub has, so the tool stays put.
     if (blocked !== null) return { conflicts: [repoConflict(configDir, blocked)], moved: false };
     if (!isManagedTool(toolDir, home)) {
-      process.stderr.write(`fleet: running from ${toolDir}, not the managed fleet clone, so the config's pinned tool commit was not enforced\n`);
+      note(`fleet: running from ${toolDir}, not the managed fleet clone, so the config's pinned tool commit was not enforced`, readHostName(home));
       return { conflicts: [], moved: false };
     }
     const problems: string[] = [];
@@ -184,7 +201,10 @@ export function apply(toolDir: string, configDir: string, color: boolean, home: 
     release?.();
     release = null;
   };
+  const name = readHostName(home);
   try {
+    trimLog(home);
+    send({ event: "stage", host: name, stage: "sync" });
     const synced = syncRepos(toolDir, configDir, home);
     if (isResult(synced)) return synced;
     if (synced.moved && !relaunched()) {
@@ -192,6 +212,7 @@ export function apply(toolDir: string, configDir: string, color: boolean, home: 
       unlock();
       return relaunch(toolDir, relaunchArgs);
     }
+    send({ event: "stage", host: name, stage: "plan" });
     const planned = prepare(configDir, home, "apply", synced.conflicts);
     if (isResult(planned)) return planned;
     const { host, plan, state } = planned;
@@ -200,7 +221,10 @@ export function apply(toolDir: string, configDir: string, color: boolean, home: 
 
     const links = new Map<string, string>((state?.links ?? []).map((l) => [l.target, l.source]));
     const keys = new Map<string, KeyRecord>((state?.keys ?? []).map((k) => [keyName(k), k]));
-    const before = JSON.stringify([[...links], [...keys]]);
+    // The config commit is part of what is compared, because state is otherwise saved only when links or keys change.
+    const configSha = configCommit(configDir);
+    const snapshot = (config: string | null) => JSON.stringify([[...links], [...keys], config]);
+    const before = snapshot(state?.repos?.config ?? null);
     for (const noop of plan.links.noops) links.set(noop.target, noop.source);
     for (const forgotten of plan.links.forgets) links.delete(forgotten.target);
     for (const noop of plan.keys.noops) keys.set(keyName(noop), noop);
@@ -220,7 +244,7 @@ export function apply(toolDir: string, configDir: string, color: boolean, home: 
           version: 1,
           host,
           appliedAt: new Date().toISOString().replace(/\.\d+Z$/, "Z"),
-          repos: { ...state?.repos, fleet: fleetSha },
+          repos: { ...state?.repos, fleet: fleetSha, ...(configSha === null ? {} : { config: configSha }) },
           links: records,
           keys: [...keys.values()],
         },
@@ -240,6 +264,13 @@ export function apply(toolDir: string, configDir: string, color: boolean, home: 
       }
     }
 
+    // What the write stage will do, so a reader can show `n of`: one step per settings file, per `claude` call, per link.
+    const settingsFiles = Object.values(SETTINGS_FILE).filter((file) => plan.keys.removes.some((k) => k.file === file) || [...plan.keys.creates, ...plan.keys.updates].some((k) => k.file === file));
+    const of = settingsFiles.length + claudeRemoves.length + claudeSets.length + plan.links.creates.length + plan.links.removes.length;
+    let n = 0;
+    const done = (step: string, target: string) => send({ event: "step", host: name, step, target, n: ++n, of });
+    send({ event: "stage", host: name, stage: "write", of });
+
     for (const file of Object.values(SETTINGS_FILE)) {
       const removes = plan.keys.removes.filter((k) => k.file === file);
       const sets = [...plan.keys.creates, ...plan.keys.updates].filter((k) => k.file === file);
@@ -248,6 +279,7 @@ export function apply(toolDir: string, configDir: string, color: boolean, home: 
       for (const remove of removes) keys.delete(keyName(remove));
       for (const record of written) keys.set(keyName(record), record);
       save();
+      done("write-keys", file);
     }
     const updating = new Set(plan.keys.updates.map(keyName));
     try {
@@ -255,11 +287,13 @@ export function apply(toolDir: string, configDir: string, color: boolean, home: 
         removeServer(claude, home, remove);
         keys.delete(keyName(remove));
         save();
+        done("remove-server", keyName(remove));
       }
       for (const set of claudeSets) {
         if (updating.has(keyName(set))) removeServer(claude, home, set);
         keys.set(keyName(set), addServer(claude, home, set));
         save();
+        done("add-server", keyName(set));
       }
     } finally {
       // Whatever mode `claude` left it in, even when a command failed part way.
@@ -271,13 +305,15 @@ export function apply(toolDir: string, configDir: string, color: boolean, home: 
       symlinkSync(create.source, path);
       links.set(create.target, create.source);
       save();
+      done("write-link", create.target);
     }
     for (const remove of plan.links.removes) {
       rmSync(expandTarget(remove.target, home));
       links.delete(remove.target);
       save();
+      done("remove-link", remove.target);
     }
-    if (JSON.stringify([[...links], [...keys]]) !== before) save();
+    if (snapshot(configSha ?? state?.repos?.config ?? null) !== before) save();
     return result;
   } finally {
     unlock();

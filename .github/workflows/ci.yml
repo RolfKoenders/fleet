@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        node: ["22.18", "24"]
+        node: ["22.18", "24", "26"]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -31,6 +31,30 @@ jobs:
           install -m 755 sops-v3.13.3.linux.amd64 "$HOME/.local/bin/sops"
           tar -xzf age-v1.3.2-linux-amd64.tar.gz age/age-keygen
           install -m 755 age/age-keygen "$HOME/.local/bin/age-keygen"
+      - run: npm ci
+      - run: npx tsc --noEmit
+      - run: npm test
+
+  # Apple Silicon is macos-latest, Intel is macos-15-intel.
+  test-macos:
+    name: test (macOS)
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, macos-15-intel]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "26"
+      - name: Install sops and age
+        run: brew install sops age
+      - name: Show the tools the tests will use
+        run: |
+          uname -sm
+          command -v sops age-keygen node
+          sops --version --disable-version-check
       - run: npm ci
       - run: npx tsc --noEmit
       - run: npm test

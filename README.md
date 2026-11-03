@@ -56,7 +56,9 @@ fleet push -m "Add a skill"
 
 | Command | What it does |
 |---|---|
-| `fleet status` | Report this machine; `--all` asks every machine over ssh |
+| `fleet status` | Report this machine; `--all` asks every machine over ssh; `--conflicts` lists this machine's conflicts in full, reading only |
+| `fleet bridge` | The full-screen view of every host (needs a terminal); pushes and doctor only on your confirmation. See [the bridge](docs/bridge.md) |
+| `fleet doctor` | Start this machine's MCP servers and check each answers; `--all` asks every machine over ssh. Runs commands with real credentials and may download packages, so it runs only when you ask |
 | `fleet diff` | Show what an apply would change |
 | `fleet apply` | Make this machine match its config |
 | `fleet push` | Publish the config and apply it |
@@ -64,22 +66,26 @@ fleet push -m "Add a skill"
 | `fleet secrets` | Edit, set or rekey encrypted secrets |
 | `fleet skills update` | Move pinned skill sources to their latest commit |
 | `fleet update` | Move the pinned tool version to the latest commit |
+| `fleet demo` | Try the bridge on made-up hosts in a throwaway sandbox; `--shell` gives a shell instead |
 | `fleet agent` | Print what an agent needs to know, including task recipes |
 
 Add `--json` to any command for output a script can read.
 
 ## Requirements
 
-- Linux with systemd
+- Linux with systemd, or macOS 12.3 or newer with Homebrew (see [Setting up machines](docs/setting-up-machines.md#macos))
 - Claude Code or opencode
 - Node 22.18 or newer
 - git
 - [sops](https://github.com/getsops/sops) 3.11 or newer
 - [age](https://github.com/FiloSottile/age)
 
+On a Mac the timer is a LaunchAgent, so it runs while the user is logged in at the desktop ([details](docs/setting-up-machines.md#macos)).
+
 ## Docs
 
 - [Setting up machines](docs/setting-up-machines.md)
+- [The bridge](docs/bridge.md)
 - [Logging in to MCP servers](docs/mcp-logins.md)
 - [FAQ](docs/faq.md)
 

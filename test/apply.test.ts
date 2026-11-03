@@ -432,3 +432,25 @@ for (const [name, target, source] of [
     assert.equal(r.code, EXIT.invalid, r.stderr);
   });
 }
+
+test("apply records the commit of the config repo, and a new commit alone is recorded by the next apply", () => {
+  const s = setup({ files: [rec("config/AGENTS.md", "~/.claude/CLAUDE.md")] });
+  assert.equal(s.run(["apply"]).code, EXIT.ok);
+  const first = readState(s.home).repos.config;
+  assert.match(first, /^[0-9a-f]{40}$/);
+  s.writeSource("notes.md");
+  assert.equal(s.run(["apply"]).code, EXIT.ok);
+  const second = readState(s.home).repos.config;
+  assert.match(second, /^[0-9a-f]{40}$/);
+  assert.notEqual(second, first);
+});
+
+test("a state written before the config commit was recorded still applies, and gains it", () => {
+  const s = setup({ files: [rec("config/AGENTS.md", "~/.claude/CLAUDE.md")] });
+  s.run(["apply"]);
+  const old = JSON.parse(readFileSync(statePath(s.home), "utf8"));
+  delete old.repos.config;
+  writeFileSync(statePath(s.home), JSON.stringify(old));
+  assert.equal(s.run(["apply"]).code, EXIT.ok);
+  assert.match(readState(s.home).repos.config, /^[0-9a-f]{40}$/);
+});
