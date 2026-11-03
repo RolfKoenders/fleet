@@ -6,17 +6,48 @@ on:
   pull_request:
 
 jobs:
+  # Whether the change touches only the landing page, which the tests cannot see.
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      site-only: ${{ steps.diff.outputs.site-only }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: diff
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          set -eu
+          only=false
+          if git cat-file -e "$BASE^{commit}" 2>/dev/null; then
+            files=$(git diff --name-only "$BASE" HEAD)
+            if [ -n "$files" ] && ! printf '%s\n' "$files" | grep -qvE '^(site/|\.github/workflows/pages\.yml$)'; then only=true; fi
+          fi
+          echo "site-only=$only" >> "$GITHUB_OUTPUT"
+          echo "site-only=$only"
+
+  # test (22.18) and test (24) are required checks, so on a landing page change they still run, skip every step and pass.
   test:
+    needs: changes
     runs-on: ubuntu-latest
     strategy:
       matrix:
         node: ["22.18", "24", "26"]
+    env:
+      SKIP: ${{ needs.changes.outputs.site-only }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - if: env.SKIP == 'true'
+        run: echo "Only the landing page changed; the pages workflow builds it."
+      - if: env.SKIP != 'true'
+        uses: actions/checkout@v4
+      - if: env.SKIP != 'true'
+        uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node }}
       - name: Install sops and age
+        if: env.SKIP != 'true'
         run: |
           set -eu
           mkdir -p "$HOME/.local/bin" "$RUNNER_TEMP/dl"
@@ -31,13 +62,18 @@ jobs:
           install -m 755 sops-v3.13.3.linux.amd64 "$HOME/.local/bin/sops"
           tar -xzf age-v1.3.2-linux-amd64.tar.gz age/age-keygen
           install -m 755 age/age-keygen "$HOME/.local/bin/age-keygen"
-      - run: npm ci
-      - run: npx tsc --noEmit
-      - run: npm test
+      - if: env.SKIP != 'true'
+        run: npm ci
+      - if: env.SKIP != 'true'
+        run: npx tsc --noEmit
+      - if: env.SKIP != 'true'
+        run: npm test
 
-  # Apple Silicon is macos-latest, Intel is macos-15-intel.
+  # Apple Silicon is macos-latest, Intel is macos-15-intel. Not required, so a landing page change skips it whole.
   test-macos:
     name: test (macOS)
+    needs: changes
+    if: needs.changes.outputs.site-only != 'true'
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
