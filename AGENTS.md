@@ -12,6 +12,10 @@ Terms are defined in `GLOSSARY.md`. Use them as written there.
 - Tests run in a temp `HOME`.
 - Never run `fleet apply` or `fleet init` against a real `HOME` while developing.
 
+## Changelog
+
+Every user-facing change adds a line under `## Unreleased` in `CHANGELOG.md`, in the same commit or PR. Releases are described in `docs/releasing.md`.
+
 ## Writing style
 
 No em dashes anywhere in this repo: docs, comments, issues, commit messages.
