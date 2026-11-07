@@ -5,6 +5,11 @@
   </picture>
 </p>
 
+<p align="center">
+  <a href="https://github.com/RolfKoenders/fleet/actions/workflows/ci.yml"><img alt="ci" src="https://github.com/RolfKoenders/fleet/actions/workflows/ci.yml/badge.svg"></a>
+  <a href="https://github.com/RolfKoenders/fleet/releases"><img alt="release" src="https://img.shields.io/github/v/release/RolfKoenders/fleet"></a>
+</p>
+
 # fleet
 
 Fleet keeps the setup of your coding agents the same on every machine. You keep instructions, skills, MCP servers, settings and encrypted secrets in one private git repo, called your config, and fleet makes each machine match it.
@@ -88,6 +93,8 @@ On a Mac the timer is a LaunchAgent, so it runs while the user is logged in at t
 - [The bridge](docs/bridge.md)
 - [Logging in to MCP servers](docs/mcp-logins.md)
 - [FAQ](docs/faq.md)
+- [Changelog](CHANGELOG.md)
+- [Releasing](docs/releasing.md)
 
 ## License
 
