@@ -69,12 +69,29 @@ fleet push -m "Add a skill"
 | `fleet push` | Publish the config and apply it |
 | `fleet adopt` | Take ownership of an MCP server or skill that already matches |
 | `fleet secrets` | Edit, set or rekey encrypted secrets |
-| `fleet skills update` | Move pinned skill sources to their latest commit |
+| `fleet skills update` | Move pinned skill sources to their latest commit; `--review` shows what changed first and asks per source |
 | `fleet update` | Move the pinned tool version to the latest commit and print what changed |
 | `fleet demo` | Try the bridge on made-up hosts in a throwaway sandbox; `--shell` gives a shell instead |
 | `fleet agent` | Print what an agent needs to know, including task recipes |
 
 Add `--json` to any command for output a script can read.
+
+### Reading a skill update before it moves
+
+A skill is instructions your agents follow, so a third-party update changes what they do. `fleet skills update --review [<source>]` reads each pinned source that would move, without moving anything, and reports the commits between the pins, each skill you use that changed with its diff size (other changed skills are only counted), and what to look at:
+
+```
+acme-skills  c19e2a1 → 7d04f6b, 14 commits, 6 of your 38 skills changed (3 others)
+
+  ~ grilling                 +12 −3
+  ! diagnose  scripts/trace.sh   new script; new URL https://…
+  ! tdd       SKILL.md           allowed-tools: + Bash(curl:*)
+  i triage    SKILL.md           description changed
+```
+
+Warnings (`!`) are a file with the exec bit, a new script, a new URL, a new `bash` or `sh` code block in `SKILL.md`, a change to `allowed-tools`, and a new hooks or settings file. A changed `description` is info (`i`), because it changes when the skill triggers. The flags are a reading aid, not a verdict.
+
+On a terminal it then asks for each source: `d` shows the full diff of the skills you use, `y` moves the pin, `n` keeps it. Without a terminal, or with `--json`, it only reports, and a pin moves only with `--yes`. Followed sources are never reviewed.
 
 ## Requirements
 

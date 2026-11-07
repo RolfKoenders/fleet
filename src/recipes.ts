@@ -17,7 +17,7 @@ export const RECIPE_RULES = [
   "Never see a secret value. Do not read a file that holds one, do not open a secrets file with `sops` or `fleet secrets edit <file>`, do not pipe a value into `fleet secrets set <host> <NAME>` and do not ask for one in chat. The user runs `fleet secrets set <host> <NAME>` themselves, in their own terminal, where the value is typed hidden.",
   "Never write a secret into the config in plain text. A token, key or password becomes a `secret:NAME` reference (NAME matches `[A-Z][A-Z0-9_]*`), and the user stores the value.",
   "Check with `fleet diff`. It changes nothing. Exit 0 means the config is valid for this host, 3 lists conflicts, 5 means a secret or this host's age key is missing, 2 means the config is invalid or this host has no name yet.",
-  "A recipe is the user's request for that job, so its own steps (`fleet adopt mcp <name>`, `fleet adopt skill <name>`, `fleet update`, `fleet new <dir>`) are asked for. `fleet push`, `fleet apply`, `fleet init <host>` and every command that changes secrets are not: run them only when the user asked for that action in this turn. Each recipe ends by telling the user what to ask for, not by running it.",
+  "A recipe is the user's request for that job, so its own steps (`fleet adopt mcp <name>`, `fleet adopt skill <name>`, `fleet update`, `fleet skills update --review`, `fleet new <dir>`) are asked for. `fleet push`, `fleet apply`, `fleet init <host>` and every command that changes secrets are not: run them only when the user asked for that action in this turn. Each recipe ends by telling the user what to ask for, not by running it.",
 ];
 
 export const RECIPES: Recipe[] = [
@@ -50,7 +50,7 @@ export const RECIPES: Recipe[] = [
     checks: ["`fleet diff` lists `create ~/.claude/skills/<name> -> <the source's clone>/...`. A skill that does not resolve, or sits in two bundles, makes it exit 2 and says which."],
     stops: [
       "Tell the user to review the change and ask for `fleet push` or `fleet apply`. Fleet clones a new source at its first diff or apply, so the user's git must be able to read the repo.",
-      "To move a pinned source on, the user can ask for `fleet skills update`; it changes only the `commit:` lines.",
+      "To move a pinned source on, follow the recipe for reviewing a skill source update. Never run `fleet skills update` without `--review` for the user: it moves the pin without showing what changed.",
     ],
   },
   {
@@ -107,6 +107,20 @@ export const RECIPES: Recipe[] = [
     stops: [
       "The user reviews the draft in full before anything is pushed. Give them the list of `secret:NAME` references they must set, and the conflicts that are theirs to clear.",
       "Then tell the user to ask for `fleet push`, or `fleet apply` for this machine alone. `fleet init <host>` is theirs to run, and to rerun once the secrets are set.",
+    ],
+  },
+  {
+    id: "review-skills",
+    title: "Review a skill source update",
+    files: ["catalog/skills.yaml (the `commit:` line of a pinned source, and nothing else; fleet writes it, and only after the user agrees)"],
+    steps: [
+      "Run `fleet skills update --review`, or `fleet skills update --review <source>` for one source. You have no terminal, so it only reports: it reads each pinned source that would move in a throwaway clone, and moves nothing. Followed sources are never part of it.",
+      "Show the user the whole report for each source: the commits, the skills they use that changed, and every flag with its file and reason. Say which flags are warnings (a file with the exec bit, a new script, a new URL, a new `bash` block, a change to `allowed-tools`, a new hooks or settings file) and which are info (a changed `description`). Do not summarise a warning away, and do not call a source safe because nothing is flagged: the flags are a reading aid, not a verdict.",
+      "Never pass `--yes` on your own, however clean the report looks. Moving a pin decides what the user's agents do, and that decision is theirs. Offer them two ways: they run `fleet skills update --review <source>` in their own terminal, where `d` shows the full diff, `y` moves the pin and `n` keeps it, or they tell you, in this turn, to move a named source, and only then do you run `fleet skills update --review --yes <source>`.",
+    ],
+    checks: ["`fleet skills update --review` exits 0 and prints `<source>: kept at <sha>` for each source it left alone. `fleet diff` is unchanged by it, because no clone or link moves until an apply. After a move, `git diff catalog/skills.yaml` shows only `commit:` lines."],
+    stops: [
+      "Once a pin has moved, tell the user to review the `commit:` change and ask for `fleet push`, which publishes it and applies it on every host. Do not run it for them.",
     ],
   },
   {

@@ -45,7 +45,7 @@ type Command = {
   /** `read` commands change nothing; `change` ones write to this host, the config repo or other hosts, or run code the catalog names (`doctor`). */
   effect: "read" | "change";
   args: number;
-  run?: (ctx: { color: boolean; json: boolean; args: string[]; message: string | undefined; all: boolean; conflicts: boolean; shell: boolean; timeout: number | undefined; view: string | undefined; host: string | undefined; found: FoundConfig }) => Result | Relayed | Promise<Result | Relayed>;
+  run?: (ctx: { color: boolean; json: boolean; args: string[]; message: string | undefined; all: boolean; conflicts: boolean; shell: boolean; review: boolean; yes: boolean; timeout: number | undefined; view: string | undefined; host: string | undefined; found: FoundConfig }) => Result | Relayed | Promise<Result | Relayed>;
 };
 
 const commands: Command[] = [
@@ -58,7 +58,7 @@ const commands: Command[] = [
   { name: "adopt", usage: "adopt mcp|skill <name>", summary: "Record an existing MCP server or skill as fleet's", effect: "change", args: 2, run: ({ color, args, found }) => adopt(configOf(found), args, color) },
   // Unbounded: `secrets` checks its own arguments, so a value typed by mistake is never echoed back.
   { name: "secrets", usage: "secrets edit <file> | set <file> <NAME> | rekey", summary: "Edit, set or rekey encrypted secrets", effect: "change", args: Infinity, run: ({ args, found }) => secrets(configOf(found), args) },
-  { name: "skills", usage: "skills update [<source>]", summary: "Update pinned skill sources", effect: "change", args: 2, run: ({ args, found }) => skills(configOf(found), args) },
+  { name: "skills", usage: "skills update [--review] [--yes] [<source>]", summary: "Move pinned skill sources to the head of their branch (--review shows what changed first, with anything risky flagged, and asks per source on a terminal; without one nothing moves unless --yes)", effect: "change", args: 2, run: ({ color, json, args, review, yes, found }) => skills(configOf(found), args, { review, yes, color, terminal: !json && process.stdin.isTTY === true && process.stdout.isTTY === true ? { stdin: process.stdin, stdout: process.stdout } : null }) },
   { name: "update", usage: "update", summary: "Move the pinned tool commit in fleet.yaml to the head of its branch (nothing is committed or applied)", effect: "change", args: 0, run: ({ found }) => update(configOf(found)) },
   { name: "new", usage: "new <dir>", summary: "Start a config repo in <dir> from the examples, pinned to this tool commit", effect: "change", args: 1, run: ({ args }) => newConfig(toolDir, args[0]) },
   { name: "init", usage: "init <host>", summary: "Bootstrap a host and install its timer", effect: "change", args: 1, run: ({ color, args, found }) => init(configOf(orCurrentFolder(found)), args[0], color) },
@@ -105,7 +105,7 @@ function dispatch(argv: string[]): { result: Promise<Result | Relayed> | Result 
   try {
     parsed = parseArgs({
       args: argv,
-      options: { json: { type: "boolean" }, help: { type: "boolean" }, all: { type: "boolean" }, conflicts: { type: "boolean" }, shell: { type: "boolean" }, timeout: { type: "string" }, view: { type: "string" }, host: { type: "string" }, message: { type: "string", short: "m" } },
+      options: { json: { type: "boolean" }, help: { type: "boolean" }, all: { type: "boolean" }, conflicts: { type: "boolean" }, shell: { type: "boolean" }, review: { type: "boolean" }, yes: { type: "boolean" }, timeout: { type: "string" }, view: { type: "string" }, host: { type: "string" }, message: { type: "string", short: "m" } },
       allowPositionals: true,
       strict: true,
     });
@@ -126,6 +126,7 @@ function dispatch(argv: string[]): { result: Promise<Result | Relayed> | Result 
   if (parsed.values.conflicts && command.name !== "status") return { result: invalid(`--conflicts is only for 'status'`), json };
   if (parsed.values.conflicts && parsed.values.all) return { result: invalid(`--conflicts and --all cannot be used together`), json };
   if (parsed.values.shell && command.name !== "demo") return { result: invalid(`--shell is only for 'demo'`), json };
+  if ((parsed.values.review || parsed.values.yes) && command.name !== "skills") return { result: invalid(`--review and --yes are only for 'skills update'`), json };
   if (parsed.values.timeout !== undefined && command.name !== "doctor") return { result: invalid(`--timeout is only for 'doctor'`), json };
   if (parsed.values.view !== undefined && command.name !== "bridge") return { result: invalid(`--view is only for 'bridge'`), json };
   if (parsed.values.host !== undefined && command.name !== "bridge") return { result: invalid(`--host is only for 'bridge'`), json };
@@ -134,7 +135,7 @@ function dispatch(argv: string[]): { result: Promise<Result | Relayed> | Result 
   if (parsed.values.message === "") return { result: invalid("the commit message after -m cannot be empty"), json };
   if (command.name === "help") return { result: helpResult(), json };
   if (!command.run) return { result: { code: "error", messages: [`fleet: '${name}' is not implemented yet`] }, json };
-  return { result: command.run({ color: !json && useColor(process.env, process.stdout.isTTY === true), json, args: rest, message: parsed.values.message, all: parsed.values.all === true, conflicts: parsed.values.conflicts === true, shell: parsed.values.shell === true, timeout, view: parsed.values.view, host: parsed.values.host, found: findConfigDir() }), json };
+  return { result: command.run({ color: !json && useColor(process.env, process.stdout.isTTY === true), json, args: rest, message: parsed.values.message, all: parsed.values.all === true, conflicts: parsed.values.conflicts === true, shell: parsed.values.shell === true, review: parsed.values.review === true, yes: parsed.values.yes === true, timeout, view: parsed.values.view, host: parsed.values.host, found: findConfigDir() }), json };
 }
 
 export async function main(argv: string[], sink: Sink): Promise<number> {
