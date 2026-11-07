@@ -59,3 +59,51 @@ test("bare fleet prints help with one line pointing to fleet bridge", () => {
   assert.equal(r.stdout.split("\n").filter((l) => /^Run 'fleet bridge'/.test(l)).length, 1);
   assert.match(r.stdout, /^ {2}status +Report this host.*--conflicts/m);
 });
+
+test("fleet bridge --view and --host are only for bridge", () => {
+  const w = conflicted();
+  for (const flag of [["--view", "matrix"], ["--host", "laptop"]]) {
+    const r = runFleet(w.clone, ["status", ...flag], { home: w.home });
+    assert.equal(r.code, EXIT.invalid);
+    assert.match(r.stderr, new RegExp(`${flag[0]} is only for 'bridge'`));
+  }
+});
+
+test("fleet bridge with an unknown view is exit 2, before any screen, and lists the views", () => {
+  const w = conflicted();
+  const r = runFleet(w.clone, ["bridge", "--view", "inbox"], { home: w.home });
+  assert.equal(r.code, EXIT.invalid);
+  assert.match(r.stderr, /unknown view 'inbox'\. The views are: home, matrix, conflicts, timeline, secrets, catalog, push/);
+  assert.equal(r.stdout, "");
+  assert.doesNotMatch(r.stderr, /needs a terminal/);
+  assert.doesNotMatch(r.stderr + r.stdout, /\u001b/);
+});
+
+test("fleet bridge with an unknown host is exit 2, before any screen, and lists the hosts", () => {
+  const w = conflicted();
+  const r = runFleet(w.clone, ["bridge", "--host", "mainframe"], { home: w.home });
+  assert.equal(r.code, EXIT.invalid);
+  assert.match(r.stderr, /unknown host 'mainframe'\. The hosts are: laptop$/m);
+  assert.equal(r.stdout, "");
+  assert.doesNotMatch(r.stderr + r.stdout, /\u001b/);
+  const both = runFleet(w.clone, ["bridge", "--view", "matrix", "--host", "mainframe"], { home: w.home });
+  assert.equal(both.code, EXIT.invalid);
+  assert.match(both.stderr, /unknown host 'mainframe'/);
+});
+
+test("fleet bridge with a valid view and host still needs a terminal, and says so", () => {
+  const w = conflicted();
+  const r = runFleet(w.clone, ["bridge", "--view", "matrix", "--host", "laptop"], { home: w.home });
+  assert.equal(r.code, EXIT.invalid);
+  assert.match(r.stderr, /needs a terminal/);
+});
+
+test("fleet help shows the bridge's --view and --host with the valid views", () => {
+  const w = conflicted();
+  const r = runFleet(w.clone, ["help"], { home: w.home });
+  assert.match(r.stdout, /--view <name> +With 'bridge': open on this screen \(home, matrix, conflicts, timeline, secrets, catalog, push\)/);
+  assert.match(r.stdout, /--host <name> +With 'bridge': select this host/);
+  assert.match(r.stdout, /^ {2}bridge +Open the full-screen view.*--view.*--host/m);
+  const agent = runFleet(w.clone, ["agent"], { home: w.home });
+  assert.match(agent.stdout, /`fleet bridge \[--view <screen>\] \[--host <name>\]`/);
+});

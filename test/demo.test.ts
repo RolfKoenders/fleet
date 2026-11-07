@@ -170,3 +170,23 @@ test("an argument is refused", () => {
   const r = decoy().run(["demo", "extra"]);
   assert.equal(r.code, EXIT.invalid);
 });
+
+test("the demo's bridge takes --view and --host too, and names its own hosts when one is wrong", () => {
+  const sandbox = buildSandbox(repoRoot);
+  try {
+    const env = sandboxEnv(sandbox.root, sandbox.admin.home, { config: sandbox.config });
+    const run = (...args: string[]) => spawnSync(join(sandbox.admin.home, ".local/bin/fleet"), ["bridge", ...args], { cwd: sandbox.config, env, encoding: "utf8", input: "" });
+    const host = run("--host", "mainframe");
+    assert.equal(host.status, EXIT.invalid);
+    assert.match(host.stderr, /unknown host 'mainframe'\. The hosts are: laptop, devbox, server/);
+    const view = run("--view", "inbox", "--host", "server");
+    assert.equal(view.status, EXIT.invalid);
+    assert.match(view.stderr, /unknown view 'inbox'/);
+    // Names that are right get past the checks, and then only the missing terminal stops it.
+    const fine = run("--view", "matrix", "--host", "server");
+    assert.equal(fine.status, EXIT.invalid);
+    assert.match(fine.stderr, /needs a terminal/);
+  } finally {
+    destroy(sandbox.root);
+  }
+});

@@ -4,6 +4,10 @@ What changed in fleet, newest first. Each version lists what you can do now, wha
 
 ## Unreleased
 
+### Added
+
+- `fleet bridge --view <screen> --host <name>` opens the bridge on a screen with a host selected, for scripts and bar widgets. A name that is not a screen or a host is refused before the screen is taken over.
+
 ## 2.0.0 - 2026-11-03
 
 ### Added

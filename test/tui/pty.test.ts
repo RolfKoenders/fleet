@@ -148,6 +148,22 @@ test("pty: the boot animation plays when allowed and any key skips it", { skip }
   assert.match(r.out, /EXIT=0/);
 });
 
+test("pty: fleet bridge --view matrix --host other opens the matrix, and an unknown name never takes the screen", { skip }, async () => {
+  const w = bridgeWorld();
+  const fleet = join(w.clone, "bin/fleet");
+  const r = await inPty(`${fleet} bridge --view matrix --host other; echo "EXIT=$?"`, { env: w.env, ready: "bundle", keys: "q" });
+  assert.ok(r.out.includes(ENTER));
+  assert.match(r.out, /EXIT=0/);
+  const bad = await inPty(`${fleet} bridge --view nowhere; echo "EXIT=$?"`, { env: w.env, ready: "EXIT=" });
+  assert.match(bad.out, /EXIT=2/);
+  assert.match(bad.out, /unknown view 'nowhere'/);
+  assert.ok(!bad.out.includes(ENTER), "the screen was never taken");
+  const badHost = await inPty(`${fleet} bridge --host nobody; echo "EXIT=$?"`, { env: w.env, ready: "EXIT=" });
+  assert.match(badHost.out, /EXIT=2/);
+  assert.match(badHost.out, /unknown host 'nobody'\. The hosts are: laptop, other/);
+  assert.ok(!badHost.out.includes(ENTER));
+});
+
 test("fleet bridge without a terminal exits 2 and points at fleet status", () => {
   const w = bridgeWorld();
   const r = spawnSync(join(w.clone, "bin/fleet"), ["bridge"], { env: { PATH: "/usr/bin:/bin", ...w.env }, encoding: "utf8", input: "" });

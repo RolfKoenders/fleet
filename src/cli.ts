@@ -5,6 +5,7 @@ import { adopt } from "./adopt.ts";
 import { agent } from "./agent.ts";
 import { apply, diff, failure } from "./apply.ts";
 import { bridge } from "./tui/bridge.ts";
+import { viewNames } from "./tui/start.ts";
 import { InvalidConfigError } from "./config.ts";
 import { demo } from "./demo/run.ts";
 import { eventsOn, ignoreBrokenPipes } from "./events.ts";
@@ -44,14 +45,14 @@ type Command = {
   /** `read` commands change nothing; `change` ones write to this host, the config repo or other hosts, or run code the catalog names (`doctor`). */
   effect: "read" | "change";
   args: number;
-  run?: (ctx: { color: boolean; json: boolean; args: string[]; message: string | undefined; all: boolean; conflicts: boolean; shell: boolean; timeout: number | undefined; found: FoundConfig }) => Result | Relayed | Promise<Result | Relayed>;
+  run?: (ctx: { color: boolean; json: boolean; args: string[]; message: string | undefined; all: boolean; conflicts: boolean; shell: boolean; timeout: number | undefined; view: string | undefined; host: string | undefined; found: FoundConfig }) => Result | Relayed | Promise<Result | Relayed>;
 };
 
 const commands: Command[] = [
   { name: "status", usage: "status [--all | --conflicts]", summary: "Report this host: fleet clone, applied state, timer, pending changes, conflicts and tool versions (--all asks every host over ssh; --conflicts lists this host's conflicts in full, reading only)", effect: "read", args: 0, run: ({ color, all, conflicts, found }) => (all ? statusAll(toolDir, configOf(found), color) : conflicts ? statusConflicts(configOf(found), color) : status(toolDir, configOf(found), color)) },
   { name: "doctor", usage: "doctor [--all] [--timeout <seconds>]", summary: "Start this host's MCP servers and ask each what it offers, plus cheap local checks (--all asks every host over ssh). It runs the catalog's commands with real credentials and may make npx download packages, so it runs only when you ask for it, never from the timer", effect: "change", args: 0, run: ({ color, all, timeout, found }) => (all ? doctorAll(configOf(found), color, timeout) : doctor(configOf(found), color, timeout)) },
   { name: "diff", usage: "diff", summary: "Show what apply would change, without changing anything", effect: "read", args: 0, run: ({ color, found }) => diff(configOf(found), color) },
-  { name: "bridge", usage: "bridge", summary: "Open the full-screen view of every host, the matrix of what each gets, conflicts, timeline, secrets and catalog. It reads until you ask for more: P pushes after you type push, d runs doctor after you confirm (it starts real MCP servers). Needs a terminal", effect: "change", args: 0, run: ({ json, found }) => bridge(toolDir, () => configOf(found), json) },
+  { name: "bridge", usage: "bridge [--view <screen>] [--host <name>]", summary: "Open the full-screen view of every host, the matrix of what each gets, conflicts, timeline, secrets and catalog (--view opens on a screen, --host selects a host on it). It reads until you ask for more: P pushes after you type push, d runs doctor after you confirm (it starts real MCP servers). Needs a terminal", effect: "change", args: 0, run: ({ json, view, host, found }) => bridge(toolDir, () => configOf(found), json, process.env, undefined, { view, host }) },
   { name: "apply", usage: "apply", summary: "Make this host match its config", effect: "change", args: 0, run: ({ color, json, found }) => apply(toolDir, configOf(found), color, undefined, json ? ["apply", "--json"] : ["apply"]) },
   { name: "push", usage: "push [-m <message>]", summary: "Publish changes to GitHub, then apply on every host (-m sets the commit message)", effect: "change", args: 0, run: ({ color, message, found }) => push(toolDir, configOf(found), message, color) },
   { name: "adopt", usage: "adopt mcp|skill <name>", summary: "Record an existing MCP server or skill as fleet's", effect: "change", args: 2, run: ({ color, args, found }) => adopt(configOf(found), args, color) },
@@ -79,8 +80,10 @@ ${list}
 Run 'fleet bridge' for the full-screen view of every host.
 
 Options:
-  --json  Print one JSON document on stdout
-  --help  Show this list
+  --json         Print one JSON document on stdout
+  --help         Show this list
+  --view <name>  With 'bridge': open on this screen (${viewNames().join(", ")})
+  --host <name>  With 'bridge': select this host on that screen
 `;
 }
 
@@ -102,7 +105,7 @@ function dispatch(argv: string[]): { result: Promise<Result | Relayed> | Result 
   try {
     parsed = parseArgs({
       args: argv,
-      options: { json: { type: "boolean" }, help: { type: "boolean" }, all: { type: "boolean" }, conflicts: { type: "boolean" }, shell: { type: "boolean" }, timeout: { type: "string" }, message: { type: "string", short: "m" } },
+      options: { json: { type: "boolean" }, help: { type: "boolean" }, all: { type: "boolean" }, conflicts: { type: "boolean" }, shell: { type: "boolean" }, timeout: { type: "string" }, view: { type: "string" }, host: { type: "string" }, message: { type: "string", short: "m" } },
       allowPositionals: true,
       strict: true,
     });
@@ -124,12 +127,14 @@ function dispatch(argv: string[]): { result: Promise<Result | Relayed> | Result 
   if (parsed.values.conflicts && parsed.values.all) return { result: invalid(`--conflicts and --all cannot be used together`), json };
   if (parsed.values.shell && command.name !== "demo") return { result: invalid(`--shell is only for 'demo'`), json };
   if (parsed.values.timeout !== undefined && command.name !== "doctor") return { result: invalid(`--timeout is only for 'doctor'`), json };
+  if (parsed.values.view !== undefined && command.name !== "bridge") return { result: invalid(`--view is only for 'bridge'`), json };
+  if (parsed.values.host !== undefined && command.name !== "bridge") return { result: invalid(`--host is only for 'bridge'`), json };
   const timeout = parsed.values.timeout === undefined ? undefined : Number(parsed.values.timeout);
   if (timeout !== undefined && !(/^\d+(\.\d+)?$/.test(parsed.values.timeout!) && timeout > 0 && timeout <= 600)) return { result: invalid(`--timeout must be a number of seconds from just above 0 to 600 (default ${DEFAULT_TIMEOUT_SECONDS})`), json };
   if (parsed.values.message === "") return { result: invalid("the commit message after -m cannot be empty"), json };
   if (command.name === "help") return { result: helpResult(), json };
   if (!command.run) return { result: { code: "error", messages: [`fleet: '${name}' is not implemented yet`] }, json };
-  return { result: command.run({ color: !json && useColor(process.env, process.stdout.isTTY === true), json, args: rest, message: parsed.values.message, all: parsed.values.all === true, conflicts: parsed.values.conflicts === true, shell: parsed.values.shell === true, timeout, found: findConfigDir() }), json };
+  return { result: command.run({ color: !json && useColor(process.env, process.stdout.isTTY === true), json, args: rest, message: parsed.values.message, all: parsed.values.all === true, conflicts: parsed.values.conflicts === true, shell: parsed.values.shell === true, timeout, view: parsed.values.view, host: parsed.values.host, found: findConfigDir() }), json };
 }
 
 export async function main(argv: string[], sink: Sink): Promise<number> {

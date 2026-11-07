@@ -4,6 +4,16 @@
 
 It reads, and the cards fill at once from what the last run saw, labelled "seen 2h ago, not live" until the host answers. That memory is `~/.local/state/fleet/bridge-hosts.json`, which only the bridge reads and which holds no secrets.
 
+## Opening on a screen or a host
+
+```sh
+fleet bridge --view matrix --host server
+```
+
+`--view` opens on a screen: `home` (the default), `matrix`, `conflicts`, `timeline`, `secrets`, `catalog` or `push`. These are the tabs, so a screen that gets a tab later gets a view. `--host` selects a host on that screen: its card on Home, its column in the Matrix, and its conflicts first on Conflicts. `--host` alone opens Home on that host's card. Both work in `fleet demo`'s bridge.
+
+A name that is not one is refused with exit 2 before the screen is taken over, and the valid names are listed. `--view push` opens the push screen the way the `7` key does: nothing is reviewed or started until you press `P`.
+
 ## Keys
 
 - `?` lists the keys, `ctrl-k` opens a palette, and `r` asks the hosts again.
