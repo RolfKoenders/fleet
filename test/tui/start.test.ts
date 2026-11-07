@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { bridgeFor, makeConfig, ok } from "./fixture.ts";
 import { SCREENS } from "../../src/tui/palette.ts";
 import { loadModel } from "../../src/tui/model.ts";
-import { resolveStart, viewNames } from "../../src/tui/start.ts";
+import { checkHost, checkView, viewNames } from "../../src/tui/start.ts";
 import { conflictEntries } from "../../src/tui/views/conflicts.ts";
 import type { Pusher } from "../../src/tui/pusher.ts";
 
@@ -130,30 +130,28 @@ test("a refresh keeps the selected host and the order of conflicts", async () =>
   assert.equal(b.state.home.selected, b.state.model.hosts.findIndex((h) => h.name === "server"));
 });
 
-test("resolveStart: a known view and host resolve, the host without a view is home", () => {
+test("checkView and checkHost pass a known name or none", () => {
   const model = loadModel(makeConfig(), "laptop");
-  assert.deepEqual(resolveStart(model, undefined, undefined), { view: "home", host: null });
-  assert.deepEqual(resolveStart(model, "matrix", "server"), { view: "matrix", host: "server" });
-  assert.deepEqual(resolveStart(model, undefined, "box"), { view: "home", host: "box" });
+  assert.equal(checkView(undefined), null);
+  assert.equal(checkView("matrix"), null);
+  assert.equal(checkHost(model, undefined), null);
+  assert.equal(checkHost(model, "server"), null);
 });
 
-test("resolveStart: an unknown view or host is refused with the valid names listed", () => {
+test("an unknown view or host is refused with the valid names listed", () => {
   const model = loadModel(makeConfig(), "laptop");
-  const view = resolveStart(model, "inbox", undefined);
-  assert.ok("code" in view && view.code === "invalid");
-  assert.match(view.messages![0]!, /unknown view 'inbox'.*home, matrix, conflicts, timeline, secrets, catalog, push/);
-  const host = resolveStart(model, "home", "mainframe");
-  assert.ok("code" in host && host.code === "invalid");
-  assert.match(host.messages![0]!, /unknown host 'mainframe'.*laptop, box, edge, server/);
-  assert.ok("code" in resolveStart(model, "", undefined), "an empty view is unknown");
-  assert.ok("code" in resolveStart(model, undefined, ""), "an empty host is unknown");
-  assert.ok("code" in resolveStart(model, "Home", undefined), "names are exact");
+  const view = checkView("inbox");
+  assert.equal(view?.code, "invalid");
+  assert.match(view!.messages![0]!, /unknown view 'inbox'.*home, matrix, conflicts, timeline, secrets, catalog, push/);
+  const host = checkHost(model, "mainframe");
+  assert.equal(host?.code, "invalid");
+  assert.match(host!.messages![0]!, /unknown host 'mainframe'.*laptop, box, edge, server/);
+  assert.notEqual(checkView(""), null, "an empty view is unknown");
+  assert.notEqual(checkHost(model, ""), null, "an empty host is unknown");
+  assert.notEqual(checkView("Home"), null, "names are exact");
 });
 
-test("resolveStart: a config with no hosts has none to name", () => {
+test("a config with no hosts has none to name", () => {
   const model = { ...loadModel(makeConfig(), "laptop"), hosts: [] };
-  const r = resolveStart(model, undefined, "laptop");
-  assert.ok("code" in r);
-  assert.match(r.messages![0]!, /unknown host 'laptop'.*no hosts/);
+  assert.match(checkHost(model, "laptop")!.messages![0]!, /unknown host 'laptop'.*no hosts/);
 });
-
