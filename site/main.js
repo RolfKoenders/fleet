@@ -1,4 +1,4 @@
-// The landing page. Terminal frames come from frames.js, which site/export.ts renders from the real TUI.
+// The landing page. Terminal frames come from frames.js, which npm run site:frames records from the real bridge.
 (() => {
   const F = window.FLEET_FRAMES;
   // With reduce motion on, the terminal playback still runs: it is text changing in place, not movement. What does
