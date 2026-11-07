@@ -121,7 +121,17 @@
           </div>
           <span class="window-title">fleet bridge</span>
         </div>
-        <div class="term-wrap"><pre class="term" id="term" aria-label="fleet bridge screen"></pre></div>
+        <div class="term-wrap"><pre class="term" id="term" tabindex="0" role="group" aria-label="fleet bridge recording. Keys work here: 1 home, 2 matrix, 3 conflicts, 7 push, ctrl-k palette, ? help, esc to go back."></pre></div>
+      </div>
+      <!-- The bridge's own keys. They act while the terminal has focus; each chip plays the same clip. -->
+      <div class="keys" id="keys" role="group" aria-label="Bridge keys">
+        <span class="keys-hint">keys work while the terminal has focus</span>
+        <button type="button" data-screen="home"><kbd>1</kbd> Home</button>
+        <button type="button" data-screen="matrix"><kbd>2</kbd> Matrix</button>
+        <button type="button" data-screen="conflicts"><kbd>3</kbd> <kbd>c</kbd> Conflicts</button>
+        <button type="button" data-screen="push"><kbd>7</kbd> <kbd>P</kbd> Push</button>
+        <button type="button" data-screen="palette"><kbd>ctrl-k</kbd> <kbd>:</kbd> Palette</button>
+        <button type="button" data-screen="help"><kbd>?</kbd> Help</button>
       </div>
       <p class="caption" id="caption"></p>
     </section>

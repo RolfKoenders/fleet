@@ -57,3 +57,17 @@ test("site: every tab of the bridge window has a recording and a caption", () =>
   }
   assert.doesNotMatch(captions, /\u2014/, "a caption has an em dash");
 });
+
+test("site: the bridge's keys and the chips under the window lead to tabs", () => {
+  const html = readFileSync(join(repoRoot, "site/index.html"), "utf8");
+  const tabs = new Set([...html.matchAll(/role="tab" data-screen="(\w+)"/g)].map((m) => m[1]));
+  const chips = [...html.matchAll(/<button type="button" data-screen="(\w+)"><kbd>/g)].map((m) => m[1]!);
+  assert.ok(chips.length >= 6 && chips.every((c) => tabs.has(c)), "a chip names a screen with no tab");
+  const main = readFileSync(join(repoRoot, "site/main.js"), "utf8");
+  const keys = main.match(/const KEYS = \{([^}]*)\}/)![1]!;
+  const targets = [...keys.matchAll(/: "(\w+)"/g)].map((m) => m[1]!);
+  assert.ok(targets.length >= 8 && targets.every((t) => tabs.has(t)), `a key plays a screen with no tab: ${targets}`);
+  for (const [key, screen] of [["1", "home"], ["2", "matrix"], ["3", "conflicts"], ["c", "conflicts"], ["7", "push"], ["P", "push"], [":", "palette"], ["\\?", "help"]]) {
+    assert.match(keys, new RegExp(`"?${key}"?: "${screen}"`), `${key} should play ${screen}`);
+  }
+});

@@ -239,7 +239,9 @@
   function show(screen) {
     screenNow = screen;
     for (const c of Object.values(clips)) c.player.reset();
+    // Tabs and chips show the same selection, whichever of tab, chip or key chose it.
     document.querySelectorAll(".tabs button").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.screen === screen)));
+    document.querySelectorAll(".keys button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.screen === screen)));
     caption.textContent = CAPTIONS[screen];
     paint(clips[screen] ? clips[screen].frames[0] : F.screens[screen]);
     engage();
@@ -253,9 +255,36 @@
     clearTimeout(wake);
     clips[screenNow]?.player.pause();
   });
-  document.querySelectorAll(".tabs button").forEach((b) => b.addEventListener("click", () => show(b.dataset.screen)));
+  document.querySelectorAll(".tabs button, .keys button").forEach((b) => b.addEventListener("click", () => show(b.dataset.screen)));
   // The hero's link still scrolls to the window; it also picks the clip it names.
   document.querySelectorAll("[data-play]").forEach((a) => a.addEventListener("click", () => show(a.dataset.play)));
   addEventListener("resize", () => current && fit(current));
+
+  // The bridge's keys, while the terminal has focus. Only keys it handles are claimed: tab, arrows, space, page
+  // keys and every browser shortcut are left alone, so focus can move on and the page still scrolls.
+  const KEYS = { 1: "home", 2: "matrix", 3: "conflicts", c: "conflicts", 7: "push", P: "push", ":": "palette", "?": "help" };
+  // The bridge has these screens; the page has no recording of them yet.
+  const MISSING = new Set(["4", "5", "6"]);
+  const bar = document.querySelector(".window-bar");
+  let nudge;
+  function flash() {
+    bar.classList.add("nudge");
+    clearTimeout(nudge);
+    nudge = setTimeout(() => bar.classList.remove("nudge"), 450);
+  }
+  term.addEventListener("keydown", (e) => {
+    if (e.altKey || e.metaKey || e.isComposing) return;
+    let screen;
+    if (e.ctrlKey) screen = e.key === "k" ? "palette" : undefined;
+    else if (e.key === "Escape") {
+      if (screenNow === "home") term.blur(); else show("home");
+      e.preventDefault();
+      return;
+    } else if (MISSING.has(e.key)) { e.preventDefault(); if (!e.repeat) flash(); return; }
+    else screen = KEYS[e.key];
+    if (!screen) return;
+    e.preventDefault();
+    if (!e.repeat) show(screen);
+  });
   document.fonts.ready.then(() => { measure(); show("home"); });
 })();
