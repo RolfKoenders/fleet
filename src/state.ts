@@ -35,12 +35,13 @@ export function readState(home: string = homedir()): AppliedState | null {
   return state;
 }
 
-/** Writes through a temp file and a rename, so a crash never leaves half a file. Mode 600. */
-export function writeState(state: AppliedState, home: string = homedir()): void {
-  const path = statePath(home);
+/** Writes a JSON file through a temp file and a rename, so a crash never leaves half a file. Mode 600. */
+export function writePrivateJson(path: string, value: unknown): void {
   mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
   const tmp = `${path}.${process.pid}.tmp`;
-  writeFileSync(tmp, `${JSON.stringify(state, null, 2)}\n`, { mode: 0o600 });
+  writeFileSync(tmp, `${JSON.stringify(value, null, 2)}\n`, { mode: 0o600 });
   chmodSync(tmp, 0o600);
   renameSync(tmp, path);
 }
+
+export const writeState = (state: AppliedState, home: string = homedir()): void => writePrivateJson(statePath(home), state);

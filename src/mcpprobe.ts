@@ -26,8 +26,11 @@ export type ProbeTarget =
   | { kind: "stdio"; command: string[]; env: Record<string, string>; cwd: string }
   | { kind: "network"; transport: "http" | "sse" | "remote"; url: string; headers: Record<string, string> };
 
-/** `protocol` is the revision the server answered in, or null when it did not answer. */
-export type Probed = { result: ProbeResult; tools: number | null; latencyMs: number | null; detail: string | null; protocol: string | null };
+/**
+ * `protocol` is the revision the server answered in, or null when it did not answer. `size` is the summed length
+ * in characters of each tool's definition as JSON (see `definitionSize`), null when the server did not answer.
+ */
+export type Probed = { result: ProbeResult; tools: number | null; size: number | null; latencyMs: number | null; detail: string | null; protocol: string | null };
 
 /** A way the handshake ended that is not success. `detail` is fixed text or a number: never server or config text. */
 class ProbeError extends Error {
@@ -74,10 +77,22 @@ function rpcResult(message: unknown, id: number): Record<string, unknown> {
 
 const versionOf = (init: Record<string, unknown>): string | null => (typeof init.protocolVersion === "string" && VERSION.test(init.protocolVersion) ? init.protocolVersion : null);
 
-/** What the server counted: `tools/list` page by page. `meta` is added to every request's params, as the modern era wants. */
-async function listTools(channel: Channel, modern?: string): Promise<number> {
+/**
+ * What a tool costs a model that is shown it: the length of the JSON of its name, description and input schema.
+ * Only the length leaves this function, never the text.
+ */
+export const definitionSize = (tool: unknown): number => {
+  const { name, description, inputSchema } = isObject(tool) ? tool : ({} as Record<string, unknown>);
+  return JSON.stringify({ name, description, inputSchema }).length;
+};
+
+type Listed = { tools: number; size: number };
+
+/** What the server offers: `tools/list` page by page, counted and measured. `modern` adds the metadata that era wants to every request. */
+async function listTools(channel: Channel, modern?: string): Promise<Listed> {
   const meta = modern === undefined ? {} : { _meta: modernMeta(modern) };
   let tools = 0;
+  let size = 0;
   let cursor: string | undefined;
   for (let page = 0; page < MAX_PAGES; page++) {
     let result;
@@ -85,19 +100,20 @@ async function listTools(channel: Channel, modern?: string): Promise<number> {
       result = await channel.request("tools/list", cursor === undefined ? meta : { ...meta, cursor }, modern);
     } catch (error) {
       // A server with no tools may not implement the method at all.
-      if (error instanceof ProbeError && error.code === -32601 && page === 0) return 0;
+      if (error instanceof ProbeError && error.code === -32601 && page === 0) return { tools: 0, size: 0 };
       throw error;
     }
     if (!Array.isArray(result.tools)) throw new ProbeError("bad-response", "the tools/list answer has no tools list");
     tools += result.tools.length;
-    if (typeof result.nextCursor !== "string" || result.nextCursor === "") return tools;
+    for (const tool of result.tools) size += definitionSize(tool);
+    if (typeof result.nextCursor !== "string" || result.nextCursor === "") return { tools, size };
     cursor = result.nextCursor;
   }
-  return tools;
+  return { tools, size };
 }
 
 /** The legacy way: `initialize`, then `notifications/initialized`, then the tools. */
-async function legacyHandshake(channel: Channel): Promise<{ tools: number; protocol: string | null }> {
+async function legacyHandshake(channel: Channel): Promise<Answered> {
   const init = await channel.request("initialize", {
     protocolVersion: PROTOCOL_VERSION,
     capabilities: {},
@@ -108,7 +124,7 @@ async function legacyHandshake(channel: Channel): Promise<{ tools: number; proto
   }
   channel.negotiated(init.protocolVersion);
   await channel.notify("notifications/initialized");
-  return { tools: await listTools(channel), protocol: versionOf(init) };
+  return { ...(await listTools(channel)), protocol: versionOf(init) };
 }
 
 const modernMeta = (version: string) => ({
@@ -593,7 +609,7 @@ async function open(target: ProbeTarget, signal: AbortSignal, extraDirs: string[
   return { channel: httpChannel(target, signal), fallback: target.transport === "remote" ? () => sseChannel(target, signal) : null, modern: true };
 }
 
-type Answered = { tools: number; protocol: string | null };
+type Answered = Listed & { protocol: string | null };
 
 /** Modern first, then legacy when the server did not answer as a modern one. */
 async function handshake(channel: Channel, target: ProbeTarget, modern: boolean, timeoutMs: number): Promise<Answered> {
@@ -606,7 +622,7 @@ async function handshake(channel: Channel, target: ProbeTarget, modern: boolean,
       if (!(error instanceof ProbeError) || error.result !== "bad-response" || isModernError(error)) throw error;
       return legacyHandshake(channel);
     }
-    return { tools: await listTools(channel, version), protocol: version };
+    return { ...(await listTools(channel, version)), protocol: version };
   }
   return legacyHandshake(channel);
 }
@@ -637,10 +653,10 @@ export async function probe(target: ProbeTarget, timeoutMs: number, extraDirs: s
       opened.push(second);
       answered = await Promise.race([legacyHandshake(second), deadline]);
     }
-    return { result: "ok", tools: answered.tools, latencyMs: Math.round(performance.now() - started), detail: null, protocol: answered.protocol };
+    return { result: "ok", tools: answered.tools, size: answered.size, latencyMs: Math.round(performance.now() - started), detail: null, protocol: answered.protocol };
   } catch (error) {
     const e = fetchFailure(error, control.signal);
-    return { result: e.result, tools: null, latencyMs: null, detail: e.detail, protocol: null };
+    return { result: e.result, tools: null, size: null, latencyMs: null, detail: e.detail, protocol: null };
   } finally {
     clearTimeout(timer);
     // HTTP closes its session while the signal is live; aborting after that is what ends an SSE stream.

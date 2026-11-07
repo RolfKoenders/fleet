@@ -14,11 +14,14 @@ import type { Result } from "./output.ts";
 import { expandTarget } from "./plan.ts";
 import { renderKeys, resolveSecrets } from "./secrets.ts";
 import { SETTINGS_FILE } from "./settings.ts";
+import { saveDoctorResult } from "./doctorresult.ts";
+import { hashValue } from "./keys.ts";
 import { ageKeyPath } from "./sops.ts";
 import { readState } from "./state.ts";
 import { count, printable, timerState } from "./status.ts";
 import { hostTargets } from "./targets.ts";
 import { secretNames } from "./template.ts";
+import { estimateTokens, formatTokens } from "./tokens.ts";
 import { findTool } from "./tools.ts";
 import { isObject } from "./yamlfile.ts";
 import type { Obj } from "./yamlfile.ts";
@@ -33,7 +36,8 @@ const SERVER_RESULTS: ServerResult[] = ["ok", "auth-needed", "unreachable", "mis
 
 /**
  * One server as one tool has it rendered. `protocol` is the MCP revision it answered in (null when it did
- * not answer). `fails` is false for a result that is expected until a person logs in.
+ * not answer). `size` is the characters of its tool definitions and `tokens` the estimate of that (both null
+ * when it did not answer). `fails` is false for a result that is expected until a person logs in.
  */
 export type ServerCheck = {
   server: string;
@@ -41,6 +45,8 @@ export type ServerCheck = {
   transport: "stdio" | "http" | "sse" | "remote";
   result: ServerResult;
   tools: number | null;
+  size: number | null;
+  tokens: number | null;
   latencyMs: number | null;
   protocol: string | null;
   detail: string | null;
@@ -101,6 +107,9 @@ function localChecks(home: string, usesSecrets: boolean | null): Check[] {
 
 type Planned = { server: string; tool: "claude" | "opencode"; transport: ServerCheck["transport"]; target: ProbeTarget | null; credentials: boolean };
 
+/** A server's check, and the hash of its catalog entry as the config has it before any secret is filled in. */
+type Checked = { check: ServerCheck; definition: string };
+
 const strings = (v: unknown): string[] | null => (Array.isArray(v) && v.every((x) => typeof x === "string") ? (v as string[]) : null);
 const stringMap = (v: unknown): Record<string, string> => (isObject(v) ? (Object.fromEntries(Object.entries(v).filter(([, x]) => typeof x === "string")) as Record<string, string>) : {});
 
@@ -133,7 +142,7 @@ function clean(text: string, secrets: string[]): string {
 const isNpx = (target: ProbeTarget): boolean => target.kind === "stdio" && basename(target.command[0]!) === "npx";
 const NPX_HINT = "npx may still be downloading the package; retry with a higher --timeout";
 
-async function checkServers(config: Config, configDir: string, host: string, home: string, timeoutMs: number): Promise<ServerCheck[]> {
+async function checkServers(config: Config, configDir: string, host: string, home: string, timeoutMs: number): Promise<Checked[]> {
   const keys = config.keys.filter((k) => (k.file === CLAUDE_JSON && k.path.startsWith("mcpServers.")) || (k.file === SETTINGS_FILE.opencode && k.path.startsWith("mcp.")));
   // Only the secrets the servers use are decrypted.
   const names = [...new Set(keys.flatMap((k) => secretNames(k.value)))].sort();
@@ -146,16 +155,31 @@ async function checkServers(config: Config, configDir: string, host: string, hom
     return planEntry(k.path.slice(claude ? "mcpServers.".length : "mcp.".length), claude ? "claude" : "opencode", k.value, home);
   });
   const records = await Promise.all(
-    planned.map(async (p): Promise<ServerCheck> => {
+    planned.map(async (p, i): Promise<Checked> => {
+      // `renderKeys` keeps the order, so keys[i] is the entry before its secrets were filled in: the hash never sees a value.
+      const definition = hashValue(keys[i]!.value);
       const base = { server: p.server, tool: p.tool, transport: p.transport };
-      if (p.target === null) return { ...base, result: "bad-response", tools: null, latencyMs: null, protocol: null, detail: "the rendered entry has an unexpected shape", fails: true };
+      if (p.target === null) return { definition, check: { ...base, result: "bad-response", tools: null, size: null, tokens: null, latencyMs: null, protocol: null, detail: "the rendered entry has an unexpected shape", fails: true } };
       const r = await probe(p.target, timeoutMs, extraDirs);
       const fails = r.result !== "ok" && !(r.result === "auth-needed" && !p.credentials);
       const detail = r.detail === null ? null : clean(r.detail, secretValues);
-      return { ...base, result: r.result, tools: r.tools, latencyMs: r.latencyMs, protocol: r.protocol, detail: r.result === "timeout" && isNpx(p.target) ? `${detail ?? "no answer in time"}; ${NPX_HINT}` : detail, fails };
+      return {
+        definition,
+        check: {
+          ...base,
+          result: r.result,
+          tools: r.tools,
+          size: r.size,
+          tokens: r.size === null ? null : estimateTokens(r.size),
+          latencyMs: r.latencyMs,
+          protocol: r.protocol,
+          detail: r.result === "timeout" && isNpx(p.target) ? `${detail ?? "no answer in time"}; ${NPX_HINT}` : detail,
+          fails,
+        },
+      };
     }),
   );
-  return records.sort((a, b) => a.server.localeCompare(b.server) || a.tool.localeCompare(b.tool));
+  return records.sort((a, b) => a.check.server.localeCompare(b.check.server) || a.check.tool.localeCompare(b.check.tool));
 }
 
 // ---- text ----
@@ -169,7 +193,7 @@ const shownResult = (s: ServerCheck): string => (isLogin(s) ? "login" : s.result
 const LOGIN_NOTE = "login: the server wants a login, and doctor cannot see login state";
 
 function serverLine(s: ServerCheck, color: boolean): string {
-  const facts = [s.tools === null ? null : `${s.tools} tool${s.tools === 1 ? "" : "s"}`, s.latencyMs === null ? null : `${s.latencyMs} ms`, s.protocol === null ? null : `MCP ${s.protocol}`].filter((f) => f !== null);
+  const facts = [s.tools === null ? null : `${s.tools} tool${s.tools === 1 ? "" : "s"}`, s.tokens === null ? null : `${formatTokens(s.tokens)} tokens`, s.latencyMs === null ? null : `${s.latencyMs} ms`, s.protocol === null ? null : `MCP ${s.protocol}`].filter((f) => f !== null);
   const result = s.result === "ok" ? good(color, "ok") : isLogin(s) ? shownResult(s) : warn(color, s.result);
   const detail = isLogin(s) ? null : s.detail;
   return `  ${s.server} (${s.tool}, ${s.transport}): ${result}${facts.length > 0 ? `, ${facts.join(", ")}` : ""}${detail === null ? "" : ` (${detail})`}`;
@@ -190,7 +214,7 @@ const plural = (n: number) => `${n} problem${n === 1 ? "" : "s"}`;
 
 /**
  * Starts this host's picked MCP servers, as its tools would, and asks each what it offers. Runs code and may
- * download packages, so it only runs when a person asks. Writes nothing in fleet's state.
+ * download packages, so it only runs when a person asks. Writes only its own doctor result.
  */
 export async function doctor(configDir: string, color: boolean, timeoutSeconds: number = DEFAULT_TIMEOUT_SECONDS, home: string = homedir()): Promise<Result> {
   const host = readHostName(home);
@@ -208,18 +232,27 @@ export async function doctor(configDir: string, color: boolean, timeoutSeconds: 
   // The local checks still stand when the servers could not even be listed.
   const stopped = (result: Result): Result => ({ ...result, text: [`host: ${host}`, ...lines(fields, color)].join("\n"), fields: { ...fields } });
   if (failed !== null) return stopped(failed);
+  let checked: Checked[];
   try {
-    fields.servers = await checkServers(config!, configDir, host, home, Math.round(timeoutSeconds * 1000));
+    checked = await checkServers(config!, configDir, host, home, Math.round(timeoutSeconds * 1000));
   } catch (error) {
+    // Nothing was started, so nothing was measured: the doctor result from the last run stays as it is.
     const result = failure(error);
     if (result === null) throw error;
     return stopped(result);
   }
+  fields.servers = checked.map((c) => c.check);
   const problems = problemCount(fields);
+  const messages = problems === 0 ? [] : [`fleet: doctor found ${plural(problems)}`];
+  try {
+    saveDoctorResult(host, checked.map(({ check, definition }) => ({ name: check.server, agent: check.tool, result: check.result, tools: check.tools, size: check.size, definition })), home);
+  } catch (error) {
+    messages.push(`fleet: the doctor result could not be saved (${printable((error as NodeJS.ErrnoException).code ?? "unknown error")})`);
+  }
   return {
     code: problems === 0 ? "ok" : "unhealthy",
     text: [`host: ${host}`, ...lines(fields, color)].join("\n"),
-    messages: problems === 0 ? [] : [`fleet: doctor found ${plural(problems)}`],
+    messages,
     fields: { ...fields },
   };
 }
@@ -243,7 +276,7 @@ const serverOf = (v: unknown): ServerCheck | null => {
   const transport = (["stdio", "http", "sse", "remote"] as const).find((t) => t === v.transport) ?? null;
   if (tool === null || transport === null) return null;
   const result = asServerResult(v.result);
-  return { server: printable(v.server)!, tool, transport, result, tools: count(v.tools), latencyMs: count(v.latencyMs), protocol: printable(v.protocol), detail: printable(v.detail), fails: v.fails === true || (v.fails !== false && result !== "ok") };
+  return { server: printable(v.server)!, tool, transport, result, tools: count(v.tools), size: count(v.size), tokens: count(v.tokens), latencyMs: count(v.latencyMs), protocol: printable(v.protocol), detail: printable(v.detail), fails: v.fails === true || (v.fails !== false && result !== "ok") };
 };
 
 /** A remote host's answer cut down to the fields fleet knows and to printable text, because a host can be wrong. */

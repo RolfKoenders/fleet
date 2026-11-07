@@ -6,6 +6,7 @@ import { parseMcpCatalog } from "../mcp.ts";
 import { hostNames } from "../recipients.ts";
 import { findSkillsIn, sourceDir } from "../sources.ts";
 import { secretNames } from "../template.ts";
+import { estimateTokens } from "../tokens.ts";
 import { findTool } from "../tools.ts";
 import { parseFile } from "../yamlfile.ts";
 
@@ -292,9 +293,6 @@ function readSkillFile(path: string): { text: string; chars: number } | null {
     return null;
   }
 }
-
-/** Characters divided by four: a rough guide to the context a skill costs, not a count from any tokenizer. */
-export const estimateTokens = (chars: number): number => Math.ceil(chars / 4);
 
 export function readCatalog(configDir: string, home: string): CatalogView {
   const problems: string[] = [];

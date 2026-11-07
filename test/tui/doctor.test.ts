@@ -52,6 +52,12 @@ test("doctor json: ok is ok, login is neutral, real failures are bad, and a word
   assert.match(s.docs!.words, /claude: ok, 12 tools, opencode: ok, 12 tools/);
 });
 
+test("doctor json: the estimate of a server's tools is shown beside its count, and an older document without one is as before", () => {
+  const withTokens = JSON.stringify({ code: "ok", host: "laptop", servers: [server("docs", "claude", "ok", { tokens: 28400 }), server("docs", "opencode", "ok")] });
+  const r = readDoctor(withTokens, null);
+  assert.equal(r.ok && r.hosts["laptop"]!.servers["docs"]!.words, "claude: ok, 12 tools, ~28.4k tokens, opencode: ok, 12 tools");
+});
+
 test("doctor json: an older document reads the same way, without a protocol, and auth-needed that does not fail is neutral", () => {
   const r = readDoctor(JSON.stringify(OLD), null);
   assert.ok(r.ok);

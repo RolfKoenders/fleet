@@ -71,3 +71,9 @@ _Avoid_: Lockfile, manifest
 **Conflict**:
 A difference fleet will not resolve by itself during apply, so it stops and reports instead of overwriting.
 _Avoid_: Drift (drift is any difference; only some drift is a conflict)
+
+## Checking
+
+**Doctor result**:
+What the last `fleet doctor` on a host found for each MCP server it picks. The only record of a server's tools, since nothing else starts a server.
+_Avoid_: Health check, probe result
