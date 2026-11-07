@@ -270,7 +270,7 @@ footer a:hover { color: var(--text); }
   .fan { grid-template-columns: 1fr; gap: 0; }
   .wires { display: none; }
   .gap { height: 28px; }
-  .grid, .steps, .commands { grid-template-columns: 1fr; }
+  .grid, .steps, .commands { grid-template-columns: minmax(0, 1fr); }
   .feat.wide { grid-column: auto; }
   .cmdrow { border-right: 0 !important; }
   .cmdrow:nth-last-child(2) { border-bottom: 1px solid var(--border-soft); }
