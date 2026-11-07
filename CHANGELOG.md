@@ -8,6 +8,7 @@ What changed in fleet, newest first. Each version lists what you can do now, wha
 
 - `fleet bridge --view <screen> --host <name>` opens the bridge on a screen with a host selected, for scripts and bar widgets. A name that is not a screen or a host is refused before the screen is taken over.
 - `fleet doctor` measures how large each MCP server's tool definitions are, shown as an estimate in tokens (`~28.4k tokens`), and keeps the result on the host in `~/.local/state/fleet/doctor.json`. A server that fails keeps its last measurement.
+- `fleet update` prints what changed between your pin and the new one: the changelog sections the new commit has that the old one lacks, or the commit subjects when the changelog says nothing. `--json` adds it as `changes`. It is text from the tool's repo, so only printable characters are shown and long output is cut.
 
 ## 2.0.0 - 2026-11-03
 
