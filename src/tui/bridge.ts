@@ -8,9 +8,12 @@ import { readCache, remember } from "./cache.ts";
 import { detectLevel } from "./color.ts";
 import type { Env } from "./color.ts";
 import { loadModel } from "./model.ts";
+import type { Model } from "./model.ts";
 import { realProbe } from "./probe.ts";
 import { RealPusher } from "./pusher.ts";
 import { runOnTerminal } from "./runtime.ts";
+import { checkHost, checkView } from "./start.ts";
+import type { Screen } from "./palette.ts";
 
 /** Whether the boot animation and the spinners may move: not when the user or a plain terminal asks for none. */
 export const motionAllowed = (env: Env): boolean => (env.FLEET_NO_MOTION ?? "") === "" && env.TERM !== "dumb" && env.TERM !== "linux";
@@ -32,20 +35,29 @@ export function inDemo(env: Env, home: string): boolean {
 
 /**
  * `fleet bridge`: the full-screen view. It reads the config, this host and, over ssh, the others, and writes
- * nothing. It needs a terminal, so an agent or a pipe gets a refusal that points at `fleet status`.
+ * nothing. It needs a terminal, so an agent or a pipe gets a refusal that points at `fleet status`. `view` and `host`
+ * say where it opens; a name that is not one is refused (exit 2) before the screen is taken over.
  */
-export async function bridge(toolDir: string, configDir: () => string, json: boolean, env: Env = process.env, home: string = homedir()): Promise<Result | Relayed> {
+export async function bridge(toolDir: string, configDir: () => string, json: boolean, env: Env = process.env, home: string = homedir(), where: { view?: string; host?: string } = {}): Promise<Result | Relayed> {
   if (json) return { code: "invalid", messages: ["fleet: 'bridge' is a full-screen view and has no --json form; use 'fleet status --all --json'"] };
+  // The config is read before the terminal is checked only when a host is named, the one name that needs it.
+  let dir: string | null = null;
+  let loaded: Model | null = null;
+  const load = (): Model => {
+    dir ??= configDir();
+    return (loaded ??= loadModel(dir, readHostName(home)));
+  };
+  const refused = checkView(where.view) ?? (where.host === undefined ? null : checkHost(load(), where.host));
+  if (refused !== null) return refused;
   if (process.stdin.isTTY !== true || process.stdout.isTTY !== true) {
     return { code: "invalid", messages: ["fleet: 'bridge' needs a terminal; to read the same facts without one, run 'fleet status --all'"] };
   }
-  const dir = configDir();
+  const model = load();
   const level = detectLevel(env, true);
   const motion = motionAllowed(env);
-  const model = loadModel(dir, readHostName(home));
-  const pusher = new RealPusher(toolDir, dir, home, model.hosts);
+  const pusher = new RealPusher(toolDir, dir!, home, model.hosts);
   const demo = inDemo(env, home);
-  const app = createApp({ model, probe: realProbe(toolDir, dir, home), pusher, motion, boot: motion && level !== "none", ...(demo ? { demo: true, noDoctor: "the hosts are made up, and doctor would start real servers" } : {}), cached: readCache(home), remember: (host, status) => remember(home, host, status) });
+  const app = createApp({ model, probe: realProbe(toolDir, dir!, home), pusher, motion, boot: motion && level !== "none", ...(demo ? { demo: true, noDoctor: "the hosts are made up, and doctor would start real servers" } : {}), cached: readCache(home), ...(where.view !== undefined ? { view: where.view as Screen } : {}), ...(where.host !== undefined ? { host: where.host } : {}), remember: (host, status) => remember(home, host, status) });
   const code = await runOnTerminal(app, { stdin: process.stdin, stdout: process.stdout }, { level });
   // The screen is gone but a push that was started from it is not: say so, and stay until it has ended.
   const waiting = pusher.whenDone();

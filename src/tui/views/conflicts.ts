@@ -2,15 +2,23 @@ import { drawBox } from "../buffer.ts";
 import type { Canvas } from "../buffer.ts";
 import type { State } from "../app.ts";
 import type { Conflict } from "../../plan.ts";
+import type { HostInfo } from "../model.ts";
 import { spinner, theme } from "../theme.ts";
 import { truncate, wrap } from "../width.ts";
 import { pad, plural, s, segments } from "./ui.ts";
 import type { Seg } from "./ui.ts";
 
-/** Every conflict that can be selected: this host's first, then each other host's, in host order. */
+/** The hosts in the order their conflicts are listed: the one the bridge was opened on first, then the rest as in the config. */
+export function conflictHosts(state: Pick<State, "model" | "conflicts">): HostInfo[] {
+  const { hosts } = state.model;
+  const first = hosts.filter((h) => h.name === state.conflicts.first);
+  return [...first, ...hosts.filter((h) => h.name !== state.conflicts.first)];
+}
+
+/** Every conflict that can be selected, host by host in `conflictHosts` order. */
 export function conflictEntries(state: Pick<State, "model" | "conflicts">): { host: string; item: Conflict }[] {
   const out: { host: string; item: Conflict }[] = [];
-  for (const h of state.model.hosts) {
+  for (const h of conflictHosts(state)) {
     if (h.self) for (const item of state.conflicts.items) out.push({ host: h.name, item });
     else {
       const r = state.conflicts.remote[h.name]?.result;
@@ -46,14 +54,14 @@ function hostNote(state: State, name: string, self: boolean): [string, Seg[1]] |
 }
 
 export function drawConflicts(c: Canvas, state: State): void {
-  const { conflicts, model } = state;
+  const { conflicts } = state;
   const entries = conflictEntries(state);
   const total = entries.length;
   segments(c, 2, 1, total > 0 ? [[plural(total, "conflict"), s.bad], [" across hosts. Apply stops on a host until each is cleared.", s.muted]] : [["✓ ", s.ok], ["no conflicts known on any host", s.text]]);
 
   const lines: Line[] = [];
   let index = 0;
-  for (const h of model.hosts) {
+  for (const h of conflictHosts(state)) {
     const note = hostNote(state, h.name, h.self);
     lines.push({ head: [[pad(h.name + (h.self ? " (this host)" : ""), 22), s.bold], ...(note ? ([[note[0], note[1]]] as Seg[]) : [])] });
     const own = entries.filter((e) => e.host === h.name);

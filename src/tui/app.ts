@@ -37,8 +37,8 @@ export type HostLive = {
 
 export type RemoteLive = { phase: "loading" | "done"; gen: number; result: RemoteConflicts | null };
 
-/** `selected` runs over this host's conflicts, then the other hosts', in host order (see `conflictEntries`). */
-export type ConflictsLive = { phase: "loading" | "done"; items: Conflict[]; detail: string | null; selected: number; remote: Record<string, RemoteLive> };
+/** `selected` runs over this host's conflicts, then the other hosts', in host order, except that `first` (the host the bridge was opened on) comes first (see `conflictEntries`). */
+export type ConflictsLive = { phase: "loading" | "done"; items: Conflict[]; detail: string | null; selected: number; remote: Record<string, RemoteLive>; first: string | null };
 
 /** Where a push is: not started, being reviewed (nothing runs until the word is typed), running, or over. */
 export type PushState =
@@ -117,6 +117,9 @@ export type Options = {
   noDoctor?: string;
   /** Set by the demo, and only by it: the hosts are made up, and the bridge says so. */
   demo?: boolean;
+  /** The screen to open on, and the host to have selected on it. Both are names the caller has already checked. */
+  view?: Screen;
+  host?: string;
 };
 
 export const BOOT_MS = 1700;
@@ -440,25 +443,28 @@ export function createApp(options: Options): App<State, Msg> {
         // This host is read in place and answers at once, so only the others are remembered.
         if (kept && !h.self) live[h.name] = { phase: "loading", gen: 0, since: 0, at: null, result: kept.result, seen: { agoSeconds: kept.agoSeconds, since: 0 } };
       }
+      // The host asked for, or else this one, is the one selected on Home and in the Matrix.
+      const asked = options.host === undefined ? -1 : model.hosts.findIndex((h) => h.name === options.host);
+      const shown = asked >= 0 ? asked : Math.max(0, model.hosts.findIndex((h) => h.self));
       const state: State = {
         size,
         demo: options.demo === true,
         now: 0,
         motion: options.motion,
         model,
-        screen: "home",
+        screen: options.view ?? "home",
         overlay: null,
         boot: { start: null, done: !options.boot },
         live,
-        conflicts: { phase: "loading", items: [], detail: null, selected: 0, remote: {} },
+        conflicts: { phase: "loading", items: [], detail: null, selected: 0, remote: {}, first: asked >= 0 ? options.host! : null },
         push: { phase: "idle" },
         doctor: { phase: "idle", gen: 0, scope: "all", result: null },
         reviews: 0,
         timeline: { phase: "loading", history: null, selected: 0, diffs: {}, scroll: 0 },
         secrets: { phase: "loading", view: null, mode: "names", selected: 0 },
         catalog: { phase: "loading", view: null, query: "", typing: false, selected: 0, scroll: 0 },
-        home: { selected: Math.max(0, model.hosts.findIndex((h) => h.self)) },
-        matrix: { row: 0, col: Math.max(0, model.hosts.findIndex((h) => h.self)), expanded: [] },
+        home: { selected: shown },
+        matrix: { row: 0, col: shown, expanded: [] },
         fault: null,
       };
       return refresh(state);
