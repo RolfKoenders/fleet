@@ -1,4 +1,5 @@
 import { count, printable } from "../status.ts";
+import { formatTokens } from "../tokens.ts";
 import { isObject } from "../yamlfile.ts";
 
 /**
@@ -57,7 +58,8 @@ function serversOf(list: unknown): Record<string, ServerHealth> {
     const health = judge(r.result, r.fails);
     const tool = printable(r.tool) ?? "?";
     const word = printable(r.result) ?? "unknown";
-    entry.words.push(`${tool}: ${word}${count(r.tools) !== null ? `, ${count(r.tools)} tools` : ""}`);
+    const tokens = count(r.tokens);
+    entry.words.push(`${tool}: ${word}${count(r.tools) !== null ? `, ${count(r.tools)} tools` : ""}${tokens !== null ? `, ${formatTokens(tokens)} tokens` : ""}`);
     if (ORDER[health] > ORDER[entry.health]) entry.health = health;
     if (health !== "ok" && entry.detail === null) entry.detail = printable(r.detail) ?? null;
     entry.protocol ??= printable(r.protocol) ?? null;

@@ -63,7 +63,7 @@ fleet push -m "Add a skill"
 |---|---|
 | `fleet status` | Report this machine; `--all` asks every machine over ssh; `--conflicts` lists this machine's conflicts in full, reading only |
 | `fleet bridge [--view <screen>] [--host <name>]` | The full-screen view of every host (needs a terminal), optionally opened on a screen and a host; pushes and doctor only on your confirmation. See [the bridge](docs/bridge.md) |
-| `fleet doctor` | Start this machine's MCP servers and check each answers; `--all` asks every machine over ssh. Runs commands with real credentials and may download packages, so it runs only when you ask |
+| `fleet doctor` | Start this machine's MCP servers, check each answers and measure how large its tools are (saved as the doctor result); `--all` asks every machine over ssh. Runs commands with real credentials and may download packages, so it runs only when you ask |
 | `fleet diff` | Show what an apply would change |
 | `fleet apply` | Make this machine match its config |
 | `fleet push` | Publish the config and apply it |

@@ -1,12 +1,14 @@
 import { spawn, spawnSync } from "node:child_process";
 import type { ChildProcess } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { git, installFakeSsh, installFakeTool, installStatusTools, makeClone, makeHome, publish, runFleet, tempDir, toolCalls, fakeTimer } from "./helpers.ts";
 import type { SshPlan } from "./helpers.ts";
+import { readDoctorResult } from "../src/doctorresult.ts";
 import { EXIT } from "../src/exit.ts";
+import { estimateTokens } from "../src/tokens.ts";
 import { findTool } from "../src/tools.ts";
 
 // ---- fake MCP servers, as separate processes so the blocking runs of fleet never starve them ----
@@ -19,7 +21,7 @@ const log = process.env.LOG;
 const note = (text) => log && fs.appendFileSync(log, text + "\\n");
 const fail = (id, code, message, data) => process.stdout.write(JSON.stringify({ jsonrpc: "2.0", id, error: { code, message, data } }) + "\\n");
 const reply = (id, result) => process.stdout.write(JSON.stringify({ jsonrpc: "2.0", id, result }) + "\\n");
-if (mode === "exit3") process.exit(3);
+if (mode === "exit3" || (mode === "gate" && fs.existsSync(extra))) process.exit(3);
 if (mode === "junk") { process.stdout.write("starting up, not json\\n"); process.exit(0); }
 if (mode === "hang" || mode === "grandchild") {
   if (mode === "grandchild") {
@@ -54,7 +56,7 @@ if (mode === "hang" || mode === "grandchild") {
       if (mode === "modern" && modern !== "2026-07-28") return fail(m.id, -32020, "missing protocol version");
       const start = m.params && m.params.cursor ? Number(m.params.cursor) : 0;
       const end = Math.min(start + 2, Number(count));
-      const tools = []; for (let i = start; i < end; i++) tools.push({ name: "t" + i, inputSchema: { type: "object" } });
+      const tools = []; for (let i = start; i < end; i++) tools.push(mode === "rich" ? { name: "marker-name-" + i, description: "marker-description for " + process.env.TOKEN, inputSchema: { type: "object", properties: { "marker-prop": { type: "string", description: process.env.TOKEN } } } } : { name: "t" + i, inputSchema: { type: "object" } });
       reply(m.id, end < Number(count) ? { tools, nextCursor: String(end) } : { tools });
     } else if (m.id !== undefined) {
       // What a legacy server answers to a method it does not know.
@@ -158,7 +160,7 @@ const stdioEntry = (name: string, mode: string, count = 3, extra = "", env = "")
 // ---- setup ----
 
 type Doc = { ok: boolean; code: string; host: string; messages: string[]; checks: { name: string; result: string; detail: string | null }[]; servers: Server[] };
-type Server = { server: string; tool: string; transport: string; result: string; tools: number | null; latencyMs: number | null; protocol: string | null; detail: string | null; fails: boolean };
+type Server = { server: string; tool: string; transport: string; result: string; tools: number | null; size: number | null; tokens: number | null; latencyMs: number | null; protocol: string | null; detail: string | null; fails: boolean };
 
 function setup(catalog: string, opts: { hosts?: Record<string, string>; ssh?: Record<string, SshPlan>; key?: boolean; timer?: string } = {}) {
   const { clone, remote } = makeClone();
@@ -221,8 +223,8 @@ test("the human form lists checks and one line per server and tool", () => {
   assert.equal(r.code, EXIT.ok, r.stderr);
   assert.match(r.stdout, /^host: laptop$/m);
   assert.match(r.stdout, /^ {2}timer: ok \(active\)$/m);
-  assert.match(r.stdout, /^ {2}alpha \(claude, stdio\): ok, 1 tool, \d+ ms, MCP 2025-11-25$/m);
-  assert.match(r.stdout, /^ {2}alpha \(opencode, stdio\): ok, 1 tool, \d+ ms, MCP 2025-11-25$/m);
+  assert.match(r.stdout, /^ {2}alpha \(claude, stdio\): ok, 1 tool, ~\d+ tokens, \d+ ms, MCP 2025-11-25$/m);
+  assert.match(r.stdout, /^ {2}alpha \(opencode, stdio\): ok, 1 tool, ~\d+ tokens, \d+ ms, MCP 2025-11-25$/m);
 });
 
 test("a missing program, a server that exits, and one that writes text that is not JSON-RPC are told apart, and exit 8", () => {
@@ -361,8 +363,8 @@ test("stdio: a legacy, a modern, a dual-era and a silent legacy server all repor
   assert.deepEqual(discover._meta["io.modelcontextprotocol/clientCapabilities"], {});
   // The protocol is shown in the human form too.
   const text = s.run(["--timeout", "4"], { NO_COLOR: "1" }).stdout;
-  assert.match(text, /^ {2}modern \(claude, stdio\): ok, 3 tools, \d+ ms, MCP 2026-07-28$/m);
-  assert.match(text, /^ {2}legacy \(claude, stdio\): ok, 3 tools, \d+ ms, MCP 2025-11-25$/m);
+  assert.match(text, /^ {2}modern \(claude, stdio\): ok, 3 tools, ~\d+ tokens, \d+ ms, MCP 2026-07-28$/m);
+  assert.match(text, /^ {2}legacy \(claude, stdio\): ok, 3 tools, ~\d+ tokens, \d+ ms, MCP 2025-11-25$/m);
 });
 
 test("stdio: a modern server that speaks no revision fleet speaks is a failure, not a fall back", () => {
@@ -420,13 +422,32 @@ test("a timeout on an npx server says to retry with a higher --timeout, and one 
 
 // ---- secrets ----
 
+const setSecret = (s: ReturnType<typeof setup>, name: string, value: string) =>
+  assert.equal(runFleet(s.clone, ["secrets", "set", "shared", name], { home: s.home, input: value }).code, EXIT.ok);
+
+/** Gives the host the real sops and a real age key, and sets one shared secret. */
+function useSecrets(s: ReturnType<typeof setup>, name: string, value: string) {
+  const sops = findTool("sops");
+  const keygen = findTool("age-keygen");
+  assert.ok(sops && keygen);
+  mkdirSync(join(s.home, ".local/bin"), { recursive: true });
+  for (const [tool, path] of [["sops", sops], ["age-keygen", keygen]] as const) {
+    rmSync(join(s.home, ".local/bin", tool), { force: true });
+    symlinkSync(path, join(s.home, ".local/bin", tool));
+  }
+  const key = spawnSync(keygen, [], { encoding: "utf8" }).stdout;
+  const recipient = spawnSync(keygen, ["-y"], { encoding: "utf8", input: key }).stdout.trim();
+  mkdirSync(join(s.home, ".config/fleet"), { recursive: true });
+  writeFileSync(join(s.home, ".config/fleet/age.key"), key, { mode: 0o600 });
+  s.write("hosts/laptop.yaml", `admin: true\nage: ${recipient}\nssh: me@laptop\n`);
+  publish(s.clone, "age");
+  setSecret(s, name, value);
+}
+
 test("a secret is delivered to the server and never printed, in text, JSON or errors", async (t) => {
   const TOKEN = "tok-plaintext-9f3-leakcheck";
   const http = await startHttp();
   t.after(http.stop);
-  const sops = findTool("sops");
-  const keygen = findTool("age-keygen");
-  assert.ok(sops && keygen);
   const seen = join(tempDir(), "seen.log");
   const s = setup(
     [
@@ -436,18 +457,7 @@ test("a secret is delivered to the server and never printed, in text, JSON or er
     ].join(""),
     { hosts: { laptop: "admin: true\nssh: me@laptop\n" }, key: false },
   );
-  mkdirSync(join(s.home, ".local/bin"), { recursive: true });
-  for (const [name, path] of [["sops", sops], ["age-keygen", keygen]] as const) {
-    rmSync(join(s.home, ".local/bin", name), { force: true });
-    symlinkSync(path, join(s.home, ".local/bin", name));
-  }
-  const key = spawnSync(keygen, [], { encoding: "utf8" }).stdout;
-  const recipient = spawnSync(keygen, ["-y"], { encoding: "utf8", input: key }).stdout.trim();
-  mkdirSync(join(s.home, ".config/fleet"), { recursive: true });
-  writeFileSync(join(s.home, ".config/fleet/age.key"), key, { mode: 0o600 });
-  s.write("hosts/laptop.yaml", `admin: true\nage: ${recipient}\nssh: me@laptop\n`);
-  publish(s.clone, "age");
-  assert.equal(runFleet(s.clone, ["secrets", "set", "shared", "API_TOKEN"], { home: s.home, input: TOKEN }).code, EXIT.ok);
+  useSecrets(s, "API_TOKEN", TOKEN);
 
   const text = s.run();
   const json = s.run(["--json"]);
@@ -532,6 +542,7 @@ test("a secret that cannot be read exits 5, and the local checks are still shown
   assert.match(r.stdout, /^checks:$/m);
   assert.match(r.stdout, /age-key: problem/);
   assert.equal(r.stdout.includes("mcp servers: none"), true);
+  assert.equal(existsSync(resultFile(s.home)), false, "nothing was started, so there is nothing to save");
 });
 
 test("a host with no name exits 2", () => {
@@ -561,13 +572,14 @@ test("doctor is documented as starting servers, and is listed as a command that 
   const agent = runFleet(s.clone, ["agent"], { home: s.home }).stdout;
   const changing = agent.slice(agent.indexOf("### Changes things"));
   assert.match(changing, /^- `fleet doctor \[--all\]/m);
-  assert.doesNotMatch(agent.slice(0, agent.indexOf("### Changes things")), /fleet doctor/);
+  assert.doesNotMatch(agent.slice(agent.indexOf("### Read-only"), agent.indexOf("### Changes things")), /fleet doctor/);
 });
 
-test("doctor never writes fleet's state or the tools' files", () => {
+test("doctor writes only its own doctor result: no applied state, no tool files", () => {
   const s = setup(stdioEntry("alpha", "ok", 1));
   assert.equal(s.run().code, EXIT.ok);
-  for (const rel of [".local/state/fleet", ".claude.json", ".claude", ".config/opencode"]) assert.equal(existsSync(join(s.home, rel)), false, rel);
+  assert.deepEqual(readdirSync(join(s.home, ".local/state/fleet")), ["doctor.json"]);
+  for (const rel of [".claude.json", ".claude", ".config/opencode"]) assert.equal(existsSync(join(s.home, rel)), false, rel);
 });
 
 // ---- --all ----
@@ -689,4 +701,151 @@ test("a remote host that really runs fleet doctor answers with its own servers a
   assert.equal(remote.result, "ok");
   assert.deepEqual(remote.doctor.servers.map((x) => [x.server, x.tool, x.result, x.tools]), [["alpha", "claude", "ok", 4], ["alpha", "opencode", "ok", 4]]);
   assert.ok(readFileSync(log, "utf8").includes("initialize"), "the remote started the server itself");
+});
+
+// ---- the size of each server's tools, and the doctor result ----
+
+const resultFile = (home: string) => join(home, ".local/state/fleet/doctor.json");
+const savedBy = (s: { home: string }) => readDoctorResult(s.home)!;
+const savedServer = (s: { home: string }, name: string, agent: string) => savedBy(s).servers.find((x) => x.name === name && x.agent === agent)!;
+
+/** What `ok` mode's tools measure: the JSON of each one's name, description and schema, summed. */
+const plainSize = (tools: number) => Array.from({ length: tools }, (_, i) => JSON.stringify({ name: `t${i}`, inputSchema: { type: "object" } }).length).reduce((a, b) => a + b, 0);
+
+test("each server has tokens next to tools: the estimate of its summed tool definitions, and null when it did not answer", () => {
+  const s = setup(stdioEntry("alpha", "ok", 5) + stdioEntry("dies", "exit3"));
+  const { doc } = s.json();
+  for (const tool of ["claude", "opencode"]) {
+    const ok = s.find(doc, "alpha", tool);
+    assert.equal(ok.tools, 5);
+    assert.equal(ok.size, plainSize(5));
+    assert.equal(ok.tokens, estimateTokens(plainSize(5)));
+    const dead = s.find(doc, "dies", tool);
+    assert.deepEqual([dead.tools, dead.size, dead.tokens], [null, null, null]);
+  }
+});
+
+test("a tool's size is its name, description and input schema as JSON, over every page", () => {
+  const TOKEN = "tok-for-sizing";
+  const s = setup(stdioEntry("rich", "rich", 5, "", `    env:\n      TOKEN: ${TOKEN}\n`));
+  const { doc } = s.json();
+  const tool = (i: number) => ({ name: `marker-name-${i}`, description: `marker-description for ${TOKEN}`, inputSchema: { type: "object", properties: { "marker-prop": { type: "string", description: TOKEN } } } });
+  assert.equal(s.find(doc, "rich", "claude").size, [0, 1, 2, 3, 4].map((i) => JSON.stringify(tool(i)).length).reduce((a, b) => a + b, 0));
+});
+
+test("the text form shows the estimate with a ~ beside the tool count", () => {
+  const s = setup(stdioEntry("alpha", "ok", 3));
+  const r = s.run([], { NO_COLOR: "1" });
+  assert.match(r.stdout, new RegExp(`^ {2}alpha \\(claude, stdio\\): ok, 3 tools, ~${estimateTokens(plainSize(3))} tokens, \\d+ ms, MCP 2025-11-25$`, "m"));
+  const failed = setup(stdioEntry("dies", "exit3")).run([], { NO_COLOR: "1" });
+  assert.doesNotMatch(failed.stdout, /tokens/);
+});
+
+test("every doctor run saves the doctor result: mode 600, no temp file left, one record per server and tool", () => {
+  const s = setup(stdioEntry("alpha", "ok", 4) + stdioEntry("dies", "exit3"));
+  assert.equal(existsSync(resultFile(s.home)), false);
+  const before = Date.now();
+  s.json();
+  assert.equal(statSync(resultFile(s.home)).mode & 0o777, 0o600);
+  assert.deepEqual(readdirSync(join(s.home, ".local/state/fleet")).filter((f) => f.endsWith(".tmp")), []);
+  const saved = savedBy(s);
+  assert.deepEqual([saved.version, saved.host], [1, "laptop"]);
+  assert.deepEqual(saved.servers.map((x) => [x.name, x.agent, x.result, x.tools, x.size]), [
+    ["alpha", "claude", "ok", 4, plainSize(4)],
+    ["alpha", "opencode", "ok", 4, plainSize(4)],
+    ["dies", "claude", "exited", null, null],
+    ["dies", "opencode", "exited", null, null],
+  ]);
+  const alpha = savedServer(s, "alpha", "claude");
+  assert.ok(Date.parse(alpha.measuredAt!) >= before - 1000 && Date.parse(alpha.measuredAt!) <= Date.now());
+  assert.match(alpha.definition!, /^[0-9a-f]{64}$/);
+  assert.equal(savedServer(s, "dies", "claude").measuredAt, null, "a server that never answered has no time");
+  assert.equal(savedServer(s, "dies", "claude").definition, null);
+  // It is a file of its own: nothing of it is in the applied state.
+  assert.equal(existsSync(join(s.home, ".local/state/fleet/applied.json")), false);
+});
+
+test("a server that fails this run keeps its last good measurement and time, and shows this run's failure", async () => {
+  const gate = join(tempDir(), "down");
+  const s = setup(stdioEntry("flaky", "gate", 3, gate) + stdioEntry("steady", "ok", 2));
+  s.json();
+  const first = savedServer(s, "flaky", "claude");
+  const steadyFirst = savedServer(s, "steady", "claude");
+  assert.equal(first.result, "ok");
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  writeFileSync(gate, "");
+  const { doc } = s.json();
+  assert.equal(s.find(doc, "flaky", "claude").result, "exited");
+  const kept = savedServer(s, "flaky", "claude");
+  assert.deepEqual({ ...kept, result: "" }, { ...first, result: "" }, "the measurement, its time and its hash are as they were");
+  assert.equal(kept.result, "exited");
+  assert.ok(savedServer(s, "steady", "claude").measuredAt! > steadyFirst.measuredAt!, "a server that answers is measured again");
+  // It comes back, and is measured afresh.
+  rmSync(gate);
+  s.json();
+  assert.equal(savedServer(s, "flaky", "claude").result, "ok");
+  assert.ok(savedServer(s, "flaky", "claude").measuredAt! > first.measuredAt!);
+});
+
+test("a server no longer picked is dropped from the doctor result", () => {
+  const s = setup(stdioEntry("alpha", "ok", 1) + stdioEntry("beta", "ok", 1));
+  s.json();
+  assert.deepEqual([...new Set(savedBy(s).servers.map((x) => x.name))], ["alpha", "beta"]);
+  s.write("hosts/_defaults.yaml", "mcp:\n  include: [alpha]\n");
+  publish(s.clone, "drop beta");
+  s.json();
+  assert.deepEqual([...new Set(savedBy(s).servers.map((x) => x.name))], ["alpha"]);
+});
+
+test("a run that could not start any server leaves the doctor result as it was", () => {
+  const s = setup(stdioEntry("alpha", "ok", 1));
+  s.json();
+  const before = readFileSync(resultFile(s.home), "utf8");
+  s.write("hosts/laptop.yaml", "ssh: me@laptop\nnot-a-key: 1\n");
+  const r = s.run(["--json"]);
+  assert.equal(r.code, EXIT.invalid);
+  assert.equal(readFileSync(resultFile(s.home), "utf8"), before);
+});
+
+test("the doctor result holds no secret value and no tool name, description or schema text", () => {
+  const TOKEN = "tok-plaintext-5d1-resultcheck";
+  const s = setup(stdioEntry("rich", "rich", 3, "", `    env:\n      TOKEN: secret:API_TOKEN\n`), { hosts: { laptop: "admin: true\nssh: me@laptop\n" }, key: false });
+  useSecrets(s, "API_TOKEN", TOKEN);
+  const { doc } = s.json();
+  assert.equal(s.find(doc, "rich", "claude").result, "ok");
+  assert.equal(s.find(doc, "rich", "claude").tools, 3);
+  const saved = readFileSync(resultFile(s.home), "utf8");
+  assert.match(saved, /"size": [1-9]/, "it is a real measurement");
+  for (const text of [TOKEN, "marker-description", "marker-name", "marker-prop", "object"]) assert.equal(saved.includes(text), false, text);
+  assert.equal(saved.includes("secret:"), false, "not even the reference to a secret: the hash stands for the entry");
+});
+
+test("the definition hash changes when the catalog entry changes, and not when only a secret's value does", () => {
+  const entry = (count: number) => stdioEntry("rich", "rich", count, "", `    env:\n      TOKEN: secret:API_TOKEN\n`);
+  const s = setup(entry(3), { hosts: { laptop: "admin: true\nssh: me@laptop\n" }, key: false });
+  useSecrets(s, "API_TOKEN", "first-value-aaaaaaaa");
+  s.json();
+  const first = ["claude", "opencode"].map((a) => savedServer(s, "rich", a).definition);
+  assert.ok(first.every((h) => h !== null));
+  setSecret(s, "API_TOKEN", "second-value-bbbbbbbb");
+  s.json();
+  assert.deepEqual(["claude", "opencode"].map((a) => savedServer(s, "rich", a).definition), first, "the secret's value is not in the hash");
+  s.write("catalog/mcp.yaml", `servers:\n${entry(4)}`);
+  publish(s.clone, "change the entry");
+  s.json();
+  const changed = ["claude", "opencode"].map((a) => savedServer(s, "rich", a).definition);
+  assert.deepEqual(changed.map((h, i) => h !== first[i]), [true, true]);
+});
+
+test("doctor --all saves this host's own result and nothing for the other hosts", () => {
+  const remote = JSON.parse(docOf()) as { servers: object[] };
+  remote.servers = [{ server: "remote-only", tool: "claude", transport: "stdio", result: "ok", tools: 7, size: 4000, tokens: 1000, latencyMs: 40, protocol: "2025-11-25", detail: null, fails: false }];
+  const s = setupAll({ "me@bee": { stdout: JSON.stringify({ ...JSON.parse(docOf()), servers: remote.servers }) } }, { bee: "ssh: me@bee\n" });
+  const { doc } = s.all();
+  const hosts = (doc as unknown as { hosts: { host: string; doctor: { servers: { server: string; tokens: number | null }[] } | null }[] }).hosts;
+  assert.deepEqual(hosts.find((h) => h.host === "bee")!.doctor!.servers.map((x) => [x.server, x.tokens]), [["remote-only", 1000]], "a remote host's estimate is read through");
+  const saved = savedBy(s);
+  assert.equal(saved.host, "laptop");
+  assert.deepEqual([...new Set(saved.servers.map((x) => x.name))], ["alpha"]);
+  assert.equal(JSON.stringify(saved).includes("remote-only"), false);
 });
