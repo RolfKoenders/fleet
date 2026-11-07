@@ -77,3 +77,7 @@ _Avoid_: Drift (drift is any difference; only some drift is a conflict)
 **Doctor result**:
 What the last `fleet doctor` on a host found for each MCP server it picks. The only record of a server's tools, since nothing else starts a server.
 _Avoid_: Health check, probe result
+
+**Startup context**:
+What an agent on a host loads before the first prompt: its instructions, the descriptions of its skills, and the MCP tool definitions it is offered, whether fleet put them there or not. A size, estimated in tokens.
+_Avoid_: Context budget, context cost, context usage

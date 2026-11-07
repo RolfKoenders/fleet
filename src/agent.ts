@@ -27,6 +27,7 @@ const TERMS: [string, string][] = [
   ["Applied state", "The record, per host, of what fleet created there, so removal is possible and everything else is left alone."],
   ["Conflict", "A difference fleet will not resolve by itself during apply, so it stops and reports instead of overwriting."],
   ["Doctor result", "What the last `fleet doctor` on a host found for each MCP server it picks. The only record of a server's tools, since nothing else starts a server."],
+  ["Startup context", "What an agent on a host loads before the first prompt: its instructions, the descriptions of its skills, and the MCP tool definitions it is offered, whether fleet put them there or not. A size, estimated in tokens."],
 ];
 
 /** What each exit code means, written once. A new code in `exit.ts` fails to compile until it is described here. */
