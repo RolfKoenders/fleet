@@ -1,4 +1,5 @@
 import { runGit } from "./git.ts";
+import { paint } from "./output.ts";
 import { load } from "../vendor/js-yaml.mjs";
 
 export type FlagKind = "exec-bit" | "new-script" | "new-url" | "new-bash-block" | "allowed-tools" | "hooks-file" | "description";
@@ -27,6 +28,41 @@ export type Review = {
 /** A skill the config uses, with its directory (relative to the clone's root) at each pin. */
 export type UsedSkill = { skill: string; before: string; after: string };
 
+/** Limits for text that comes from the source. The report and `--json` both get them, so the two agree. */
+const SUBJECT_MAX = 100;
+const NAME_MAX = 100;
+const PATH_MAX = 200;
+const DETAIL_MAX = 200;
+
+/**
+ * Text from a source, made safe to print: control characters (including ESC, the C1 range, CR and
+ * backspace), format characters such as bidi overrides, and line separators become `?`, and the rest is
+ * cut to `max` characters with an ellipsis. A source is untrusted, and a terminal obeys what it is sent.
+ */
+export function plain(text: string, max = Infinity, keepTab = false): string {
+  const clean = text.replace(keepTab ? /[^\P{C}\t]|[\u2028\u2029]/gu : /\p{C}|[\u2028\u2029]/gu, "?");
+  const chars = [...clean];
+  return chars.length > max ? `${chars.slice(0, max - 1).join("")}…` : clean;
+}
+
+/** The lines of a plain git diff, cleaned of control characters, with colour added by fleet and not by git. */
+function readableDiff(text: string, color: boolean): string {
+  let header = true;
+  return text
+    .split("\n")
+    .map((raw) => {
+      const line = plain(raw, Infinity, true);
+      if (raw.startsWith("diff --git ")) header = true;
+      else if (raw.startsWith("@@")) header = false;
+      if (header) return paint(color, "bold", line);
+      if (raw.startsWith("@@")) return paint(color, "cyan", line);
+      if (raw.startsWith("+")) return paint(color, "green", line);
+      if (raw.startsWith("-")) return paint(color, "red", line);
+      return line;
+    })
+    .join("\n");
+}
+
 const SCRIPT_EXTENSIONS = new Set([".sh", ".bash", ".zsh", ".fish", ".py", ".rb", ".pl", ".php", ".js", ".mjs", ".cjs", ".ts", ".lua", ".ps1", ".bat", ".cmd"]);
 const SETTINGS_FILE = /^(hooks|settings)(\.local)?\.(json|jsonc|ya?ml|toml)$/i;
 const URL = /https?:\/\/[^\s<>"'`)\]]+/g;
@@ -52,17 +88,6 @@ function rawChanges(clone: string, from: string, to: string): Entry[] {
 }
 
 const urlsIn = (text: string): string[] => (text.match(URL) ?? []).map((u) => u.replace(/[.,;:!?]+$/, ""));
-
-/** The URLs on the added lines of each file, from a zero-context diff of two trees. */
-function addedUrls(clone: string, from: string, to: string): Map<string, string[]> {
-  const urls = new Map<string, string[]>();
-  let file: string | null = null;
-  for (const line of gitOut(clone, "diff", "-U0", "--no-renames", "--no-color", "--src-prefix=a/", "--dst-prefix=b/", from, to).split("\n")) {
-    if (line.startsWith("+++ ")) file = line.startsWith("+++ b/") ? line.slice(6) : null;
-    else if (line.startsWith("+") && file !== null) urls.set(file, [...(urls.get(file) ?? []), ...urlsIn(line.slice(1))]);
-  }
-  return urls;
-}
 
 /** Every URL anywhere in the old tree, so one that only moved to another file is not new. */
 function urlsAt(clone: string, tree: string): Set<string> {
@@ -124,7 +149,8 @@ const isScript = (path: string, content: string) => SCRIPT_EXTENSIONS.has(/\.[^.
 /** The warnings and the info for one skill, from its tree at the old pin and at the new one. */
 function flagsFor(clone: string, from: string, to: string, used: UsedSkill, entries: Entry[]): Flag[] {
   const flags: Flag[] = [];
-  const add = (severity: Flag["severity"], file: string, kind: FlagKind, detail: string) => flags.push({ severity, skill: used.skill, file, kind, detail });
+  const add = (severity: Flag["severity"], file: string, kind: FlagKind, detail: string) =>
+    flags.push({ severity, skill: plain(used.skill, NAME_MAX), file: plain(file, PATH_MAX), kind, detail: plain(detail, DETAIL_MAX) });
   const blob = (sha: string) => runGit(clone, "cat-file", "blob", sha).stdout;
 
   for (const e of entries) {
@@ -134,10 +160,13 @@ function flagsFor(clone: string, from: string, to: string, used: UsedSkill, entr
     if (e.status === "A" && isHooksOrSettings(e.path)) add("warning", e.path, "hooks-file", "new hooks or settings file");
   }
 
+  // Read from the blobs and not from a text diff, whose headers quote an odd file name and so lose it.
   const oldUrls = urlsAt(clone, `${from}:${used.before}`);
-  for (const [file, urls] of addedUrls(clone, `${from}:${used.before}`, `${to}:${used.after}`)) {
-    const fresh = [...new Set(urls)].filter((u) => !oldUrls.has(u));
-    if (fresh.length > 0) add("warning", file, "new-url", `new URL ${fresh[0]}${fresh.length > 1 ? ` (+${fresh.length - 1} more)` : ""}`);
+  for (const e of entries) {
+    if (e.status === "D") continue;
+    const text = blob(e.newSha);
+    const fresh = text.includes("\0") ? [] : [...new Set(urlsIn(text))].filter((u) => !oldUrls.has(u));
+    if (fresh.length > 0) add("warning", e.path, "new-url", `new URL ${fresh[0]}${fresh.length > 1 ? ` (+${fresh.length - 1} more)` : ""}`);
   }
 
   if (entries.some((e) => e.path === "SKILL.md" && e.status === "M")) {
@@ -176,17 +205,17 @@ function size(clone: string, from: string, to: string): { added: number; removed
  */
 export function reviewMove(clone: string, from: string, to: string, used: UsedSkill[], yours: number, others: number, color: boolean): Review {
   const log = gitOut(clone, "log", "--format=%H%x09%s", `${from}..${to}`);
-  const commits = log === "" ? [] : log.split("\n").map((line) => ({ sha: line.slice(0, line.indexOf("\t")), subject: line.slice(line.indexOf("\t") + 1) }));
+  const commits = log === "" ? [] : log.split("\n").map((line) => ({ sha: line.slice(0, line.indexOf("\t")), subject: plain(line.slice(line.indexOf("\t") + 1), SUBJECT_MAX) }));
 
   const changed: SkillChange[] = [];
   const flags: Flag[] = [];
   const diffs: string[] = [];
   for (const u of [...used].sort((a, b) => a.skill.localeCompare(b.skill))) {
     const [a, b] = [`${from}:${u.before}`, `${to}:${u.after}`];
-    changed.push({ skill: u.skill, ...size(clone, a, b) });
+    changed.push({ skill: plain(u.skill, NAME_MAX), ...size(clone, a, b) });
     flags.push(...flagsFor(clone, from, to, u, rawChanges(clone, a, b)));
-    const text = gitOut(clone, "diff", "--no-renames", `--color=${color ? "always" : "never"}`, `--src-prefix=${u.skill}/`, `--dst-prefix=${u.skill}/`, a, b);
-    diffs.push(text);
+    const text = gitOut(clone, "diff", "--no-renames", "--color=never", `--src-prefix=${u.skill}/`, `--dst-prefix=${u.skill}/`, a, b);
+    if (text !== "") diffs.push(readableDiff(text, color));
   }
-  return { commits, yours, changed, others, flags, diff: diffs.filter((d) => d !== "").join("\n\n") };
+  return { commits, yours, changed, others, flags, diff: diffs.join("\n\n") };
 }

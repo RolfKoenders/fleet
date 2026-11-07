@@ -7,7 +7,7 @@ import { git, makeClone, makeHome, makeSource, publish, runFleet } from "./helpe
 import { EXIT } from "../src/exit.ts";
 import { skills } from "../src/skillsupdate.ts";
 import { reviewKey } from "../src/skillprompt.ts";
-import { shellBlocks, toolList } from "../src/skillreview.ts";
+import { plain, shellBlocks, toolList } from "../src/skillreview.ts";
 import type { Flag } from "../src/skillreview.ts";
 
 const md = (name: string, front = "", body = "Does a thing.\n") => ({ [`${name}/SKILL.md`]: `---\nname: ${name}\n${front}---\n${body}` });
@@ -366,4 +366,71 @@ test("the end of the input stream is a stop, not a move", async () => {
   const result = await skills(s.clone, ["update"], { review: true, terminal: { stdin, stdout: { write: (t: string) => (t.includes("d full diff") ? stdin.end() : undefined) } } });
   assert.equal(s.read(), text);
   assert.match(result.text!, /\(review stopped\)/);
+});
+
+/** The escape sequences, controls and separators an untrusted source could use to rewrite a terminal. */
+const HOSTILE = "\x1b[2K\r\x1b]0;x\x07\u009b\b";
+// eslint-disable-next-line no-control-regex
+const CONTROLS = /[\u0000-\u0009\u000b-\u001f\u007f-\u009f]/;
+
+/** A source whose commit subject, file name and file content all carry `HOSTILE`, to move from `first`. */
+function hostileSource() {
+  const a = makeSource({ ...md("diag"), "diag/notes.md": "v1\n" });
+  const name = `diag/evil${HOSTILE}.sh`;
+  a.commit({ [name]: `echo hi\n# see http://evil.example/${HOSTILE}\n${HOSTILE}\n`, "diag/notes.md": `v2 ${HOSTILE}\n` }, `Fix things ${HOSTILE} all clear`);
+  return a;
+}
+
+test("plain keeps printable text, replaces controls and separators with ?, and cuts to a length", () => {
+  assert.equal(plain("naïve ✓ 日本"), "naïve ✓ 日本");
+  assert.equal(plain(`a${HOSTILE}b`), "a?[2K??]0;x???b");
+  assert.equal(plain("a\tb\u202ec\u2028d"), "a?b?c?d");
+  assert.equal(plain("a\tb\rc", Infinity, true), "a\tb?c");
+  assert.equal(plain("x".repeat(10), 4), "xxx…");
+  assert.equal(plain("x".repeat(4), 4), "xxxx");
+});
+
+test("text from the source never reaches the report with a control character, and the warning for the file stays", () => {
+  const a = hostileSource();
+  const s = setup(one(a.remote, a.first, ["diag"]));
+  const r = s.run(["--review"]);
+  assert.equal(r.code, EXIT.ok, r.stderr);
+  assert.doesNotMatch(r.stdout, CONTROLS);
+  assert.match(r.stdout, /Fix things \?\[2K/);
+  assert.match(r.stdout, /^ {2}! diag {2}evil\?\[2K.*\.sh {2}new script; new URL http:\/\/evil\.example\/\?\[2K/m);
+  const { doc } = s.json("--review");
+  const flags = doc.reviews[0].flags as Flag[];
+  assert.deepEqual(flags.map((f) => [f.severity, f.kind, f.file]), [
+    ["warning", "new-script", `evil${plain(HOSTILE)}.sh`],
+    ["warning", "new-url", `evil${plain(HOSTILE)}.sh`],
+  ]);
+  assert.equal(doc.reviews[0].commits[0].subject, `Fix things ${plain(HOSTILE)} all clear`);
+});
+
+test("the full diff is cleaned line by line, and its colours are fleet's own, only when colour is on", async () => {
+  const a = hostileSource();
+  const s = setup(one(a.remote, a.first, ["diag"]));
+  for (const color of [false, true]) {
+    const t = fakeTerminal([["d"], ["n"]]);
+    await skills(s.clone, ["update"], { review: true, color, terminal: t.io });
+    const out = t.out().replace(/\u001b\[(?:[0-9]+;?)*m/g, "");
+    assert.doesNotMatch(out, CONTROLS, `colour ${color}`);
+    assert.match(out, /^\+echo hi$/m);
+    assert.match(out, /^\+v2 \?\[2K/m);
+    if (color) {
+      assert.match(t.out(), /\u001b\[32m\+echo hi\u001b\[0m/);
+      assert.match(t.out(), /\u001b\[31m-v1\u001b\[0m/);
+      assert.match(t.out(), /\u001b\[36m@@/);
+      assert.match(t.out(), /\u001b\[1mdiff --git/);
+    } else assert.doesNotMatch(t.out(), /\u001b/);
+  }
+});
+
+test("a long commit subject is cut at 100 characters in the report and in --json alike", () => {
+  const a = makeSource({ ...md("diag"), "diag/notes.md": "v1\n" });
+  a.commit({ "diag/notes.md": "v2\n" }, "y".repeat(300));
+  const s = setup(one(a.remote, a.first, ["diag"]));
+  const cut = `${"y".repeat(99)}…`;
+  assert.equal(s.json("--review").doc.reviews[0].commits[0].subject, cut);
+  assert.match(s.run(["--review"]).stdout, new RegExp(`${cut}$`, "m"));
 });
