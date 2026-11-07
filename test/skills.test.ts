@@ -339,6 +339,8 @@ for (const [name, key, bad, message] of [
   ["a short commit", "x", "    repo: r\n    path: .\n    commit: abc123\n    track: main\n", /40-character/],
   ["an unknown source key", "x", "    repo: r\n    path: .\n    branch: main\n    depth: 1\n", /unknown key 'depth'/],
   ["a path that climbs out of the repo", "x", "    repo: r\n    path: ../x\n    branch: main\n", /without '\.\.'/],
+  ["a review that is not a boolean", "x", `    repo: r\n    path: .\n    commit: ${"a".repeat(40)}\n    track: main\n    review: "yes"\n`, /source 'x': 'review' must be true or false/],
+  ["a review on a followed source", "x", "    repo: r\n    path: .\n    branch: main\n    review: true\n", /followed source moves at every apply, so there is no pin to review/],
 ] as const) {
   test(`${name} makes the catalog invalid`, () => {
     const s = setup({ sources: {}, bundles: {} });

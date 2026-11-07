@@ -19,6 +19,10 @@ sources:
     # Use "." for the whole repo. A path that is itself a skill (it has a SKILL.md) offers
     # just that one skill.
     path: skills
+    # Optional. With `review: true`, `fleet skills update` reads what a move of this source
+    # brings in and asks before the pin moves, as if you had passed `--review`. Switch it on for
+    # skills other people write, and leave it off for your own. Only a pinned source can have it.
+    review: true
 
   # A followed source: fleet keeps it on the newest commit of `branch` and fast-forwards it
   # at every apply. Use this for skills you write yourself. It is left as a comment here

@@ -13,6 +13,8 @@ export type Source = {
   track: string | null;
   /** Followed: the branch to sit on. */
   branch: string | null;
+  /** Pinned: `skills update` reviews a move of this source as if `--review` were given. */
+  review: boolean;
 };
 
 export type Catalog = {
@@ -24,7 +26,7 @@ export type Catalog = {
 /** Names `fleet` itself owns or leaves alone in `~/.claude/skills`. */
 export const RESERVED_SKILLS = ["fleet", "synced", ".trash"];
 
-const SOURCE_KEYS = ["repo", "path", "commit", "track", "branch"];
+const SOURCE_KEYS = ["repo", "path", "commit", "track", "branch", "review"];
 const SOURCE_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 const COMMIT = /^[0-9a-f]{40}$/;
 
@@ -44,7 +46,7 @@ function parseSource(at: string, name: string, raw: unknown, problems: string[])
   for (const key of Object.keys(raw)) {
     if (!SOURCE_KEYS.includes(key)) problems.push(`${where}: unknown key '${key}'`);
   }
-  const { repo, path, commit, track, branch } = raw;
+  const { repo, path, commit, track, branch, review } = raw;
   if (typeof repo !== "string" || repo === "") problems.push(`${where}: 'repo' must be a URL`);
   if (typeof path !== "string" || path === "" || path.startsWith("/") || path.split("/").includes("..")) {
     problems.push(`${where}: 'path' must be a directory inside the repo, without '..'`);
@@ -62,6 +64,10 @@ function parseSource(at: string, name: string, raw: unknown, problems: string[])
     problems.push(`${where}: a pinned source needs 'track', the branch that 'skills update' reads`);
   }
   if (branch !== undefined && track !== undefined) problems.push(`${where}: only a pinned source has 'track'`);
+  if (review !== undefined && typeof review !== "boolean") problems.push(`${where}: 'review' must be true or false`);
+  else if (review !== undefined && branch !== undefined) {
+    problems.push(`${where}: a followed source moves at every apply, so there is no pin to review`);
+  }
   if (problems.length > before) return null;
   return {
     name,
@@ -70,6 +76,7 @@ function parseSource(at: string, name: string, raw: unknown, problems: string[])
     commit: (commit as string | undefined) ?? null,
     track: (track as string | undefined) ?? null,
     branch: (branch as string | undefined) ?? null,
+    review: review === true,
   };
 }
 

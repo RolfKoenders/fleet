@@ -94,6 +94,8 @@ Warnings (`!`) are a file with the exec bit, a new script, a new URL, a new `bas
 
 On a terminal it then asks for each source: `d` shows the full diff of the skills you use, `y` moves the pin, `n` keeps it. Without a terminal, or with `--json`, it only reports, and a pin moves only with `--yes`. Followed sources are never reviewed.
 
+To review a source every time without typing `--review`, put `review: true` on it in `catalog/skills.yaml`. Switch it on for skills other people write and leave it off for your own: a plain `fleet skills update` then reviews the first and moves the second as before. Only a pinned source can have it.
+
 ## Requirements
 
 - Linux with systemd, or macOS 12.3 or newer with Homebrew (see [Setting up machines](docs/setting-up-machines.md#macos))

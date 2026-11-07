@@ -100,7 +100,7 @@ export type SkillsOptions = {
 };
 
 /** One decision point: does this source's move get reviewed? */
-const wantsReview = (_source: Source, options: SkillsOptions): boolean => options.review === true;
+const wantsReview = (source: Source, options: SkillsOptions): boolean => options.review === true || source.review;
 
 const reviewJson = (m: Moved, review: Review, moved: boolean) => {
   const { diff: _diff, ...data } = review;
