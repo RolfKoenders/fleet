@@ -6,7 +6,7 @@ on:
   pull_request:
 
 jobs:
-  # Whether the change touches only the landing page, which the tests cannot see.
+  # Whether the change touches only the landing page, which the tests cannot see (except its frames.js).
   changes:
     runs-on: ubuntu-latest
     outputs:
@@ -23,7 +23,8 @@ jobs:
           only=false
           if git cat-file -e "$BASE^{commit}" 2>/dev/null; then
             files=$(git diff --name-only "$BASE" HEAD)
-            if [ -n "$files" ] && ! printf '%s\n' "$files" | grep -qvE '^(site/|\.github/workflows/pages\.yml$)'; then only=true; fi
+            # site/frames.js is recorded from the bridge and a test checks it, so a change to it runs the tests.
+            if [ -n "$files" ] && ! printf '%s\n' "$files" | grep -qvE '^(site/|\.github/workflows/pages\.yml$)' && ! printf '%s\n' "$files" | grep -qxF site/frames.js; then only=true; fi
           fi
           echo "site-only=$only" >> "$GITHUB_OUTPUT"
           echo "site-only=$only"
