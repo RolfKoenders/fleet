@@ -12,13 +12,13 @@ import type { Obj } from "./yamlfile.ts";
 export type ContextRead = { ok: true; report: ContextReport } | { ok: false; reason: string };
 
 const AGENTS = ["claude", "opencode"] as const;
-const KINDS: ContextKind[] = ["instructions", "skills", "mcp"];
+export const KINDS: ContextKind[] = ["instructions", "skills", "mcp"];
 const MAX_ITEMS = 2000;
 const MAX_NOTES = 50;
 /** Far more than any model reads; a bigger number is a host that is wrong, and would stretch every bar. */
 const MAX_TOKENS = 1_000_000_000;
 
-const tokens = (value: unknown): number | null => {
+export const readTokens = (value: unknown): number | null => {
   const n = count(value);
   return n !== null && n <= MAX_TOKENS ? n : null;
 };
@@ -36,7 +36,7 @@ function item(value: unknown): ContextItem | null {
   const kind = KINDS.find((k) => k === value.kind);
   const name = printable(value.name);
   if (kind === undefined || name === null) return null;
-  return { kind, name, path: kind === "mcp" ? null : printable(value.path), tokens: tokens(value.tokens), fromConfig: value.fromConfig === true, measurement: kind === "mcp" ? measurement(value.measurement) : null };
+  return { kind, name, path: kind === "mcp" ? null : printable(value.path), tokens: readTokens(value.tokens), fromConfig: value.fromConfig === true, measurement: kind === "mcp" ? measurement(value.measurement) : null };
 }
 
 const notes = (value: unknown): string[] => (Array.isArray(value) ? value.slice(0, MAX_NOTES).flatMap((n) => printable(n) ?? []) : []);

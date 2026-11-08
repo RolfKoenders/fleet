@@ -3,6 +3,8 @@ import type { Conflict } from "../plan.ts";
 import type { ConflictsResult, HostResult, Probe, RemoteConflicts } from "./probe.ts";
 import type { FleetEvent } from "../events.ts";
 import type { StatusFields } from "../status.ts";
+import type { ContextReport } from "../context.ts";
+import type { HostContext } from "../contextall.ts";
 import type { PreviewResult, Pusher } from "./pusher.ts";
 import { finish, reduce, startRun } from "./pushrun.ts";
 import type { PushEnd, PushRun } from "./pushrun.ts";
@@ -15,7 +17,8 @@ import type { Key } from "./input.ts";
 import type { Model } from "./model.ts";
 import { visibleRows } from "./model.ts";
 import type { Size } from "./terminal.ts";
-import type { CachedHost } from "./cache.ts";
+import type { CachedContext, CachedHost } from "./cache.ts";
+import { shown } from "./contextshown.ts";
 import type { DoctorResult } from "./doctorread.ts";
 import type { CatalogView, CommitDiff, History, SecretsView } from "./reads.ts";
 import { drawApp } from "./views/index.ts";
@@ -33,6 +36,20 @@ export type HostLive = {
   result: HostResult | null;
   /** Set while `result` is what an earlier run of the bridge saw and no answer to this run has come: how long ago, and when it was loaded. It is not live. */
   seen: { agoSeconds: number; since: number } | null;
+};
+
+/**
+ * One host's startup context. `report` is the last good one, cut to what the screen shows (see `contextshown.ts`); it is
+ * what an earlier run saw while `seen` is set. `failure` is why the latest question gave no new report: a host on an
+ * older pin has none and shows nothing, one that cannot be reached keeps the remembered report, marked as old.
+ */
+export type ContextLive = {
+  phase: "loading" | "done";
+  /** Bumped at each question, so an answer to an old one is ignored. */
+  gen: number;
+  report: ContextReport | null;
+  seen: { agoSeconds: number; since: number } | null;
+  failure: { result: Exclude<HostContext["result"], "ok">; detail: string } | null;
 };
 
 export type RemoteLive = { phase: "loading" | "done"; gen: number; result: RemoteConflicts | null };
@@ -75,6 +92,12 @@ export type State = {
   /** Start time of the boot animation on the runtime's clock, or null before the first tick; `done` once over or skipped. */
   boot: { start: number | null; done: boolean };
   live: Record<string, HostLive>;
+  /** Each host's startup context, asked with its status. */
+  contexts: Record<string, ContextLive>;
+  /** The host whose largest items the context screen lists. */
+  contextHost: number;
+  /** True where colour is off, so the context bars tell their parts apart by character. */
+  plain: boolean;
   conflicts: ConflictsLive;
   push: PushState;
   doctor: DoctorLive;
@@ -90,6 +113,7 @@ export type State = {
 
 export type Msg =
   | { type: "host"; host: string; gen: number; result: HostResult }
+  | { type: "context"; host: string; gen: number; result: HostContext }
   | { type: "conflicts"; result: ConflictsResult }
   | { type: "remoteConflicts"; host: string; gen: number; result: RemoteConflicts }
   | { type: "preview"; gen: number; result: PreviewResult }
@@ -113,6 +137,11 @@ export type Options = {
   cached?: Record<string, CachedHost>;
   /** Called with each good answer, so it can be remembered for the next run. */
   remember?: (host: string, status: StatusFields) => void;
+  /** What an earlier run saw of each other host's startup context, and where to keep what this run sees. */
+  cachedContext?: Record<string, CachedContext>;
+  rememberContext?: (host: string, report: ContextReport) => void;
+  /** Set where there is no colour: the context bars then use a different character for each part. */
+  plain?: boolean;
   /** Set where doctor must not run (the demo): the reason, shown when `d` is pressed. */
   noDoctor?: string;
   /** Set by the demo, and only by it: the hosts are made up, and the bridge says so. */
@@ -136,6 +165,11 @@ export function createApp(options: Options): App<State, Msg> {
     const host = model.hosts.find((h) => h.name === name)!;
     const result = await probe.host(host, signal);
     send({ type: "host", host: name, gen, result });
+  };
+  const askContext = (name: string, gen: number): Cmd<Msg> => async ({ send, signal }) => {
+    const host = model.hosts.find((h) => h.name === name)!;
+    const result = probe.context ? await probe.context(host, signal) : ({ host: name, result: "error", context: null, detail: "this view cannot ask for it" } as const);
+    send({ type: "context", host: name, gen, result });
   };
   const askConflicts: Cmd<Msg> = async ({ send, signal }) => {
     send({ type: "conflicts", result: await probe.conflicts(signal) });
@@ -224,10 +258,30 @@ export function createApp(options: Options): App<State, Msg> {
     return [{ ...state, timeline: { ...t, diffs: { ...t.diffs, [commit.sha]: "loading" } } }, [askDiff(commit.sha)]];
   }
 
+  /** Asks `hosts` for their startup context, which reads files and nothing else; what was known stays until the answer replaces it. */
+  function askContexts(state: State, hosts: string[]): [State["contexts"], Cmd<Msg>[]] {
+    const contexts = { ...state.contexts };
+    const cmds: Cmd<Msg>[] = [];
+    for (const name of hosts) {
+      const h = model.hosts.find((x) => x.name === name)!;
+      const before = contexts[name];
+      const gen = (before?.gen ?? 0) + 1;
+      if (!h.self && h.ssh === null) {
+        contexts[name] = { phase: "done", gen, report: null, seen: null, failure: { result: "timer", detail: "no ssh destination" } };
+        continue;
+      }
+      contexts[name] = { phase: "loading", gen, report: before?.report ?? null, seen: before?.seen ?? null, failure: before?.failure ?? null };
+      cmds.push(askContext(name, gen));
+    }
+    return [contexts, cmds];
+  }
+
   /** Starts asking every host at once; each answers on its own time. */
   function refresh(state: State): [State, Cmd<Msg>[]] {
     const live = { ...state.live };
     const cmds: Cmd<Msg>[] = [];
+    const [contexts, contextCmds] = askContexts(state, model.hosts.map((h) => h.name));
+    cmds.push(...contextCmds);
     for (const h of model.hosts) {
       const gen = (live[h.name]?.gen ?? 0) + 1;
       // A host with no ssh destination cannot be asked, so there is nothing to wait for.
@@ -247,6 +301,7 @@ export function createApp(options: Options): App<State, Msg> {
       {
         ...state,
         live,
+        contexts,
         conflicts,
         timeline: { ...state.timeline, phase: "loading", diffs: {} },
         secrets: { ...state.secrets, phase: "loading" },
@@ -334,6 +389,14 @@ export function createApp(options: Options): App<State, Msg> {
     const longest = commit ? diffLines(t.diffs[commit.sha], 0, false).length : 0;
     const scroll = selected !== t.selected ? 0 : clamp(t.scroll + page * 8, 0, Math.max(0, longest - 1));
     return wantDiff({ ...state, timeline: { ...t, selected, scroll } });
+  }
+
+  function moveContext(state: State, key: Key): State {
+    const d = key.name === "down" || key.name === "right" || key.text === "j" || key.text === "l" ? 1 : key.name === "up" || key.name === "left" || key.text === "k" || key.text === "h" ? -1 : 0;
+    let host = clamp(state.contextHost + d, 0, Math.max(0, model.hosts.length - 1));
+    if (key.name === "home" || key.text === "g") host = 0;
+    if (key.name === "end" || key.text === "G") host = Math.max(0, model.hosts.length - 1);
+    return { ...state, contextHost: host };
   }
 
   function moveSecrets(state: State, key: Key): State {
@@ -427,6 +490,7 @@ export function createApp(options: Options): App<State, Msg> {
     if (state.screen === "matrix") return [moveMatrix(state, key), []];
     if (state.screen === "push") return [state, []];
     if (state.screen === "timeline") return moveTimeline(state, key);
+    if (state.screen === "context") return [moveContext(state, key), []];
     if (state.screen === "secrets") return [moveSecrets(state, key), []];
     if (state.screen === "catalog") {
       if (ch === "f") return [{ ...state, catalog: { ...state.catalog, typing: true } }, []];
@@ -443,9 +507,14 @@ export function createApp(options: Options): App<State, Msg> {
         // This host is read in place and answers at once, so only the others are remembered.
         if (kept && !h.self) live[h.name] = { phase: "loading", gen: 0, since: 0, at: null, result: kept.result, seen: { agoSeconds: kept.agoSeconds, since: 0 } };
       }
+      const contexts: Record<string, ContextLive> = {};
+      for (const h of model.hosts) {
+        const kept = options.cachedContext?.[h.name];
+        if (kept && !h.self) contexts[h.name] = { phase: "loading", gen: 0, report: kept.report, seen: { agoSeconds: kept.agoSeconds, since: 0 }, failure: null };
+      }
       // The host asked for, or else this one, is the one selected on Home and in the Matrix.
       const asked = options.host === undefined ? -1 : model.hosts.findIndex((h) => h.name === options.host);
-      const shown = asked >= 0 ? asked : Math.max(0, model.hosts.findIndex((h) => h.self));
+      const selected = asked >= 0 ? asked : Math.max(0, model.hosts.findIndex((h) => h.self));
       const state: State = {
         size,
         demo: options.demo === true,
@@ -456,6 +525,9 @@ export function createApp(options: Options): App<State, Msg> {
         overlay: null,
         boot: { start: null, done: !options.boot },
         live,
+        contexts,
+        contextHost: selected,
+        plain: options.plain === true,
         conflicts: { phase: "loading", items: [], detail: null, selected: 0, remote: {}, first: asked >= 0 ? options.host! : null },
         push: { phase: "idle" },
         doctor: { phase: "idle", gen: 0, scope: "all", result: null },
@@ -463,8 +535,8 @@ export function createApp(options: Options): App<State, Msg> {
         timeline: { phase: "loading", history: null, selected: 0, diffs: {}, scroll: 0 },
         secrets: { phase: "loading", view: null, mode: "names", selected: 0 },
         catalog: { phase: "loading", view: null, query: "", typing: false, selected: 0, scroll: 0 },
-        home: { selected: shown },
-        matrix: { row: 0, col: shown, expanded: [] },
+        home: { selected },
+        matrix: { row: 0, col: selected, expanded: [] },
         fault: null,
       };
       return refresh(state);
@@ -504,6 +576,22 @@ export function createApp(options: Options): App<State, Msg> {
           } else delete remote[message.host];
           return [{ ...state, conflicts: { ...state.conflicts, remote }, live: { ...state.live, [message.host]: { ...current, phase: "done", at: state.now, result: message.result, seen: null } } }, cmds];
         }
+        case "context": {
+          const current = state.contexts[message.host];
+          if (!current || current.gen !== message.gen) return [state, []];
+          const r = message.result;
+          if (r.result === "ok" && r.context !== null) {
+            const report = shown(r.context);
+            const remember = options.rememberContext;
+            const self = model.hosts.find((h) => h.name === message.host)?.self ?? false;
+            const keep: Cmd<Msg>[] = remember && !self ? [() => remember(message.host, report)] : [];
+            return [{ ...state, contexts: { ...state.contexts, [message.host]: { ...current, phase: "done", report, seen: null, failure: null } } }, keep];
+          }
+          // A host that cannot be reached keeps what an earlier run saw, marked as old; one on an older pin has nothing to show.
+          const failure = { result: r.result === "ok" ? ("error" as const) : r.result, detail: r.detail ?? "" };
+          const old = failure.result === "old";
+          return [{ ...state, contexts: { ...state.contexts, [message.host]: { ...current, phase: "done", report: old || current.seen === null ? null : current.report, seen: old ? null : current.seen, failure } } }, []];
+        }
         case "conflicts": {
           const r = message.result;
           const conflicts: ConflictsLive = r.ok ? { ...state.conflicts, phase: "done", items: r.items, detail: null, selected: clamp(state.conflicts.selected, 0, Math.max(0, r.items.length - 1)) } : { ...state.conflicts, phase: "done", items: [], detail: r.detail, selected: 0 };
@@ -521,7 +609,9 @@ export function createApp(options: Options): App<State, Msg> {
         }
         case "doctor": {
           if (state.doctor.gen !== message.gen) return [state, []];
-          return [{ ...state, doctor: { ...state.doctor, phase: "done", result: message.result } }, []];
+          // The sizes of the servers just changed, on this host or on all: ask for the context again.
+          const [contexts, cmds] = askContexts(state, state.doctor.scope === "all" ? model.hosts.map((h) => h.name) : model.hosts.filter((h) => h.self).map((h) => h.name));
+          return [{ ...state, contexts, doctor: { ...state.doctor, phase: "done", result: message.result } }, cmds];
         }
         case "push": {
           if (state.push.phase !== "running") return [state, []];
@@ -553,7 +643,7 @@ export function createApp(options: Options): App<State, Msg> {
 
     tick(state) {
       if (!state.boot.done) return 33;
-      const loading = Object.values(state.live).some((l) => l.phase === "loading") || state.conflicts.phase === "loading" || state.timeline.phase === "loading" || state.secrets.phase === "loading" || state.catalog.phase === "loading";
+      const loading = Object.values(state.live).some((l) => l.phase === "loading") || Object.values(state.contexts).some((l) => l.phase === "loading") || state.conflicts.phase === "loading" || state.timeline.phase === "loading" || state.secrets.phase === "loading" || state.catalog.phase === "loading";
       const pushing = state.push.phase === "running" || state.doctor.phase === "running" || (state.push.phase === "review" && state.push.preview === null);
       return (loading || pushing) && state.motion ? 80 : 1000;
     },

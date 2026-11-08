@@ -1,6 +1,9 @@
 import { spawn } from "node:child_process";
 import { join } from "node:path";
 import { Worker } from "node:worker_threads";
+import { CONTEXT_COMMAND, hostContextFrom } from "../contextall.ts";
+import type { HostContext } from "../contextall.ts";
+import { measureHere } from "../contextcmd.ts";
 import { readHostName } from "../host.ts";
 import { hostStatusFrom, printable, sshArguments } from "../status.ts";
 import type { StatusFields } from "../status.ts";
@@ -34,6 +37,11 @@ export type Probe = {
   host(host: HostInfo, signal: AbortSignal): Promise<HostResult>;
   /** The conflicts on this host, in full. */
   conflicts(signal: AbortSignal): Promise<ConflictsResult>;
+  /**
+   * The startup context of a host: this host measured in place, another over ssh with `fleet context --json`. It reads
+   * files and starts no MCP server, so it is asked with the status.
+   */
+  context?(host: HostInfo, signal: AbortSignal): Promise<HostContext>;
   /** The conflicts on another host, in full, over ssh. Read-only there too: it neither clones nor fetches. */
   hostConflicts?(host: HostInfo, signal: AbortSignal): Promise<RemoteConflicts>;
   /** The config repo's history, one commit's changes, the secret names, and the catalog with the clones already on disk. None of them decrypts, clones, fetches or writes. */
@@ -149,6 +157,17 @@ export function realProbe(toolDir: string, configDir: string, home: string): Pro
       return { result: answer.result as HostResult["result"], status: answer.status, ...(answer.result === "ok" ? {} : { detail: detail ?? "" }) };
     },
     doctor: (all, signal) => runDoctor(toolDir, configDir, home, readHostName(home), all, signal),
+    async context(host, signal) {
+      if (host.self) return { host: host.name, result: "ok", context: measureHere(configDir, home, new Date()).report };
+      if (host.ssh === null) return { host: host.name, result: "timer", context: null };
+      const path = findTool("ssh", process.env, home);
+      if (path === null) return { host: host.name, result: "error", context: null, detail: "ssh is not installed" };
+      const notes: string[] = [];
+      const answer = hostContextFrom(host.name, await ssh(path, host.ssh, home, signal, CONTEXT_COMMAND), notes);
+      if (answer.result !== "unreachable") return answer;
+      // The note carries the reason ssh gave, already cut to printable text.
+      return { ...answer, detail: printable((notes[0] ?? "").replace(/^fleet: [^:]*: /, "")) ?? "unreachable over ssh" };
+    },
     async hostConflicts(host, signal) {
       if (host.ssh === null) return { ok: false, reason: "error", detail: "no ssh destination" };
       const path = findTool("ssh", process.env, home);
