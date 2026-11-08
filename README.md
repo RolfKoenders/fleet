@@ -98,7 +98,7 @@ To review a source every time without typing `--review`, put `review: true` on i
 
 ## In the Omarchy menu bar
 
-On [Omarchy](https://omarchy.dev), a bar widget shows the health of every host as one icon, so you notice a conflict or an unreachable machine without opening a terminal. Its panel has a row for each host, naming its first conflict, and opens the bridge on the one you pick. It only runs `fleet status --all --json`, which reads. The screenshot shows made-up hosts.
+On [Omarchy](https://omarchy.org/), a bar widget shows the health of every host as one icon, so you notice a conflict or an unreachable machine without opening a terminal. Its panel has a row for each host, naming its first conflict, and opens the bridge on the one you pick. It only runs `fleet status --all --json`, which reads. The screenshot shows made-up hosts.
 
 <p align="center">
   <img alt="The Fleet widget in the Omarchy menu bar, with its panel open: box is unreachable, laptop is ok, server has 2 conflicts and names the first, a link at ~/.claude/CLAUDE.md" src="assets/omarchy-widget.png" width="480">
