@@ -229,8 +229,8 @@ export function statusFromDocument(doc: Obj): StatusFields | null {
 
 export const REMOTE_COMMAND = "~/.local/bin/fleet status --json";
 
-/** The arguments `ssh` is run with to ask `dest` for its status. */
-export const sshArguments = (dest: string): string[] => ["-o", "BatchMode=yes", "-o", "ConnectTimeout=10", dest, REMOTE_COMMAND];
+/** The arguments `ssh` is run with to ask `dest` for its status, or to run another read-only `command` there. */
+export const sshArguments = (dest: string, command: string = REMOTE_COMMAND): string[] => ["-o", "BatchMode=yes", "-o", "ConnectTimeout=10", dest, command];
 
 /** What running `ssh` came to, from either the blocking or the async way of running it. */
 export type SshOutcome = { error?: Error | undefined; status: number | null; stdout: string; stderr: string };
@@ -269,7 +269,7 @@ function ask(ssh: string, dest: string, host: string, notes: string[]): HostStat
   return hostStatusFrom(host, { error: r.error, status: r.status, stdout: r.stdout ?? "", stderr: r.stderr ?? "" }, notes);
 }
 
-const EXIT_ORDER = ["unreachable", "error"] as const;
+export const EXIT_ORDER = ["unreachable", "error"] as const;
 
 /** `fleet status --all`: this host in place, every other host with an `ssh` destination over ssh. */
 export function statusAll(toolDir: string, configDir: string, color: boolean, home: string = homedir()): Result {

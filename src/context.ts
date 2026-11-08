@@ -312,6 +312,12 @@ function part(items: ContextItem[], kind: ContextKind): ContextPart {
   return { tokens: of.reduce((sum, i) => sum + (i.tokens ?? 0), 0), count: of.length, unmeasured: of.filter((i) => i.tokens === null).length };
 }
 
+/** An agent's totals from its items, so a report read back from another host adds up the way one measured here does. */
+export function agentContext(agent: Tool, items: ContextItem[], notes: string[]): AgentContext {
+  const [instructions, skills, mcp] = [part(items, "instructions"), part(items, "skills"), part(items, "mcp")];
+  return { agent, tokens: instructions.tokens + skills.tokens + mcp.tokens, complete: mcp.unmeasured === 0, instructions, skills, mcp, items, notes };
+}
+
 /** Reads this host and nothing else: no process is started and no secret is decrypted. */
 export function measureContext(home: string = homedir(), options: MeasureOptions = {}): ContextReport {
   const now = options.now ?? new Date();
@@ -321,8 +327,7 @@ export function measureContext(home: string = homedir(), options: MeasureOptions
   const agents = (["claude", "opencode"] as const).map((agent): AgentContext => {
     const notes: string[] = [];
     const items = [...instructionItems(agent, home, applied, notes), ...skillItems(agent, home, applied, notes), ...mcpItems(agent, home, applied, doctor, options, now, notes)];
-    const [instructions, skills, mcp] = [part(items, "instructions"), part(items, "skills"), part(items, "mcp")];
-    return { agent, tokens: instructions.tokens + skills.tokens + mcp.tokens, complete: mcp.unmeasured === 0, instructions, skills, mcp, items, notes };
+    return agentContext(agent, items, notes);
   });
   return { agents, notes: hostNotes };
 }
