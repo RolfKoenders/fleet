@@ -4,17 +4,25 @@ What changed in fleet, newest first. Each version lists what you can do now, wha
 
 ## Unreleased
 
+## 2.1.0 - 2026-11-08
+
 ### Added
 
-- The README and the landing page show the Omarchy widget, with a link to its repo. The page also plays the bridge's context tab and shows startup context and skill review output, recorded from the real commands.
-- The bridge shows each host's startup context: a new tab `8` draws one stacked bar per host and agent on one scale, with the largest items of the selected host, and each home card has a line such as `context ~18.6k`, marked `+` when a server is not measured. The bridge asks each host for it with the status (one more ssh call), again after a doctor run, and remembers it between runs like the status. It starts no MCP server, and doctor still runs only on `d`.
-- `fleet bridge --view <screen> --host <name>` opens the bridge on a screen with a host selected, for scripts and bar widgets. A name that is not a screen or a host is refused before the screen is taken over.
 - `fleet context` shows how much each agent on this host loads before the first prompt: its instructions, the descriptions of its skills and the MCP tool definitions, as a coloured bar per agent and an estimate in tokens, with the largest items and what fleet did not put there. It reads only: it starts no MCP server and decrypts no secret, and an MCP server's size comes from the last `fleet doctor`.
 - `fleet context --all` asks every host over ssh, the way `fleet status --all` does, and prints one block per host in the layout of `fleet context` with every bar on one scale: the largest agent on any host. A host whose fleet is too old to have `fleet context` is shown as needing a newer pin and does not fail the run; an unreachable host exits 4, as in `status --all`. `--json` has one record per host.
 - `fleet doctor` measures how large each MCP server's tool definitions are, shown as an estimate in tokens (`~28.4k tokens`), and keeps the result on the host in `~/.local/state/fleet/doctor.json`. A server that fails keeps its last measurement.
-- `fleet update` prints what changed between your pin and the new one: the changelog sections the new commit has that the old one lacks, or the commit subjects when the changelog says nothing. `--json` adds it as `changes`. It is text from the tool's repo, so only printable characters are shown and long output is cut.
+- The bridge shows each host's startup context: a new tab `8` draws one stacked bar per host and agent on one scale, with the largest items of the selected host, and each home card has a line such as `context ~18.6k`, marked `+` when a server is not measured. The bridge asks each host for it with the status (one more ssh call), again after a doctor run, and remembers it between runs like the status. It starts no MCP server, and doctor still runs only on `d`.
 - `fleet skills update --review [<source>]` shows what changed in a pinned skill source before its pin moves: the commits, each skill you use that changed with its diff size, and a flag for anything risky (a file with the exec bit, a new script, a new URL, a new `bash` block, a change to `allowed-tools`, a new hooks or settings file, a changed `description`). On a terminal you press `d` for the full diff, `y` to move the pin or `n` to keep it. Without a terminal, or with `--json`, it only reports, and a pin moves only with `--yes`. Without `--review`, `fleet skills update` is unchanged.
 - A pinned skill source may have `review: true` in `catalog/skills.yaml`. `fleet skills update` then reviews that source as if you had passed `--review`, and moves the sources without it as before. The bridge catalog shows "review" next to such a source. A followed source cannot have it.
+- `fleet update` prints what changed between your pin and the new one: the changelog sections the new commit has that the old one lacks, or the commit subjects when the changelog says nothing. `--json` adds it as `changes`. It is text from the tool's repo, so only printable characters are shown and long output is cut.
+- `fleet bridge --view <screen> --host <name>` opens the bridge on a screen with a host selected, for scripts and bar widgets. A name that is not a screen or a host is refused before the screen is taken over.
+- The README and the landing page show the Omarchy widget, with a link to its repo. The page also plays the bridge's context tab and shows startup context and skill review output, recorded from the real commands.
+
+### You need to do
+
+- Move your pin with `fleet update`, read what it prints, and `fleet push`. Every host has to be on 2.1.0 before your catalog uses `review: true`: an older fleet rejects a key it does not know.
+- Run `fleet doctor` (or `d` in the bridge) once on each host, so `fleet context` and the bridge have the size of each MCP server. Until then those servers show as not measured.
+- For the bar widget on Omarchy, install https://github.com/RolfKoenders/fleet-omarchy. Its shortcuts into the bridge need a host on 2.1.0.
 
 ## 2.0.0 - 2026-11-03
 
