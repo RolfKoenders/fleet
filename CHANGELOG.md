@@ -4,6 +4,10 @@ What changed in fleet, newest first. Each version lists what you can do now, wha
 
 ## Unreleased
 
+### Fixed
+
+- On the landing page, the bridge's keys keep working after you click one of its tabs or key chips; before, they only worked while the terminal itself had focus. The feature cards with an example now span the row, text beside the example, so the short cards next to them no longer stretch into tall empty boxes.
+
 ## 2.1.0 - 2026-11-08
 
 ### Added

@@ -125,9 +125,9 @@
         </div>
         <div class="term-wrap"><pre class="term" id="term" tabindex="0" role="group" aria-label="fleet bridge recording. Keys work here: 1 home, 2 matrix, 3 conflicts, 7 push, 8 context, ctrl-k palette, ? help, esc to go back."></pre></div>
       </div>
-      <!-- The bridge's own keys. They act while the terminal has focus; each chip plays the same clip. -->
+      <!-- The bridge's own keys. They act while the window or a chip has focus; each chip plays the same clip. -->
       <div class="keys" id="keys" role="group" aria-label="Bridge keys">
-        <span class="keys-hint">keys work while the terminal has focus</span>
+        <span class="keys-hint">keys work after you click the terminal</span>
         <button type="button" data-screen="home"><kbd>1</kbd> Home</button>
         <button type="button" data-screen="matrix"><kbd>2</kbd> Matrix</button>
         <button type="button" data-screen="conflicts"><kbd>3</kbd> <kbd>c</kbd> Conflicts</button>
@@ -147,9 +147,11 @@
       </div>
       <div class="grid">
         <article class="feat wide accent">
-          <div class="feat-ic">!</div>
-          <h3>Conflicts, never overwrites</h3>
-          <p>If a machine holds something different from your config, fleet stops and tells you exactly what and how to fix it. Hand edits and tool-written changes are never silently replaced.</p>
+          <div>
+            <div class="feat-ic">!</div>
+            <h3>Conflicts, never overwrites</h3>
+            <p>If a machine holds something different from your config, fleet stops and tells you exactly what and how to fix it. Hand edits and tool-written changes are never silently replaced.</p>
+          </div>
           <pre class="mini"><span class="y">✕</span> ~/.claude/CLAUDE.md is a file, not a link
   <span class="g">fix</span> move it aside, then run <span class="w">fleet apply</span></pre>
         </article>
@@ -163,21 +165,25 @@
           <h3>Pinned skills</h3>
           <p>Skills from your repo or upstream sources, pinned to a commit and grouped into bundles per host.</p>
         </article>
-        <article class="feat wide">
-          <div class="feat-ic">✓</div>
-          <h3>Skill review</h3>
-          <p>A skill is instructions your agent follows, so an update from someone else changes what it does. <code>fleet skills update --review</code> reads what a source would bring in before its pin moves: the commits, the skills you use that changed, and a flag for each new script, new URL or wider <code>allowed-tools</code>.</p>
-          <pre class="block term" id="review" tabindex="0" role="group" aria-label="Output of fleet skills update --review on a made-up source"></pre>
-        </article>
         <article class="feat">
           <div class="feat-ic">⇄</div>
           <h3>MCP servers</h3>
           <p>One catalog, included or excluded per host. <code>fleet doctor</code> starts each one and checks it answers.</p>
         </article>
         <article class="feat wide">
-          <div class="feat-ic">▤</div>
-          <h3>Startup context</h3>
-          <p>Before your first prompt, each agent has already loaded your instructions, the descriptions of your skills and the tool definitions of your MCP servers. <code>fleet context</code> draws that as bars, in estimated tokens, with every host on one scale, so you see which machine and which server weighs the most. It only reads files and starts no server.</p>
+          <div>
+            <div class="feat-ic">✓</div>
+            <h3>Skill review</h3>
+            <p>A skill is instructions your agent follows, so an update from someone else changes what it does. <code>fleet skills update --review</code> reads what a source would bring in before its pin moves: the commits, the skills you use that changed, and a flag for each new script, new URL or wider <code>allowed-tools</code>.</p>
+          </div>
+          <pre class="block term" id="review" tabindex="0" role="group" aria-label="Output of fleet skills update --review on a made-up source"></pre>
+        </article>
+        <article class="feat wide">
+          <div>
+            <div class="feat-ic">▤</div>
+            <h3>Startup context</h3>
+            <p>Before your first prompt, each agent has already loaded your instructions, the descriptions of your skills and the tool definitions of your MCP servers. <code>fleet context</code> draws that as bars, in estimated tokens, with every host on one scale, so you see which machine and which server weighs the most. It only reads files and starts no server.</p>
+          </div>
           <pre class="block term" id="context-bars" tabindex="0" role="group" aria-label="Startup context of each host, as bars"></pre>
         </article>
         <article class="feat">

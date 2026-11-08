@@ -267,7 +267,8 @@
   document.querySelectorAll("[data-play]").forEach((a) => a.addEventListener("click", () => show(a.dataset.play)));
   addEventListener("resize", () => current && fit(current));
 
-  // The bridge's keys, while the terminal has focus. Only keys it handles are claimed: tab, arrows, space, page
+  // The bridge's keys, while the terminal, a tab or a key chip has focus: clicking a tab or chip moves focus onto
+  // it, and the keys should keep working after that. Only keys it handles are claimed: tab, arrows, space, page
   // keys and every browser shortcut are left alone, so focus can move on and the page still scrolls.
   const KEYS = { 1: "home", 2: "matrix", 3: "conflicts", c: "conflicts", 7: "push", P: "push", 8: "context", ":": "palette", "?": "help" };
   // The bridge has these screens; the page has no recording of them yet.
@@ -279,12 +280,12 @@
     clearTimeout(nudge);
     nudge = setTimeout(() => bar.classList.remove("nudge"), 450);
   }
-  term.addEventListener("keydown", (e) => {
+  function onKey(e) {
     if (e.altKey || e.metaKey || e.isComposing) return;
     let screen;
     if (e.ctrlKey) screen = e.key === "k" ? "palette" : undefined;
     else if (e.key === "Escape") {
-      if (screenNow === "home") term.blur(); else show("home");
+      if (screenNow === "home") document.activeElement.blur(); else show("home");
       e.preventDefault();
       return;
     } else if (MISSING.has(e.key)) { e.preventDefault(); if (!e.repeat) flash(); return; }
@@ -292,6 +293,7 @@
     if (!screen) return;
     e.preventDefault();
     if (!e.repeat) show(screen);
-  });
+  }
+  for (const el of [bar.closest(".window"), document.getElementById("keys")]) el.addEventListener("keydown", onKey);
   document.fonts.ready.then(() => { measure(); show("home"); });
 })();
