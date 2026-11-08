@@ -112,7 +112,7 @@ test("bridge: a live answer replaces the old one, and only good answers from oth
   assert.deepEqual(saved, ["server"], "not this host, not an unreachable one");
 });
 
-const sample = () => shown(contextOf({ claude: [item("instructions", "~/.claude/CLAUDE.md", 1200), item("skills", "review", 400), item("mcp", "tracker", 14000), item("mcp", "analytics", null, false)] }));
+const sample = () => shown(contextOf({ claude: [item("instructions", "~/.claude/CLAUDE.md", 1200), item("skills", "review", 400), item("mcp", "tracker", 14000), item("mcp", "analytics", null, false), item("mcp", "issues", null, true, "auth-needed")] }));
 
 test("cache: a startup context is kept next to the status, cut to the fields the screen shows, in a file of mode 600", () => {
   const home = makeHome();
@@ -126,7 +126,8 @@ test("cache: a startup context is kept next to the status, cut to the fields the
   assert.deepEqual(Object.keys(doc.hosts.server).sort(), ["context", "savedAt", "status"], "one entry for the host");
   const kept = doc.hosts.server.context;
   assert.deepEqual(Object.keys(kept.report.agents[0]).sort(), ["agent", "instructions", "items", "mcp", "skills"]);
-  assert.deepEqual(Object.keys(kept.report.agents[0].items[0]).sort(), ["fromConfig", "kind", "name", "tokens"], "no path, no measurement time");
+  assert.deepEqual(Object.keys(kept.report.agents[0].items[0]).sort(), ["doctor", "fromConfig", "kind", "name", "tokens"], "no path, no measurement time");
+  assert.equal(kept.report.agents[0].items.find((i: { name: string }) => i.name === "issues").doctor, "auth-needed", "why a server has no size is kept");
   assert.equal(kept.report.agents[0].items.find((i: { name: string }) => i.name === "analytics").tokens, null, "unknown stays unknown, never 0");
   const got = readContextCache(home, now);
   assert.equal(got.server!.agoSeconds, 7200);

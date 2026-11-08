@@ -18,6 +18,7 @@ import { saveDoctorResult } from "./doctorresult.ts";
 import { hashValue } from "./keys.ts";
 import { ageKeyPath } from "./sops.ts";
 import { readState } from "./state.ts";
+import { statusOs } from "./scheduler.ts";
 import { count, printable, timerState } from "./status.ts";
 import { hostTargets } from "./targets.ts";
 import { secretNames } from "./template.ts";
@@ -29,7 +30,8 @@ import type { Obj } from "./yamlfile.ts";
 export const DEFAULT_TIMEOUT_SECONDS = 30;
 
 /** A cheap local check. */
-export type Check = { name: string; result: "ok" | "problem"; detail: string | null };
+/** `unknown` is a check this shell cannot make, which is not a problem with the host. */
+export type Check = { name: string; result: "ok" | "problem" | "unknown"; detail: string | null };
 
 type ServerResult = ProbeResult;
 const SERVER_RESULTS: ServerResult[] = ["ok", "auth-needed", "unreachable", "missing-binary", "bad-response", "exited", "timeout"];
@@ -92,12 +94,22 @@ function ageKey(home: string, usesSecrets: boolean | null): Check {
   return { name, result: "ok", detail: usesSecrets === false ? "none, and this host's config uses no secrets" : "none, and the config could not be read to tell whether it uses secrets" };
 }
 
-function localChecks(home: string, usesSecrets: boolean | null): Check[] {
+const NO_SESSION = "no user session in this shell, as after sudo -iu, so systemd cannot be asked; run doctor over ssh or from a login shell";
+
+function timerCheck(home: string): Check {
+  const name = "timer";
   const timer = timerState(home);
+  if (timer === "active") return { name, result: "ok", detail: "active" };
+  if (timer !== null) return { name, result: "problem", detail: timer };
+  // `systemctl --user` needs the user's own session. A shell from `sudo -iu` or `su` has none, so the timer's
+  // state is not known there, and saying it is broken would send the user after a timer that runs fine.
+  if (statusOs(home) === "linux" && !process.env.XDG_RUNTIME_DIR) return { name, result: "unknown", detail: NO_SESSION };
+  return { name, result: "problem", detail: "unknown (the scheduler is not installed or gave no answer)" };
+}
+
+function localChecks(home: string, usesSecrets: boolean | null): Check[] {
   return [
-    timer === "active"
-      ? { name: "timer", result: "ok", detail: "active" }
-      : { name: "timer", result: "problem", detail: timer === null ? "unknown (the scheduler is not installed or gave no answer)" : timer },
+    timerCheck(home),
     ageKey(home, usesSecrets),
     skillLinks(home),
   ];
@@ -202,14 +214,14 @@ function serverLine(s: ServerCheck, color: boolean): string {
 function lines(fields: DoctorFields, color: boolean): string[] {
   return [
     "checks:",
-    ...fields.checks.map((c) => `  ${c.name}: ${c.result === "ok" ? good(color, "ok") : warn(color, "problem")}${c.detail === null ? "" : ` (${c.detail})`}`),
+    ...fields.checks.map((c) => `  ${c.name}: ${c.result === "ok" ? good(color, "ok") : c.result === "unknown" ? "unknown" : warn(color, "problem")}${c.detail === null ? "" : ` (${c.detail})`}`),
     fields.servers.length === 0 ? "mcp servers: none picked" : "mcp servers:",
     ...fields.servers.map((s) => serverLine(s, color)),
     ...(fields.servers.some(isLogin) ? [LOGIN_NOTE] : []),
   ];
 }
 
-const problemCount = (f: DoctorFields): number => f.checks.filter((c) => c.result !== "ok").length + f.servers.filter((s) => s.fails).length;
+const problemCount = (f: DoctorFields): number => f.checks.filter((c) => c.result === "problem").length + f.servers.filter((s) => s.fails).length;
 const plural = (n: number) => `${n} problem${n === 1 ? "" : "s"}`;
 
 /**
@@ -269,7 +281,7 @@ type HostDoctor = {
 
 const asServerResult = (v: unknown): ServerResult => SERVER_RESULTS.find((r) => r === v) ?? "bad-response";
 const checkOf = (v: unknown): Check | null =>
-  isObject(v) && printable(v.name) !== null ? { name: printable(v.name)!, result: v.result === "ok" ? "ok" : "problem", detail: printable(v.detail) } : null;
+  isObject(v) && printable(v.name) !== null ? { name: printable(v.name)!, result: v.result === "ok" || v.result === "unknown" ? v.result : "problem", detail: printable(v.detail) } : null;
 const serverOf = (v: unknown): ServerCheck | null => {
   if (!isObject(v) || printable(v.server) === null) return null;
   const tool = v.tool === "claude" || v.tool === "opencode" ? v.tool : null;
@@ -322,7 +334,7 @@ function ask(ssh: string, dest: string, host: string, timeoutSeconds: number | u
 
 const cell = (record: HostDoctor, row: { check: string } | { server: string; tool: string }): string => {
   if (record.doctor === null) return record.result;
-  if ("check" in row) return record.doctor.checks.find((c) => c.name === row.check)?.result === "ok" ? "ok" : record.doctor.checks.some((c) => c.name === row.check) ? "problem" : "-";
+  if ("check" in row) return record.doctor.checks.find((c) => c.name === row.check)?.result ?? "-";
   const s = record.doctor.servers.find((x) => x.server === row.server && x.tool === row.tool);
   return s === undefined ? "-" : s.result === "ok" ? `ok (${s.tools ?? "?"})` : shownResult(s);
 };
@@ -341,7 +353,7 @@ function grid(records: HostDoctor[], self: string | null, color: boolean): strin
   const widths = [Math.max(5, ...rows.map((r) => r.label.length)), ...heads.map((h, i) => Math.max(h.length, ...body.map((b) => b[i]!.length)))];
   const paintCell = (text: string, width: number) => {
     const padded = text.padEnd(width);
-    return text.startsWith("ok") ? good(color, padded) : text === "-" || text === "login" ? padded : warn(color, padded);
+    return text.startsWith("ok") ? good(color, padded) : text === "-" || text === "login" || text === "unknown" ? padded : warn(color, padded);
   };
   const out = [["check".padEnd(widths[0]!), ...heads.map((h, i) => h.padEnd(widths[i + 1]!))].join("  ").trimEnd()];
   rows.forEach((row, r) => out.push([row.label.padEnd(widths[0]!), ...body[r]!.map((c, i) => paintCell(c, widths[i + 1]!))].join("  ").trimEnd()));

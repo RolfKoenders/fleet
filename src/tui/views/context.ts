@@ -1,7 +1,7 @@
 import { drawBox } from "../buffer.ts";
 import type { Canvas, Style } from "../buffer.ts";
 import type { ContextItem, ContextKind, ContextReport } from "../../context.ts";
-import { cells, distinct, largestAgent, partTexts, PARTS, totalText } from "../../contextview.ts";
+import { cells, distinct, largestAgent, partTexts, PARTS, totalText, unmeasuredReason } from "../../contextview.ts";
 import { formatTokens } from "../../tokens.ts";
 import type { ContextLive, State } from "../app.ts";
 import { spinner, theme } from "../theme.ts";
@@ -71,7 +71,7 @@ function itemLine(item: ContextItem, nameWidth: number): Seg[] {
   // "unknown" says it is not measured; the mark says what to do about it, where something can be done.
   const marks: Seg[] = [
     ...(item.fromConfig ? [] : ([["not from config", s.muted]] as Seg[])),
-    ...(item.tokens === null && item.fromConfig ? ([["run fleet doctor", s.warn]] as Seg[]) : []),
+    ...(item.tokens === null && item.fromConfig ? ([[unmeasuredReason(item), s.warn]] as Seg[]) : []),
   ];
   return [size, [pad(item.name, nameWidth), s.sub], [pad(KIND_NAMES[item.kind], 13), { fg: colourOf(item.kind) }], ...marks];
 }

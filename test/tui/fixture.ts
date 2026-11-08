@@ -39,7 +39,7 @@ export const status = (over: Partial<StatusFields> = {}): StatusFields => ({
 
 export const ok = (over: Partial<StatusFields> = {}): HostResult => ({ result: "ok", status: status(over) });
 
-export const item = (kind: ContextKind, name: string, tokens: number | null, fromConfig = true): ContextItem => ({ kind, name, path: kind === "mcp" ? null : name, tokens, fromConfig, measurement: null });
+export const item = (kind: ContextKind, name: string, tokens: number | null, fromConfig = true, doctor: string | null = null): ContextItem => ({ kind, name, path: kind === "mcp" ? null : name, tokens, fromConfig, measurement: null, doctor });
 
 /** A startup context made of the items of each agent. */
 export const contextOf = (agents: Partial<Record<Tool, ContextItem[]>>): ContextReport => ({ agents: (Object.entries(agents) as [Tool, ContextItem[]][]).map(([agent, items]) => agentContext(agent, items, [])), notes: [] });

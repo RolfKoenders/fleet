@@ -7,7 +7,7 @@ import { isObject } from "../yamlfile.ts";
 /**
  * A host's startup context as the bridge keeps it: a `ContextReport` cut down to what its screen and cards show.
  * The three parts of each agent keep their full counts and sizes; of the items only the largest and the ones
- * with no size are kept, as `kind`, `name`, `tokens` and `fromConfig`. Paths, measurement times and notes are
+ * with no size are kept, as `kind`, `name`, `tokens`, `fromConfig` and `doctor`. Paths, measurement times and notes are
  * gone. The same cut is made on a live answer and on what is read back from the bridge's memory, so a screen
  * looks the same either way.
  */
@@ -19,7 +19,7 @@ const MAX_AGENTS = AGENTS.length;
 
 const bySize = (a: ContextItem, b: ContextItem): number => (b.tokens ?? -1) - (a.tokens ?? -1) || a.name.localeCompare(b.name);
 
-const plain = (i: ContextItem): ContextItem => ({ kind: i.kind, name: i.name, path: null, tokens: i.tokens, fromConfig: i.fromConfig, measurement: null });
+const plain = (i: ContextItem): ContextItem => ({ kind: i.kind, name: i.name, path: null, tokens: i.tokens, fromConfig: i.fromConfig, measurement: null, doctor: i.doctor });
 
 /** The largest items of an agent with a size, and the servers with none. */
 function kept(items: ContextItem[]): ContextItem[] {
@@ -52,7 +52,7 @@ export function toMemory(report: ContextReport): unknown {
       instructions: part(a.instructions),
       skills: part(a.skills),
       mcp: part(a.mcp),
-      items: a.items.map((i) => ({ kind: i.kind, name: i.name, tokens: i.tokens, fromConfig: i.fromConfig })),
+      items: a.items.map((i) => ({ kind: i.kind, name: i.name, tokens: i.tokens, fromConfig: i.fromConfig, doctor: i.doctor })),
     })),
   };
 }
@@ -68,7 +68,7 @@ function readItem(value: unknown): ContextItem | null {
   const kind = KINDS.find((k: ContextKind) => k === value.kind);
   const name = printable(value.name);
   if (kind === undefined || name === null || name === "") return null;
-  return { kind, name, path: null, tokens: value.tokens === null ? null : readTokens(value.tokens), fromConfig: value.fromConfig === true, measurement: null };
+  return { kind, name, path: null, tokens: value.tokens === null ? null : readTokens(value.tokens), fromConfig: value.fromConfig === true, measurement: null, doctor: kind === "mcp" ? printable(value.doctor) : null };
 }
 
 /**
