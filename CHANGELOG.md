@@ -11,6 +11,7 @@ What changed in fleet, newest first. Each version lists what you can do now, wha
 
 ### Changed
 
+- The README and the landing page show a new screenshot of the Omarchy widget, with a host's row naming its first conflict.
 - `fleet new` writes `track: releases`, so a new config takes finished versions and not every commit on `main`. To keep following a branch, change `track` in `fleet.yaml`.
 - The landing page's title is now "fleet · One config. Every machine.", the same line as its heading, in the browser tab and in link previews.
 
