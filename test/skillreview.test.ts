@@ -434,3 +434,53 @@ test("a long commit subject is cut at 100 characters in the report and in --json
   assert.equal(s.json("--review").doc.reviews[0].commits[0].subject, cut);
   assert.match(s.run(["--review"]).stdout, new RegExp(`${cut}$`, "m"));
 });
+
+const two = (a: { remote: string; first: string }, b: { remote: string; first: string }, review: string) =>
+  `sources:\n  aa:\n    repo: ${a.remote}\n    commit: ${a.first}\n    track: main\n    path: .\n    review: ${review}\n  bb:\n    repo: ${b.remote}\n    commit: ${b.first}\n    track: main\n    path: .\nbundles:\n  core: [one, two]\n`;
+
+test("a source with review: true is reviewed without --review, and one without it moves as it always did", () => {
+  const a = makeSource({ ...md("one"), "one/notes.md": "v1" });
+  const b = makeSource({ ...md("two"), "two/notes.md": "v1" });
+  a.commit({ "one/notes.md": "v2" });
+  const b2 = b.commit({ "two/notes.md": "v2" });
+  const s = setup(two(a, b, "true"));
+  const r = s.run([]);
+  assert.equal(r.code, EXIT.ok, r.stderr);
+  assert.match(r.stdout, new RegExp(`^aa: kept at ${short(a.first)} \\(no terminal to ask on; pass --yes to move it\\)$`, "m"));
+  assert.match(r.stdout, new RegExp(`^bb: ${short(b.first)} -> ${short(b2)}$`, "m"));
+  assert.match(s.read(), new RegExp(`aa:[^]*commit: ${a.first}[^]*bb:[^]*commit: ${b2}`));
+  const doc = JSON.parse(s.run(["--json"]).stdout);
+  assert.deepEqual(doc.reviews.map((x: { source: string }) => x.source), ["aa"]);
+});
+
+test("--review reviews every source, and review: false is the same as no key", () => {
+  const a = makeSource({ ...md("one"), "one/notes.md": "v1" });
+  const b = makeSource({ ...md("two"), "two/notes.md": "v1" });
+  a.commit({ "one/notes.md": "v2" });
+  b.commit({ "two/notes.md": "v2" });
+  const s = setup(two(a, b, "false"));
+  assert.deepEqual(s.json("--review").doc.reviews.map((x: { source: string }) => x.source), ["aa", "bb"]);
+  assert.deepEqual(s.json().doc.updated.map((x: { source: string }) => x.source), ["aa", "bb"]);
+});
+
+test("--yes moves the pin of a source with review: true after its report", () => {
+  const a = makeSource({ ...md("one"), "one/notes.md": "v1" });
+  const b = makeSource({ ...md("two"), "two/notes.md": "v1" });
+  const a2 = a.commit({ "one/notes.md": "v2" });
+  const s = setup(two(a, b, "true"));
+  const r = s.run(["--yes"]);
+  assert.equal(r.code, EXIT.ok, r.stderr);
+  assert.match(r.stdout, new RegExp(`^aa: moved ${short(a.first)} → ${short(a2)}$`, "m"));
+  assert.equal(s.read(), two({ remote: a.remote, first: a2 }, b, "true"));
+});
+
+test("apply, diff and adopt ignore review: true", () => {
+  const a = makeSource(md("one"));
+  const b = makeSource(md("two"));
+  const s = setup(two(a, b, "true"), ["core"]);
+  for (const args of [["apply"], ["diff"], ["adopt", "skill", "one"]]) {
+    const r = runFleet(s.clone, args, { home: s.home });
+    assert.doesNotMatch(r.stderr, /review/, args.join(" "));
+  }
+  assert.equal(runFleet(s.clone, ["apply"], { home: s.home }).code, EXIT.ok);
+});

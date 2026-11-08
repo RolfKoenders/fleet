@@ -38,7 +38,7 @@ function facts(state: State, item: CatalogItem): Line[] {
     return [[`transport: ${v.transport}${v.only.length < 2 ? `, only for ${v.only.join(", ")}` : ""}`, s.text], [`secret names: ${v.secrets.length > 0 ? v.secrets.join(", ") : "none"}`, s.text], got];
   }
   const k = item.skill;
-  const src: Line = k.source ? [`source: ${k.source.name}, ${k.source.pin}`, s.text] : [k.notCloned.length > 0 ? `source: not cloned (${k.notCloned.join(", ")}); the bridge never clones, fleet apply does` : "source: no cloned source holds it", s.warn];
+  const src: Line = k.source ? [`source: ${k.source.name}, ${k.source.pin}${k.source.review ? ", review" : ""}`, s.text] : [k.notCloned.length > 0 ? `source: not cloned (${k.notCloned.join(", ")}); the bridge never clones, fleet apply does` : "source: no cloned source holds it", s.warn];
   return [[`bundle: ${k.bundle}`, s.text], src, got, [k.tokens === null ? "size: unknown" : `size: about ${k.tokens} tokens (an estimate: characters / 4)`, s.text]];
 }
 
@@ -58,7 +58,7 @@ export function drawCatalog(c: Canvas, state: State): void {
     const y = top + i;
     if (here) c.fill(0, y, c.w, 1, { bg: theme.raised });
     const bg = here ? { bg: theme.raised } : {};
-    const note = item.kind === "skill" ? (item.skill.source ? item.skill.source.name : item.skill.notCloned.length > 0 ? "not cloned" : "not found") : item.server.transport;
+    const note = item.kind === "skill" ? (item.skill.source ? `${item.skill.source.name}${item.skill.source.review ? ", review" : ""}` : item.skill.notCloned.length > 0 ? "not cloned" : "not found") : item.server.transport;
     segments(c, 0, y, [[here ? "›" : " ", { fg: theme.brandBright, ...bg }], [` ${pad(item.kind, 7)}`, { fg: theme.faint, ...bg }], [pad(item.label, 28), { fg: here ? theme.text : theme.sub, ...bg }], [note, { fg: item.kind === "skill" && !item.skill.source ? theme.warn : theme.muted, ...bg }]], c.w);
   });
   if (items.length === 0) c.text(2, top, cat.query === "" ? "the catalog is empty" : "nothing matches; esc clears the filter", s.muted);

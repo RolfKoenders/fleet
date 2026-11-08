@@ -262,7 +262,7 @@ export type SkillInfo = {
   name: string;
   bundle: string;
   /** The source whose clone holds it, or null. */
-  source: { name: string; pin: string; clone: string } | null;
+  source: { name: string; pin: string; clone: string; review: boolean } | null;
   /** Sources that could hold it but are not cloned. */
   notCloned: string[];
   text: string[] | null;
@@ -299,7 +299,7 @@ export function readCatalog(configDir: string, home: string): CatalogView {
   const catalog = parseCatalog(configDir, problems);
   const servers = parseMcpCatalog(configDir, problems);
 
-  const found = new Map<string, { source: string; pin: string; clone: string; dir: string }[]>();
+  const found = new Map<string, { source: string; pin: string; clone: string; review: boolean; dir: string }[]>();
   const absent: string[] = [];
   for (const source of catalog.sources) {
     const clone = sourceDir(home, source.name);
@@ -311,7 +311,7 @@ export function readCatalog(configDir: string, home: string): CatalogView {
     const at = head?.ok ? head.out.trim().slice(0, 7) : "unknown";
     const pin = source.commit !== null ? `pinned ${source.commit.slice(0, 7)} (tracks ${source.track})${at !== source.commit.slice(0, 7) ? `, clone at ${at}` : ""}` : `follows ${source.branch}, clone at ${at}`;
     const { dirs } = findSkillsIn(clone, source);
-    for (const [skill, list] of dirs) found.set(skill, [...(found.get(skill) ?? []), { source: source.name, pin, clone, dir: list[0]! }]);
+    for (const [skill, list] of dirs) found.set(skill, [...(found.get(skill) ?? []), { source: source.name, pin, clone, review: source.review, dir: list[0]! }]);
   }
 
   const skills: SkillInfo[] = [];
@@ -322,7 +322,7 @@ export function readCatalog(configDir: string, home: string): CatalogView {
       skills.push({
         name: clean(name),
         bundle,
-        source: hit ? { name: hit.source, pin: hit.pin, clone: hit.clone } : null,
+        source: hit ? { name: hit.source, pin: hit.pin, clone: hit.clone, review: hit.review } : null,
         notCloned: hit ? [] : absent,
         text: file ? file.text.split("\n").map(clean) : null,
         tokens: file ? estimateTokens(file.chars) : null,

@@ -142,7 +142,8 @@ test("catalog: a cloned skill shows SKILL.md, its source and pin, bundle, hosts 
   await b.settle();
   const f = b.frame();
   assert.match(f, /bundle: core/);
-  assert.match(f, /source: example-skills, pinned 1234567 \(tracks main\), clone at [0-9a-f]{7}/);
+  assert.match(f, /source: example-skills, pinned 1234567 \(tracks main\), clone at [0-9a-f]{7}, review/);
+  assert.match(f, /skill +review +example-skills, review/);
   assert.match(f, /hosts that get it: laptop, box, edge/);
   assert.match(f, /size: about \d+ tokens \(an estimate: characters \/ 4\)/);
   assert.match(f, /Review the change\./);
