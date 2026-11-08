@@ -52,35 +52,50 @@ function show(clone: string, commit: string, path: string): string | null {
   return r.ok ? r.stdout : null;
 }
 
+/** A throwaway clone of the tool's repo: no files checked out, only history. */
+export type Clone = { dir: string; has: (sha: string) => boolean };
+
 /**
- * What changed in the tool between pin `from` and `to`: the changelog sections `to` has that `from` does not,
- * or, when the changelog says nothing, the commit subjects. Read in a throwaway clone, so no clone that hosts
- * run from moves. `none` when `from` is no longer in the repo (a rewritten branch) or the clone fails: the
- * pin can still move, there is only nothing to read.
+ * Runs `use` with a throwaway clone of `repo`, then removes it, so no clone that hosts run from moves. The clone is
+ * null when it fails. `tags` brings the repo's tags along; `branch` makes the clone fail unless that branch exists.
  */
-export function pinChanges(repo: string, track: string, from: string, to: string): Changes {
+export function withClone<T>(repo: string, how: { branch?: string; tags?: boolean }, use: (clone: Clone | null) => T): T {
   const tmp = mkdtempSync(join(tmpdir(), "fleet-update-"));
   try {
     const dir = join(tmp, "repo");
-    const clone = runGit(tmp, "clone", "--quiet", "--no-checkout", "--no-tags", `--branch=${track}`, "--", repo, dir);
-    const has = (sha: string) => clone.ok && runGit(dir, "cat-file", "-e", `${sha}^{commit}`).ok;
-    if (!has(from) || !has(to)) return { source: "none" };
-
-    const before = show(dir, from, "CHANGELOG.md");
-    const after = show(dir, to, "CHANGELOG.md");
-    if (after !== null) {
-      const added = addedSections(before ?? "", after);
-      if (added.length > 0) return fit(added);
-    }
-
-    const log = runGit(dir, "log", "--format=%s", `${from}..${to}`);
-    const subjects = log.ok ? log.stdout.split("\n").map(printable).filter((s) => s !== "") : [];
-    if (subjects.length === 0) return { source: "none" };
-    return { source: "commits", subjects: subjects.slice(0, MAX_SUBJECTS), omitted: Math.max(0, subjects.length - MAX_SUBJECTS) };
+    const options = [how.tags ? "--config=remote.origin.tagOpt=--tags" : "--no-tags", ...(how.branch === undefined ? [] : [`--branch=${how.branch}`])];
+    const clone = runGit(tmp, "clone", "--quiet", "--no-checkout", ...options, "--", repo, dir);
+    return use(clone.ok ? { dir, has: (sha) => runGit(dir, "cat-file", "-e", `${sha}^{commit}`).ok } : null);
   } finally {
     rmSync(tmp, { recursive: true, force: true });
   }
 }
+
+/**
+ * What changed in the tool between pin `from` and `to`: the changelog sections `to` has that `from` does not,
+ * or, when the changelog says nothing, the commit subjects. `none` when `from` is no longer in the repo (a
+ * rewritten branch) or there is no clone: the pin can still move, there is only nothing to read.
+ */
+export function changesBetween(clone: Clone | null, from: string, to: string): Changes {
+  if (clone === null || !clone.has(from) || !clone.has(to)) return { source: "none" };
+  const { dir } = clone;
+
+  const before = show(dir, from, "CHANGELOG.md");
+  const after = show(dir, to, "CHANGELOG.md");
+  if (after !== null) {
+    const added = addedSections(before ?? "", after);
+    if (added.length > 0) return fit(added);
+  }
+
+  const log = runGit(dir, "log", "--format=%s", `${from}..${to}`);
+  const subjects = log.ok ? log.stdout.split("\n").map(printable).filter((s) => s !== "") : [];
+  if (subjects.length === 0) return { source: "none" };
+  return { source: "commits", subjects: subjects.slice(0, MAX_SUBJECTS), omitted: Math.max(0, subjects.length - MAX_SUBJECTS) };
+}
+
+/** `changesBetween` in a clone of the branch `track`. */
+export const pinChanges = (repo: string, track: string, from: string, to: string): Changes =>
+  withClone(repo, { branch: track }, (clone) => changesBetween(clone, from, to));
 
 /** The text form: sections as in the changelog, or one subject per line, or that there is nothing to read. */
 export function describeChanges(changes: Changes): string {

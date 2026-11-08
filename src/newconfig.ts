@@ -2,7 +2,7 @@ import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, 
 import { dirname, join, resolve } from "node:path";
 import { repoState, runGit } from "./git.ts";
 import type { Result } from "./output.ts";
-import { PIN_FILE, readPin, urlProblem } from "./pin.ts";
+import { PIN_FILE, readPin, TRACK_RELEASES, urlProblem } from "./pin.ts";
 
 const invalid = (...messages: string[]): Result => ({ code: "invalid", messages: messages.map((m) => `fleet: ${m}`) });
 
@@ -14,7 +14,8 @@ export function setPinValue(text: string, key: string, value: string): string | 
 
 /**
  * `fleet new <dir>`: start a config repo from `examples/` in the tool. The directory must not exist or be
- * empty. It is made a git repository and its `fleet.yaml` pins the commit of the tool running this. Creating the
+ * empty. It is made a git repository and its `fleet.yaml` pins the commit of the tool running this and follows
+ * its releases. Creating the
  * repo on GitHub, committing and the first `fleet init` are left to the person, as a checklist.
  */
 export function newConfig(toolDir: string, arg: string | undefined): Result {
@@ -39,7 +40,7 @@ export function newConfig(toolDir: string, arg: string | undefined): Result {
   }
 
   let pin = readFileSync(join(examples, PIN_FILE), "utf8");
-  for (const [key, value] of [["repo", origin.stdout], ["commit", commit]] as const) {
+  for (const [key, value] of [["repo", origin.stdout], ["commit", commit], ["track", TRACK_RELEASES]] as const) {
     const next = setPinValue(pin, key, value);
     if (next === null) throw new Error(`examples/${PIN_FILE} has no '${key}:' line to set`);
     pin = next;

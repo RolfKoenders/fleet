@@ -1,6 +1,6 @@
 # Releasing
 
-A release is a git tag `vX.Y.Z` with a GitHub release made from the same version's section of `CHANGELOG.md`. Machines pin a tool commit, not a tag, so a release does not change what any machine runs.
+A release is a git tag `vX.Y.Z` with a GitHub release made from the same version's section of `CHANGELOG.md`. Machines pin a tool commit, not a tag, so a release changes what a machine runs only when its owner runs `fleet update` and pushes. A config with `track: releases` in `fleet.yaml` (what `fleet new` writes) takes the newest release then: the highest `vX.Y.Z` tag, by version and not by date. A tag with a suffix such as `v3.0.0-rc.1` is not a release to `fleet update`, so a pre-release can be tagged without reaching anyone.
 
 Every user-facing change adds a line under `## Unreleased` as it lands, so the section is ready when you release.
 

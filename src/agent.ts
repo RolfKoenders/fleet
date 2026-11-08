@@ -99,7 +99,7 @@ ${PUSH_RULE} \`fleet push\` commits and publishes the config repo and any follow
 
 ## The tool version
 
-Hosts run the tool commit the config pins, not the latest. \`fleet update\` moves the pin in \`fleet.yaml\` to the head of the branch it tracks and does nothing else: no commit, no apply. Review the change, then \`fleet push\` publishes it and each host moves its fleet clone to the new commit at its next apply. A run from any other checkout of the tool, such as a development one, uses its own code and says the pin was not enforced.
+Hosts run the tool commit the config pins, not the latest. \`fleet update\` moves the pin in \`fleet.yaml\` to the newest release (the highest \`vX.Y.Z\` tag) when \`track\` is \`releases\`, or to the head of the branch \`track\` names, and does nothing else: no commit, no apply. Review the change, then \`fleet push\` publishes it and each host moves its fleet clone to the new commit at its next apply. A run from any other checkout of the tool, such as a development one, uses its own code and says the pin was not enforced.
 
 ## Clearing a conflict
 
