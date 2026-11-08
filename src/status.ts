@@ -29,8 +29,16 @@ export type StatusFields = {
   /** Links and keys apply would create, update or remove. */
   pending: number | null;
   conflicts: number | null;
+  /** The first conflicts, as a row can name them, in the order `status --conflicts` lists them. Null when the conflicts are unknown, or the host's fleet does not send the list. */
+  conflictList: ConflictName[] | null;
   tools: ToolVersions;
 };
+
+/** A conflict as a short name: `detail` and `fix` stay with `status --conflicts`. */
+export type ConflictName = { kind: string; path: string };
+
+/** Enough to name what is wrong; the full list is `status --conflicts`. */
+export const CONFLICT_LIST_MAX = 5;
 
 const TOOL_NAMES = ["claude", "opencode", "sops", "node", "t3"] as const;
 const TIMEOUT_MS = 15_000;
@@ -104,12 +112,14 @@ const reasons = (result: Result): string => {
   return `${all.slice(0, 3).join("; ")}${all.length > 3 ? ` (and ${all.length - 3} more)` : ""}`;
 };
 
-function changeCounts(configDir: string, home: string, host: string | null, messages: string[]): { pending: number | null; conflicts: number | null } {
-  const unknown = { pending: null, conflicts: null };
+function changeCounts(configDir: string, home: string, host: string | null, messages: string[]): Pick<StatusFields, "pending" | "conflicts" | "conflictList"> {
+  const unknown = { pending: null, conflicts: null, conflictList: null };
   if (host === null) return unknown; // already said: no host name
   try {
     const counts = planCounts(configDir, home);
-    if (!("code" in counts)) return counts;
+    if (!("code" in counts)) {
+      return { pending: counts.pending, conflicts: counts.conflicts.length, conflictList: counts.conflicts.slice(0, CONFLICT_LIST_MAX).map(({ kind, path }) => ({ kind, path })) };
+    }
     messages.push(`fleet: pending changes and conflicts are unknown: ${reasons(counts)}`);
   } catch (error) {
     messages.push(`fleet: pending changes and conflicts are unknown: ${(error as Error).message}`);
@@ -207,6 +217,18 @@ export type HostStatus = {
 export const printable = (value: unknown): string | null => (typeof value === "string" ? value.slice(0, 200).replace(/[^\x20-\x7e]/g, "?") : null);
 export const count = (value: unknown): number | null => (typeof value === "number" && Number.isInteger(value) && value >= 0 ? value : null);
 
+/** A host's `conflictList`: at most the first few entries, each cut to printable `kind` and `path`. Null when the host sent none, as an older fleet does. */
+function conflictNames(value: unknown): ConflictName[] | null {
+  if (!Array.isArray(value)) return null;
+  const names: ConflictName[] = [];
+  for (const entry of value.slice(0, CONFLICT_LIST_MAX)) {
+    if (!isObject(entry)) continue;
+    const [kind, path] = [printable(entry.kind), printable(entry.path)];
+    if (kind !== null && path !== null) names.push({ kind, path });
+  }
+  return names;
+}
+
 /**
  * A remote host's status, cut down to the fields fleet knows and to printable text, because it is shown on a
  * terminal and a host can be wrong. Null when the document has no fleet clone state, such as a failed status.
@@ -223,6 +245,7 @@ export function statusFromDocument(doc: Obj): StatusFields | null {
     timer: printable(doc.timer),
     pending: count(doc.pending),
     conflicts: count(doc.conflicts),
+    conflictList: conflictNames(doc.conflictList),
     tools: Object.fromEntries(TOOL_NAMES.map((name) => [name, printable(tools[name])])) as ToolVersions,
   };
 }

@@ -32,8 +32,8 @@ type Entry = { savedAt: number; status: StatusFields | null; context: { savedAt:
 
 const validTime = (value: unknown): value is number => typeof value === "number" && Number.isFinite(value) && value > 0;
 
-/** The fields the cards show, and nothing else: `applied.config` is not one of them. */
-const shown = (s: StatusFields): StatusFields => ({ ...s, applied: { ...s.applied, config: null } });
+/** The fields the cards show, and nothing else: neither `applied.config` nor `conflictList` is one of them. */
+const shown = (s: StatusFields): StatusFields => ({ ...s, applied: { ...s.applied, config: null }, conflictList: null });
 
 function load(home: string): Record<string, Entry> {
   const path = cachePath(home);

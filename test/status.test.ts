@@ -113,6 +113,7 @@ type Full = {
   timer: string | null;
   pending: number | null;
   conflicts: number | null;
+  conflictList: { kind: string; path: string; detail?: string; fix?: string }[] | null;
   tools: { claude: string | null; opencode: string | null; sops: string | null; node: string | null; t3: string | null };
   messages: string[];
 };
@@ -311,6 +312,28 @@ test("the counts are the ones fleet diff reports", () => {
   assert.equal(counts.pending, 2, "a conflicted link is not pending");
 });
 
+test("status names at most the first 5 conflicts as kind and path, in the order status --conflicts lists them", () => {
+  const files = ["a", "b", "c", "d", "e", "f", "g"];
+  const s = described({ files });
+  mkdirSync(join(s.home, ".config/t"), { recursive: true });
+  for (const f of files) writeFileSync(join(s.home, ".config/t", f), "a real file in the way");
+  const home = withTools(s.home);
+  const doc = full(s.clone, home);
+  assert.equal(doc.conflicts, 7);
+  assert.equal(doc.conflictList!.length, 5);
+  const listed = JSON.parse(runFleet(s.clone, ["status", "--conflicts", "--json"], { home }).stdout).conflicts as { kind: string; path: string }[];
+  assert.equal(listed.length, 7);
+  assert.deepEqual(doc.conflictList, listed.slice(0, 5).map(({ kind, path }) => ({ kind, path })), "same order, and no detail or fix");
+  assert.deepEqual(Object.keys(doc.conflictList![0]!), ["kind", "path"]);
+});
+
+test("a host with no conflicts has an empty conflictList", () => {
+  const s = described({ files: ["a"] });
+  const doc = full(s.clone, withTools(s.home));
+  assert.equal(doc.conflicts, 0);
+  assert.deepEqual(doc.conflictList, []);
+});
+
 test("a config that does not validate gives null counts and says why, with exit 0", () => {
   const s = described({ files: ["a"] });
   s.write("hosts/laptop.yaml", "nonsense: true\n");
@@ -319,6 +342,7 @@ test("a config that does not validate gives null counts and says why, with exit 
   assert.equal(doc.ok, true);
   assert.equal(doc.pending, null);
   assert.equal(doc.conflicts, null);
+  assert.equal(doc.conflictList, null);
   assert.match(stderr, /pending changes and conflicts.*unknown/);
   assert.match(stderr, /unknown key 'nonsense'/);
 });
@@ -335,6 +359,7 @@ test("status never clones a missing skill source: the counts are null and it say
   const { doc, stderr } = status(clone, home);
   assert.equal(doc.pending, null);
   assert.equal(doc.conflicts, null);
+  assert.equal(doc.conflictList, null);
   assert.match(stderr, /source 'mine' is not cloned yet/);
   assert.equal(existsSync(join(home, ".local/share/fleet/sources")), false, "nothing was cloned");
 });

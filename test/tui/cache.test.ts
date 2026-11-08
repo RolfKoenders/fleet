@@ -26,6 +26,15 @@ test("cache: a status is remembered with only what the card shows, in a file of 
   assert.equal(got.server!.result.status!.applied.config, null);
 });
 
+test("cache: the conflict list is not remembered, because no card shows it", () => {
+  const home = makeHome();
+  remember(home, "server", status({ conflicts: 1, conflictList: [{ kind: "link", path: "~/.claude/CLAUDE.md" }] }));
+  assert.doesNotMatch(readFileSync(cachePath(home), "utf8"), /CLAUDE\.md/);
+  const got = readCache(home).server!.result.status!;
+  assert.equal(got.conflicts, 1);
+  assert.equal(got.conflictList, null);
+});
+
 test("cache: a host is added without losing the others, and a corrupt file is replaced", () => {
   const home = makeHome();
   remember(home, "a", status());

@@ -149,6 +149,36 @@ test("what a remote host sends is cut down to the expected fields and printable 
   assert.equal(human.stdout.includes("\u0007"), false);
 });
 
+test("a newer host's conflictList is passed through as kind and path, cut to printable text of bounded length", () => {
+  const list = [
+    { kind: "link", path: "~/.claude/CLAUDE.md", detail: "ignored", fix: "ignored" },
+    { kind: "ke\u001by", path: `~/${"p".repeat(300)}` },
+    "nonsense",
+    { kind: "link" },
+    { kind: "link", path: "~/c" },
+    { kind: "link", path: "~/d" },
+    { kind: "link", path: "~/e" },
+  ];
+  const s = setup([{ name: "a", ssh: "alice@a" }, { name: "b", ssh: "alice@b" }, { name: "c", ssh: "alice@c" }], {
+    "alice@a": { stdout: statusDoc({ conflicts: 7, conflictList: list }) },
+    "alice@b": OK,
+    "alice@c": { stdout: statusDoc({ conflicts: 2, conflictList: "link ~/x" }) },
+  });
+  const { doc } = s.json();
+  const a = byHost(doc.hosts, "a").status.conflictList;
+  assert.deepEqual(a.slice(0, 2), [{ kind: "link", path: "~/.claude/CLAUDE.md" }, { kind: "ke?y", path: `~/${"p".repeat(198)}` }]);
+  assert.ok(a.length <= 5, "bounded");
+  assert.deepEqual(a.at(-1), { kind: "link", path: "~/c" }, "an entry without a path or that is not an object is dropped");
+  assert.equal(byHost(doc.hosts, "b").status.conflictList, null, "a host on an older fleet has none, and is not an error");
+  assert.equal(byHost(doc.hosts, "b").result, "ok");
+  assert.equal(byHost(doc.hosts, "c").status.conflictList, null, "a list that is not a list is none");
+});
+
+test("this host in status --all carries its own conflictList", () => {
+  const s = setup([{ name: "a", ssh: "alice@a" }], { "alice@a": OK });
+  assert.deepEqual(byHost(s.json().doc.hosts, "laptop").status.conflictList, []);
+});
+
 test("human output has one block per host and names the unreachable one", () => {
   const s = setup([{ name: "a", ssh: "alice@a" }, { name: "b", ssh: "alice@b" }, { name: "c", ssh: null }], { "alice@a": OK, "alice@b": UNREACHABLE });
   const r = runFleet(s.clone, ["status", "--all"], { home: s.home });
