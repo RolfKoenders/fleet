@@ -40,3 +40,20 @@ test("site: the page loads its frames as data and imports nothing from the tool"
     assert.doesNotMatch(text, /src\/|\.\.\/(test|scripts)/, `${f} refers to the tool's code`);
   }
 });
+
+test("site: every tab of the bridge window has a recording and a caption", () => {
+  const html = readFileSync(join(repoRoot, "site/index.html"), "utf8");
+  const tabs = [...html.matchAll(/role="tab" data-screen="(\w+)"/g)].map((m) => m[1]!);
+  assert.deepEqual(tabs, ["home", "matrix", "conflicts", "push", "palette", "help"], "the tabs follow the bridge's order");
+  const window: { FLEET_FRAMES?: { screens: Record<string, unknown>; push: unknown[]; homeFill: unknown[] } } = {};
+  new Function("window", committed())(window);
+  const data = window.FLEET_FRAMES!;
+  const clips: Record<string, unknown> = { home: data.homeFill, push: data.push };
+  const main = readFileSync(join(repoRoot, "site/main.js"), "utf8");
+  const captions = main.slice(main.indexOf("const CAPTIONS"), main.indexOf("};", main.indexOf("const CAPTIONS")));
+  for (const tab of tabs) {
+    assert.ok(clips[tab] ?? data.screens[tab], `no recording for the ${tab} tab`);
+    assert.match(captions, new RegExp(`\\b${tab}: "`), `no caption for the ${tab} tab`);
+  }
+  assert.doesNotMatch(captions, /\u2014/, "a caption has an em dash");
+});

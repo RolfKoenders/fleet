@@ -54,7 +54,7 @@
         </div>
         <div class="ctas">
           <a class="btn primary" href="#start">Get started</a>
-          <a class="btn" href="#bridge">Watch a push <span aria-hidden="true">↓</span></a>
+          <a class="btn" href="#bridge" data-play="push">Watch a push <span aria-hidden="true">↓</span></a>
         </div>
       </div>
     </section>
@@ -112,11 +112,12 @@
         <div class="window-bar">
           <span class="lights"><i></i><i></i><i></i></span>
           <div class="tabs" role="tablist">
-            <button role="tab" data-screen="push" aria-selected="true">Push</button>
-            <button role="tab" data-screen="home">Home</button>
+            <button role="tab" data-screen="home" aria-selected="true">Home</button>
             <button role="tab" data-screen="matrix">Matrix</button>
             <button role="tab" data-screen="conflicts">Conflicts</button>
+            <button role="tab" data-screen="push">Push</button>
             <button role="tab" data-screen="palette">Palette</button>
+            <button role="tab" data-screen="help">Help</button>
           </div>
           <span class="window-title">fleet bridge</span>
         </div>

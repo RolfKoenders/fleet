@@ -51,8 +51,9 @@
       cancelAnimationFrame(raf);
       offset += performance.now() - start;
     }
-    function restart() { pause(); offset = 0; last = -1; play(); }
-    return { play, pause, restart };
+    function reset() { pause(); offset = 0; last = -1; }
+    function restart() { reset(); play(); }
+    return { play, pause, reset, restart };
   }
 
   /** Calls `on` while `el` is at least `share` on screen, and `off` when it leaves. */
@@ -198,11 +199,12 @@
   const wrap = term.parentElement;
   const caption = document.getElementById("caption");
   const CAPTIONS = {
-    push: "Review what will be published, type push to confirm, then watch it land on each host in turn. edge has no ssh, so it catches up on its own timer.",
-    home: "Every host at a glance: pending changes, conflicts, tool versions, and which ones are unreachable.",
+    home: "Every host at a glance. Cards from the last run start out marked seen 2h ago, then go live as each host answers. box times out, so it turns unreachable.",
     matrix: "Which skill bundles and MCP servers each host gets, from the defaults or its own host file.",
     conflicts: "What stopped an apply, and the exact fix. Fleet never overwrites what it did not write.",
+    push: "Review what will be published, type push to confirm, then watch it land on each host in turn. edge has no ssh, so it catches up on its own timer.",
     palette: "ctrl-k jumps anywhere: a host, a server, a screen, or an action like doctor.",
+    help: "? lists every key in the bridge. esc closes it and takes you back.",
   };
   let ratio = 0.6;
   function measure() {
@@ -218,29 +220,42 @@
     const w = wrap.clientWidth - 24;
     term.style.fontSize = `${Math.min(15, w / (frame.cols * ratio))}px`;
   }
-  // The push plays only while the window is on screen, from the start the first time it is seen.
-  const drawPush = (i) => { current = F.push[i]; fit(current); term.innerHTML = html(current); };
-  const pushPlayer = player(F.push.length, drawPush, { hold: 3500, loop: true });
-  let screenNow = "push", seen = false;
+  const paint = (frame) => { current = frame; fit(frame); term.innerHTML = html(frame); };
+  // Home plays its fill-in once and holds on the last frame; the push loops; the other screens are stills.
+  const clips = {
+    home: { frames: F.homeFill },
+    push: { frames: F.push, opts: { hold: 3500, loop: true } },
+  };
+  for (const c of Object.values(clips)) c.player = player(c.frames.length, (i) => paint(c.frames[i]), c.opts);
+
+  // A clip plays only while the window is on screen, and the first time not before it has faded in.
+  let screenNow = "home", visible = false, fadedAt = null, wake;
+  const lag = () => Math.max(0, fadedAt - performance.now());
+  function engage() {
+    clearTimeout(wake);
+    const clip = clips[screenNow];
+    if (clip && visible) wake = setTimeout(clip.player.play, lag());
+  }
   function show(screen) {
     screenNow = screen;
-    pushPlayer.pause();
+    for (const c of Object.values(clips)) c.player.reset();
     document.querySelectorAll(".tabs button").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.screen === screen)));
     caption.textContent = CAPTIONS[screen];
-    if (screen !== "push") { current = F.screens[screen]; fit(current); term.innerHTML = html(current); return; }
-    drawPush(0);
-    if (seen) pushPlayer.restart();
+    paint(clips[screen] ? clips[screen].frames[0] : F.screens[screen]);
+    engage();
   }
-  let wake;
   whileVisible(term, 0.35, () => {
-    // The first time, wait for the window to fade in; after that, carry on at once.
-    const first = !seen;
-    seen = true;
-    if (screenNow !== "push") return;
+    visible = true;
+    fadedAt ??= performance.now() + (calm ? 0 : REVEAL_MS);
+    engage();
+  }, () => {
+    visible = false;
     clearTimeout(wake);
-    wake = setTimeout(pushPlayer.play, first && !calm ? REVEAL_MS : 0);
-  }, () => { clearTimeout(wake); pushPlayer.pause(); });
+    clips[screenNow]?.player.pause();
+  });
   document.querySelectorAll(".tabs button").forEach((b) => b.addEventListener("click", () => show(b.dataset.screen)));
+  // The hero's link still scrolls to the window; it also picks the clip it names.
+  document.querySelectorAll("[data-play]").forEach((a) => a.addEventListener("click", () => show(a.dataset.play)));
   addEventListener("resize", () => current && fit(current));
-  document.fonts.ready.then(() => { measure(); show("push"); });
+  document.fonts.ready.then(() => { measure(); show("home"); });
 })();
