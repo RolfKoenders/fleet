@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, sym
 import { dirname, join } from "node:path";
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { git, installFakeSsh, installFakeTool, installStatusTools, makeClone, makeHome, publish, runFleet, tempDir, toolCalls, fakeTimer } from "./helpers.ts";
+import { git, installFakeSsh, installFakeTool, installStatusTools, makeClone, makeHome, publish, runFleet, tempDir, toolCalls, fakeTimer, linuxOnly } from "./helpers.ts";
 import type { SshPlan } from "./helpers.ts";
 import { readDoctorResult } from "../src/doctorresult.ts";
 import { EXIT } from "../src/exit.ts";
@@ -502,6 +502,32 @@ test("a stopped timer always fails, even on a host that uses no secrets and has 
   assert.deepEqual(doc.checks.map((c) => [c.name, c.result]), [["timer", "problem"], ["age-key", "ok"], ["skill-links", "ok"]]);
 });
 
+test("a timer that systemd cannot be asked about, in a shell with no user session, is unknown and not a problem", { skip: linuxOnly }, () => {
+  const s = setup("", { timer: "active" });
+  // What `systemctl --user` does after `sudo -iu`: no bus to connect to, nothing on stdout.
+  installFakeTool(s.home, "systemctl", { exit: 1, only: ["--user", "is-active", "fleet.timer"] });
+  const r = s.run(["--json"]);
+  const doc = JSON.parse(r.stdout) as Doc;
+  assert.equal(r.code, EXIT.ok, r.stderr);
+  assert.deepEqual(doc.messages, []);
+  const timer = doc.checks.find((c) => c.name === "timer")!;
+  assert.equal(timer.result, "unknown");
+  assert.match(timer.detail!, /no user session in this shell, as after sudo -iu.*run doctor over ssh or from a login shell/);
+  const text = s.run();
+  assert.equal(text.code, EXIT.ok);
+  assert.match(text.stdout, /^ {2}timer: unknown \(no user session in this shell/m);
+  assert.doesNotMatch(text.stderr, /problem/);
+});
+
+test("a timer that gives no answer in a shell with a user session is still a problem", { skip: linuxOnly }, () => {
+  const s = setup("", { timer: "active" });
+  installFakeTool(s.home, "systemctl", { exit: 1, only: ["--user", "is-active", "fleet.timer"] });
+  const r = s.run(["--json"], { XDG_RUNTIME_DIR: "/run/user/1000" });
+  const doc = JSON.parse(r.stdout) as Doc;
+  assert.equal(r.code, EXIT.unhealthy);
+  assert.deepEqual(doc.checks.find((c) => c.name === "timer"), { name: "timer", result: "problem", detail: "unknown (the scheduler is not installed or gave no answer)" });
+});
+
 test("a missing age key fails only where the config uses secrets, which is read without decrypting", () => {
   const without = setup(stdioEntry("alpha", "ok", 1), { key: false });
   const a = without.json();
@@ -614,6 +640,18 @@ test("doctor --all runs here in place and over the same ssh form on the others, 
     ["-o", "BatchMode=yes", "-o", "ConnectTimeout=10", "me@zed", REMOTE_COMMAND],
   ]);
   assert.equal(doc.servers.length, 2, "this host's own fields are at the top level");
+});
+
+test("--all: a host whose timer is unknown stays ok, and the grid says unknown with the reason below", () => {
+  const unknown = { name: "timer", result: "unknown", detail: "no user session in this shell" };
+  const s = setupAll({ "me@bee": { stdout: docOf({ checks: [unknown, { name: "age-key", result: "ok", detail: null }, { name: "skill-links", result: "ok", detail: null }] }) } }, { bee: "ssh: me@bee\n" });
+  const { r, doc } = s.all();
+  const hosts = (doc as unknown as { hosts: { host: string; result: string; doctor: { checks: { name: string; result: string }[] } }[] }).hosts;
+  assert.equal(r.code, EXIT.ok, r.stderr);
+  assert.deepEqual(hosts.find((h) => h.host === "bee")!.doctor.checks[0], unknown);
+  const text = s.run(["--all"]);
+  assert.match(text.stdout, /^timer\s+unknown\s+ok/m);
+  assert.match(text.stdout, /^bee: timer: no user session in this shell$/m);
 });
 
 test("--timeout is passed on to the other hosts", () => {

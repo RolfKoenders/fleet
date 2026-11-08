@@ -101,6 +101,14 @@ test("context: a server from config that nobody measured says to run doctor, and
   assert.doesNotMatch(f, /opencode\s+█+\s+~100\+/, "a complete agent has no plus");
 });
 
+test("context: a server that wants a login says so, where one doctor has not checked says to run it", async () => {
+  const b = await open({ contexts: { ...CONTEXTS, laptop: contextOf({ claude: [item("instructions", "~/.claude/CLAUDE.md", 400), item("mcp", "issues", null, true, "auth-needed"), item("mcp", "tracker", null)] }) } });
+  b.press("8");
+  const f = b.frame();
+  assert.match(f, /unknown\s+issues\s+mcp\s+needs a login/);
+  assert.match(f, /unknown\s+tracker\s+mcp\s+run fleet doctor/);
+});
+
 test("context: where colour is off the parts differ by character, and the screen is the same width", async () => {
   const b = await open({ plain: true });
   b.press("8", "down", "down", "down");
@@ -217,7 +225,7 @@ test("context: a live answer replaces the remembered one and only good answers o
   assert.equal(claude.skills.count, 40, "the counts are those of the whole report");
   assert.equal(claude.mcp.unmeasured, 12);
   assert.ok(claude.items.length <= 16, "but only the largest items, and some of the unmeasured, are kept");
-  assert.deepEqual(Object.keys(claude.items[0]!).sort(), ["fromConfig", "kind", "measurement", "name", "path", "tokens"]);
+  assert.deepEqual(Object.keys(claude.items[0]!).sort(), ["doctor", "fromConfig", "kind", "measurement", "name", "path", "tokens"]);
   assert.equal(claude.items[0]!.path, null);
 });
 

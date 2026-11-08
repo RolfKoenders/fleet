@@ -10,6 +10,8 @@ What changed in fleet, newest first. Each version lists what you can do now, wha
 
 ### Fixed
 
+- `fleet doctor` in a shell with no user session, as after `sudo -iu`, no longer reports a running timer as a problem: systemd cannot be asked from there, so the timer is `unknown`, with the reason and that doctor over ssh or from a login shell can see it. It does not count as a problem or change the exit code. With a session, a timer that gives no answer is still a problem.
+- `fleet context` and the bridge's context screen say why a server has no size. A server that wants a login says it needs one, so doctor cannot list its tools, instead of telling you to run `fleet doctor` again. A server whose last doctor run failed names that result. `--json` items have a `doctor` field with what the last doctor run found.
 - On the landing page, the bridge's keys keep working after you click one of its tabs or key chips; before, they only worked while the terminal itself had focus. The feature cards with an example now span the row, text beside the example, so the short cards next to them no longer stretch into tall empty boxes.
 
 ## 2.1.0 - 2026-11-08

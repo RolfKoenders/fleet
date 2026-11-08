@@ -36,7 +36,7 @@ function item(value: unknown): ContextItem | null {
   const kind = KINDS.find((k) => k === value.kind);
   const name = printable(value.name);
   if (kind === undefined || name === null) return null;
-  return { kind, name, path: kind === "mcp" ? null : printable(value.path), tokens: readTokens(value.tokens), fromConfig: value.fromConfig === true, measurement: kind === "mcp" ? measurement(value.measurement) : null };
+  return { kind, name, path: kind === "mcp" ? null : printable(value.path), tokens: readTokens(value.tokens), fromConfig: value.fromConfig === true, measurement: kind === "mcp" ? measurement(value.measurement) : null, doctor: kind === "mcp" ? printable(value.doctor) : null };
 }
 
 const notes = (value: unknown): string[] => (Array.isArray(value) ? value.slice(0, MAX_NOTES).flatMap((n) => printable(n) ?? []) : []);

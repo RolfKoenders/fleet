@@ -119,11 +119,41 @@ const short = (item: ContextItem): string => `${item.kind === "mcp" ? `${item.na
 
 const row = (label: string, parts: string[]): string => `${label.padEnd(LABEL_WIDTH)}${parts.join("   ")}`;
 
-/** Server names across agents, with whether fleet put any of them there. */
-function serverNames(items: ContextItem[]): { name: string; fromConfig: boolean }[] {
-  const names = new Map<string, boolean>();
-  for (const i of items) names.set(i.name, (names.get(i.name) ?? false) || i.fromConfig);
-  return [...names].map(([name, fromConfig]) => ({ name, fromConfig }));
+/** What doctor found for a server, as the result it saves: `auth-needed` is a server that wants a login. */
+const LOGIN = "auth-needed";
+
+/**
+ * Why a server has no size, as the short text after its name: running doctor again helps only a server doctor has
+ * not checked. A server that wants a login stays unmeasured, because doctor does not log in.
+ */
+export function unmeasuredReason(item: ContextItem, many = false): string {
+  if (!item.fromConfig) return "not from config, doctor does not measure it";
+  if (item.doctor === LOGIN) return many ? "need a login, so doctor cannot list their tools" : "needs a login, so doctor cannot list its tools";
+  if (item.doctor === null || item.doctor === "ok") return "run fleet doctor";
+  return `the last doctor run gave ${item.doctor}`;
+}
+
+/** Each server with no size once, across agents, keeping the entry that says the most about why. */
+function unmeasuredServers(report: ContextReport): ContextItem[] {
+  const seen = new Map<string, ContextItem>();
+  for (const i of report.agents.flatMap((a) => a.items)) {
+    if (i.kind !== "mcp" || i.tokens !== null) continue;
+    const before = seen.get(i.name);
+    if (before === undefined || (i.fromConfig && !before.fromConfig) || (i.fromConfig === before.fromConfig && before.doctor === null && i.doctor !== null)) seen.set(i.name, i);
+  }
+  return [...seen.values()];
+}
+
+/** The servers with no size, grouped by why: `issues, metrics (need a login, ...)`. */
+function unmeasuredGroups(report: ContextReport): string[] {
+  const groups = new Map<string, { item: ContextItem; names: string[] }>();
+  for (const i of unmeasuredServers(report)) {
+    const one = unmeasuredReason(i);
+    const group = groups.get(one) ?? { item: i, names: [] };
+    group.names.push(i.name);
+    groups.set(one, group);
+  }
+  return [...groups.values()].map(({ item, names }) => `${names.join(", ")} (${unmeasuredReason(item, names.length > 1)})`);
 }
 
 /** The tokens of the largest agent in `reports`: the width of a full bar, when several hosts are drawn on one scale. */
@@ -138,16 +168,13 @@ export function renderContext(report: ContextReport, level: Level, scale: number
   const lines = report.agents.map((a, i) => `${a.agent.padEnd(nameWidth)}  ${bar(a, largest, level)}  ${totals[i]!.padStart(totalWidth)}   ${facts(a, level)}`);
 
   const top = largestItems(report);
-  const unmeasured = serverNames(distinct(report, (i) => i.kind === "mcp" && i.tokens === null));
-  const toRun = unmeasured.filter((s) => s.fromConfig).map((s) => s.name);
+  const unmeasured = unmeasuredGroups(report);
   const stale = distinct(report, (i) => i.measurement?.current === false).map((i) => i.name);
   const unmanaged = distinct(report, (i) => !i.fromConfig);
 
   const below = [
     ...(top.length > 0 ? [row("largest", top.map(describe))] : []),
-    ...(toRun.length > 0 || unmeasured.some((s) => !s.fromConfig)
-      ? [row("not measured", [...(toRun.length > 0 ? [`${toRun.join(", ")} (run fleet doctor)`] : []), ...unmeasured.filter((s) => !s.fromConfig).map((s) => `${s.name} (not from config, doctor does not measure it)`)])]
-      : []),
+    ...(unmeasured.length > 0 ? [row("not measured", unmeasured)] : []),
     ...(stale.length > 0 ? [row("out of date", [`${stale.join(", ")} (measured before the last change; run fleet doctor)`])] : []),
     ...(unmanaged.length > 0 ? [row("not from config", [...unmanaged.slice(0, UNMANAGED_SHOWN).map(short), ...(unmanaged.length > UNMANAGED_SHOWN ? [`+${unmanaged.length - UNMANAGED_SHOWN} more`] : [])])] : []),
     ...(report.agents.some((a) => !a.complete) ? ["A + after a total means a server was not measured, so the total is incomplete."] : []),

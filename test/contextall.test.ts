@@ -169,6 +169,14 @@ test("a host whose context could not be made is an error that says which code it
   assert.match(byHost(doc.hosts, "a").detail ?? "", /gave error: fleet: no such thing/);
 });
 
+test("a host that sends what doctor found shows it; one on an older fleet, without it, still says to run doctor", () => {
+  const login = { ...server("issues", null), doctor: "auth-needed" };
+  const s = setup([{ name: "new", ssh: "alice@new" }, { name: "old", ssh: "alice@old" }], { "alice@new": { stdout: contextDoc([instructions(100), login]) }, "alice@old": { stdout: contextDoc([instructions(100), server("tracker", null)]) } });
+  const out = s.human().stdout;
+  assert.match(out, /^ {2}not measured +issues \(needs a login, so doctor cannot list its tools\)$/m);
+  assert.match(out, /^ {2}not measured +tracker \(run fleet doctor\)$/m);
+});
+
 test("what a remote host sends is cut down to the expected fields and printable text", () => {
   const evil = JSON.stringify({
     ok: true,
@@ -179,7 +187,7 @@ test("what a remote host sends is cut down to the expected fields and printable 
       agentDoc("claude", [
         { ...instructions(100, `~/.claude/\u001b[2JCLAUDE.md`), secret: "sk-1", path: "p\u0007" },
         { kind: "skills", name: "s".repeat(500), path: "~/.claude/skills/s", tokens: 5.5, fromConfig: "yes" },
-        { kind: "mcp", name: "m", path: "/leak", tokens: 50, fromConfig: true, measurement: { tools: -1, measuredAt: "2026-11-01\u001b[0m", ageSeconds: 5, current: "maybe", detail: "x" } },
+        { kind: "mcp", name: "m", path: "/leak", tokens: 50, fromConfig: true, doctor: "auth-needed\u001b[0m", measurement: { tools: -1, measuredAt: "2026-11-01\u001b[0m", ageSeconds: 5, current: "maybe", detail: "x" } },
         { kind: "bogus", name: "dropped", tokens: 9 },
         { kind: "mcp", name: "huge", tokens: 1e300 },
         "not an object",
@@ -206,6 +214,8 @@ test("what a remote host sends is cut down to the expected fields and printable 
   assert.equal(claude.items[1].fromConfig, false);
   assert.equal(claude.items[2].path, null);
   assert.deepEqual(claude.items[2].measurement, { tools: null, measuredAt: "2026-11-01?[0m", ageSeconds: 5, current: null });
+  assert.equal(claude.items[2].doctor, "auth-needed?[0m", "what doctor found is printable text");
+  assert.equal(claude.items[0].doctor, null, "only a server has one");
   const human = s.human();
   for (const bad of [ESC, "\u0007"]) assert.equal(human.stdout.includes(bad), false);
   // With colour on, the only escapes are the colours fleet draws.

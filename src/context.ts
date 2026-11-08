@@ -53,6 +53,11 @@ export type ContextItem = {
   fromConfig: boolean;
   /** Set for a measured MCP server only. */
   measurement: Measurement | null;
+  /**
+   * For an MCP server, what the last `fleet doctor` found (its server result, such as `ok` or `auth-needed`), so
+   * a server with no size can say why. Null when doctor has not checked it, and for every other kind.
+   */
+  doctor: string | null;
 };
 
 export type ContextPart = {
@@ -203,7 +208,7 @@ function instructionItems(agent: Tool, home: string, applied: Applied, notes: st
       return [];
     }
     const name = tilde(path, home);
-    return [{ kind: "instructions", name, path: name, tokens: estimateTokens(text.length), fromConfig: applied.fromConfig(name), measurement: null }];
+    return [{ kind: "instructions", name, path: name, tokens: estimateTokens(text.length), fromConfig: applied.fromConfig(name), measurement: null, doctor: null }];
   });
 }
 
@@ -269,7 +274,7 @@ function skillItems(agent: Tool, home: string, applied: Applied, notes: string[]
     if (optedOut || (nested && description === "")) return [];
     const name = typeof meta.name === "string" ? meta.name : skill.id;
     const path = tilde(skill.path, home);
-    return [{ kind: "skills", name: skill.id, path, tokens: estimateTokens(name.length + description.length), fromConfig: applied.fromConfig(path), measurement: null }];
+    return [{ kind: "skills", name: skill.id, path, tokens: estimateTokens(name.length + description.length), fromConfig: applied.fromConfig(path), measurement: null, doctor: null }];
   });
 }
 
@@ -300,7 +305,8 @@ function mcpItems(agent: Tool, home: string, applied: Applied, doctor: MeasuredS
     .filter(([, entry]) => !(agent === "opencode" && isObject(entry) && entry.enabled === false))
     .map(([name]): ContextItem => {
       const measured = measurementOf(agent, name, doctor, options, now);
-      return { kind: "mcp", name, path: null, tokens: measured?.tokens ?? null, fromConfig: applied.hasKey(file, `${key}.${name}`), measurement: measured?.measurement ?? null };
+      const checked = doctor.find((s) => s.agent === agent && s.name === name)?.result ?? null;
+      return { kind: "mcp", name, path: null, tokens: measured?.tokens ?? null, fromConfig: applied.hasKey(file, `${key}.${name}`), measurement: measured?.measurement ?? null, doctor: checked };
     })
     .sort((a, b) => a.name.localeCompare(b.name));
 }

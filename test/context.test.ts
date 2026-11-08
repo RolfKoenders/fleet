@@ -187,6 +187,17 @@ test("a server that failed since keeps its last measurement", () => {
   assert.equal(item(agentOf(measureContext(home, { now: NOW }), "claude"), "mcp", "alpha").tokens, 28_400);
 });
 
+test("each server carries what the last doctor run found, and null when doctor has not checked it", () => {
+  const home = fixture();
+  saveDoctorResult("laptop", [{ name: "alpha", agent: "claude", result: "ok", tools: 2, size: 800, definition: "d1" }, { name: "beta", agent: "claude", result: "auth-needed", tools: null, size: null, definition: "d2" }], home, NOW);
+  const claude = agentOf(measureContext(home, { now: NOW }), "claude");
+  assert.equal(item(claude, "mcp", "alpha").doctor, "ok");
+  assert.equal(item(claude, "mcp", "beta").doctor, "auth-needed");
+  assert.equal(item(claude, "mcp", "beta").tokens, null);
+  assert.equal(item(claude, "mcp", "gamma").doctor, null);
+  assert.equal(item(claude, "skills", "managed").doctor, null, "only a server has a doctor result");
+});
+
 // ---- drawing ----
 
 const ESC = String.fromCharCode(27);
@@ -197,13 +208,13 @@ function report(): ContextReport {
   const at = (days: number, current: boolean | null) => ({ tools: 52, measuredAt: new Date(NOW.getTime() - days * DAY).toISOString(), ageSeconds: days * 86400, current });
   const make = (agent: "claude" | "opencode", servers: number): AgentContext => {
     const items: AgentContext["items"] = [
-      { kind: "instructions", name: "~/.claude/CLAUDE.md", path: "~/.claude/CLAUDE.md", tokens: 1900, fromConfig: true, measurement: null },
-      { kind: "skills", name: "smallskill", path: "~/.claude/skills/smallskill", tokens: 400, fromConfig: false, measurement: null },
-      { kind: "skills", name: "tdd", path: "~/.claude/skills/tdd", tokens: 4800, fromConfig: true, measurement: null },
-      { kind: "mcp", name: "bigserver", path: null, tokens: 28_400, fromConfig: true, measurement: at(2, true) },
-      { kind: "mcp", name: "midserver", path: null, tokens: 4100, fromConfig: true, measurement: at(1, false) },
-      { kind: "mcp", name: "docs", path: null, tokens: null, fromConfig: true, measurement: null },
-      { kind: "mcp", name: "stray", path: null, tokens: null, fromConfig: false, measurement: null },
+      { kind: "instructions", name: "~/.claude/CLAUDE.md", path: "~/.claude/CLAUDE.md", tokens: 1900, fromConfig: true, measurement: null, doctor: null },
+      { kind: "skills", name: "smallskill", path: "~/.claude/skills/smallskill", tokens: 400, fromConfig: false, measurement: null, doctor: null },
+      { kind: "skills", name: "tdd", path: "~/.claude/skills/tdd", tokens: 4800, fromConfig: true, measurement: null, doctor: null },
+      { kind: "mcp", name: "bigserver", path: null, tokens: 28_400, fromConfig: true, measurement: at(2, true), doctor: "ok" },
+      { kind: "mcp", name: "midserver", path: null, tokens: 4100, fromConfig: true, measurement: at(1, false), doctor: "ok" },
+      { kind: "mcp", name: "docs", path: null, tokens: null, fromConfig: true, measurement: null, doctor: null },
+      { kind: "mcp", name: "stray", path: null, tokens: null, fromConfig: false, measurement: null, doctor: null },
     ].slice(0, 3 + servers) as AgentContext["items"];
     const sum = (kind: string) => items.filter((i) => i.kind === kind).reduce((n, i) => n + (i.tokens ?? 0), 0);
     const count = (kind: string) => items.filter((i) => i.kind === kind).length;
@@ -253,6 +264,20 @@ test("the total says it is incomplete, and what was not measured is named with w
   assert.match(out, /^not measured +docs \(run fleet doctor\) {3}stray \(not from config, doctor does not measure it\)$/m);
   assert.match(out, /total is incomplete/);
   assert.doesNotMatch(strip(renderContext({ agents: [report().agents[1]!], notes: [] }, "none")), /incomplete|not measured/);
+});
+
+test("a server that wants a login says doctor cannot list its tools, not to run doctor again", () => {
+  const withServers = (servers: [string, string | null][]): ContextReport => {
+    const r = report();
+    const claude = r.agents[0]!;
+    const items = [...claude.items.filter((i) => i.kind !== "mcp"), ...servers.map(([name, doctor]) => ({ kind: "mcp" as const, name, path: null, tokens: null, fromConfig: true, measurement: null, doctor }))];
+    return { agents: [{ ...claude, items, complete: false }], notes: [] };
+  };
+  const many = strip(renderContext(withServers([["issues", "auth-needed"], ["metrics", "auth-needed"], ["docs", null], ["flaky", "timeout"]]), "none"));
+  assert.match(many, /^not measured +issues, metrics \(need a login, so doctor cannot list their tools\) {3}docs \(run fleet doctor\) {3}flaky \(the last doctor run gave timeout\)$/m);
+  const one = strip(renderContext(withServers([["issues", "auth-needed"]]), "none"));
+  assert.match(one, /^not measured +issues \(needs a login, so doctor cannot list its tools\)$/m);
+  assert.doesNotMatch(one, /run fleet doctor/);
 });
 
 test("a measurement from before the last change says so, and the text marks what is not from config", () => {
@@ -340,7 +365,7 @@ test("--json has the numbers, the item lists and each measurement's age; colour 
   assert.equal(doc.ok, true);
   assert.deepEqual(doc.agents.map((a: AgentContext) => a.agent), ["claude", "opencode"]);
   const guardedItem = doc.agents[0].items.find((i: { name: string }) => i.name === "guarded");
-  assert.deepEqual(Object.keys(guardedItem).sort(), ["fromConfig", "kind", "measurement", "name", "path", "tokens"]);
+  assert.deepEqual(Object.keys(guardedItem).sort(), ["doctor", "fromConfig", "kind", "measurement", "name", "path", "tokens"]);
   assert.ok(guardedItem.measurement.ageSeconds >= 3600 && guardedItem.measurement.ageSeconds < 3700);
   assert.equal(guardedItem.fromConfig, true);
   assert.equal(doc.agents[0].mcp.count, 1);

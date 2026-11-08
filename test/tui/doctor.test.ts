@@ -8,7 +8,7 @@ import type { DoctorResult } from "../../src/tui/doctorread.ts";
 import { realProbe } from "../../src/tui/probe.ts";
 import { loadModel } from "../../src/tui/model.ts";
 import { bridgeFor, makeConfig } from "./fixture.ts";
-import { makeClone, makeHome, runFleet, tempDir, writeExecutable } from "../helpers.ts";
+import { fakeTimer, makeClone, makeHome, runFleet, tempDir, writeExecutable } from "../helpers.ts";
 
 const server = (name: string, tool: string, result: string, over: Record<string, unknown> = {}) => ({ server: name, tool, transport: "stdio", result, tools: result === "ok" ? 12 : null, latencyMs: 30, detail: null, fails: result !== "ok" && result !== "login", ...over });
 
@@ -218,11 +218,12 @@ test("with the real probe, opening the bridge runs no doctor child; only the con
 });
 
 test("against the real fleet doctor in a temp home: exit 8 (unhealthy) is read from the JSON and is not an error", async () => {
-  // No MCP server is picked, so the real doctor starts nothing; its cheap checks fail in a bare home, which is exit 8.
+  // No MCP server is picked, so the real doctor starts nothing; a stopped timer fails its cheap checks, which is exit 8.
   const { clone } = makeClone();
   mkdirSync(join(clone, "hosts"), { recursive: true });
   writeFileSync(join(clone, "hosts/laptop.yaml"), "{}\n");
   const home = makeHome("laptop");
+  fakeTimer(home, "inactive");
   assert.ok(home.startsWith(realpathSync(tmpdir())));
   const direct = runFleet(clone, ["doctor", "--json"], { home });
   assert.equal(direct.code, 8, direct.stderr);
