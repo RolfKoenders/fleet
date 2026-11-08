@@ -6,6 +6,7 @@ What changed in fleet, newest first. Each version lists what you can do now, wha
 
 ### Added
 
+- The README and the landing page show the Omarchy widget, with a link to its repo. The page also plays the bridge's context tab and shows startup context and skill review output, recorded from the real commands.
 - The bridge shows each host's startup context: a new tab `8` draws one stacked bar per host and agent on one scale, with the largest items of the selected host, and each home card has a line such as `context ~18.6k`, marked `+` when a server is not measured. The bridge asks each host for it with the status (one more ssh call), again after a doctor run, and remembers it between runs like the status. It starts no MCP server, and doctor still runs only on `d`.
 - `fleet bridge --view <screen> --host <name>` opens the bridge on a screen with a host selected, for scripts and bar widgets. A name that is not a screen or a host is refused before the screen is taken over.
 - `fleet context` shows how much each agent on this host loads before the first prompt: its instructions, the descriptions of its skills and the MCP tool definitions, as a coloured bar per agent and an estimate in tokens, with the largest items and what fleet did not put there. It reads only: it starts no MCP server and decrypts no secret, and an MCP server's size comes from the last `fleet doctor`.

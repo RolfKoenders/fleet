@@ -96,6 +96,16 @@ On a terminal it then asks for each source: `d` shows the full diff of the skill
 
 To review a source every time without typing `--review`, put `review: true` on it in `catalog/skills.yaml`. Switch it on for skills other people write and leave it off for your own: a plain `fleet skills update` then reviews the first and moves the second as before. Only a pinned source can have it.
 
+## In the Omarchy menu bar
+
+On [Omarchy](https://omarchy.dev), a bar widget shows the health of every host as one icon, so you notice a conflict or an unreachable machine without opening a terminal. Its panel has a row for each host and opens the bridge on the one you pick. It only runs `fleet status --all --json`, which reads. The screenshot shows made-up hosts.
+
+<p align="center">
+  <img alt="The Fleet widget in the Omarchy menu bar, with its panel open: box is unreachable, laptop is ok, server has 2 conflicts" src="assets/omarchy-widget.png" width="480">
+</p>
+
+The widget is a separate project: [fleet-omarchy](https://github.com/RolfKoenders/fleet-omarchy), with its install steps and settings.
+
 ## Requirements
 
 - Linux with systemd, or macOS 12.3 or newer with Homebrew (see [Setting up machines](docs/setting-up-machines.md#macos))

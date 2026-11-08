@@ -30,6 +30,7 @@
     <nav>
       <a href="#how">How it works</a>
       <a href="#bridge">The bridge</a>
+      <a href="#omarchy">Omarchy</a>
       <a href="#start">Get started</a>
       <a href="https://github.com/RolfKoenders/fleet/tree/main/docs">Docs</a>
       <a class="gh" href="https://github.com/RolfKoenders/fleet">
@@ -116,12 +117,13 @@
             <button role="tab" data-screen="matrix">Matrix</button>
             <button role="tab" data-screen="conflicts">Conflicts</button>
             <button role="tab" data-screen="push">Push</button>
+            <button role="tab" data-screen="context">Context</button>
             <button role="tab" data-screen="palette">Palette</button>
             <button role="tab" data-screen="help">Help</button>
           </div>
           <span class="window-title">fleet bridge</span>
         </div>
-        <div class="term-wrap"><pre class="term" id="term" tabindex="0" role="group" aria-label="fleet bridge recording. Keys work here: 1 home, 2 matrix, 3 conflicts, 7 push, ctrl-k palette, ? help, esc to go back."></pre></div>
+        <div class="term-wrap"><pre class="term" id="term" tabindex="0" role="group" aria-label="fleet bridge recording. Keys work here: 1 home, 2 matrix, 3 conflicts, 7 push, 8 context, ctrl-k palette, ? help, esc to go back."></pre></div>
       </div>
       <!-- The bridge's own keys. They act while the terminal has focus; each chip plays the same clip. -->
       <div class="keys" id="keys" role="group" aria-label="Bridge keys">
@@ -130,6 +132,7 @@
         <button type="button" data-screen="matrix"><kbd>2</kbd> Matrix</button>
         <button type="button" data-screen="conflicts"><kbd>3</kbd> <kbd>c</kbd> Conflicts</button>
         <button type="button" data-screen="push"><kbd>7</kbd> <kbd>P</kbd> Push</button>
+        <button type="button" data-screen="context"><kbd>8</kbd> Context</button>
         <button type="button" data-screen="palette"><kbd>ctrl-k</kbd> <kbd>:</kbd> Palette</button>
         <button type="button" data-screen="help"><kbd>?</kbd> Help</button>
       </div>
@@ -160,10 +163,22 @@
           <h3>Pinned skills</h3>
           <p>Skills from your repo or upstream sources, pinned to a commit and grouped into bundles per host.</p>
         </article>
+        <article class="feat wide">
+          <div class="feat-ic">✓</div>
+          <h3>Skill review</h3>
+          <p>A skill is instructions your agent follows, so an update from someone else changes what it does. <code>fleet skills update --review</code> reads what a source would bring in before its pin moves: the commits, the skills you use that changed, and a flag for each new script, new URL or wider <code>allowed-tools</code>.</p>
+          <pre class="block term" id="review" tabindex="0" role="group" aria-label="Output of fleet skills update --review on a made-up source"></pre>
+        </article>
         <article class="feat">
           <div class="feat-ic">⇄</div>
           <h3>MCP servers</h3>
           <p>One catalog, included or excluded per host. <code>fleet doctor</code> starts each one and checks it answers.</p>
+        </article>
+        <article class="feat wide">
+          <div class="feat-ic">▤</div>
+          <h3>Startup context</h3>
+          <p>Before your first prompt, each agent has already loaded your instructions, the descriptions of your skills and the tool definitions of your MCP servers. <code>fleet context</code> draws that as bars, in estimated tokens, with every host on one scale, so you see which machine and which server weighs the most. It only reads files and starts no server.</p>
+          <pre class="block term" id="context-bars" tabindex="0" role="group" aria-label="Startup context of each host, as bars"></pre>
         </article>
         <article class="feat">
           <div class="feat-ic">⚿</div>
@@ -180,11 +195,34 @@
           <h3>Push over ssh</h3>
           <p><code>fleet push</code> publishes, then applies on each host in turn and stops at the first conflict.</p>
         </article>
-        <article class="feat">
+        <article class="feat full">
           <div class="feat-ic">{}</div>
-          <h3>Agent native</h3>
-          <p><code>--json</code> on every command, and <code>fleet agent</code> prints recipes so your agent can run it for you.</p>
+          <div>
+            <h3>Agent native</h3>
+            <p><code>--json</code> on every command, and <code>fleet agent</code> prints recipes so your agent can run it for you.</p>
+          </div>
         </article>
+      </div>
+    </section>
+
+    <!-- Omarchy: the widget lives in its own repo; the screenshot is its preview, made on fixture hosts. -->
+    <section class="omarchy" id="omarchy">
+      <div class="section-head">
+        <p class="kicker">For Omarchy</p>
+        <h2>Your fleet in the menu bar.</h2>
+        <p>An Omarchy bar widget shows the health of every host in one icon, so you notice a conflict or an unreachable machine without opening a terminal.</p>
+      </div>
+      <div class="widget">
+        <img src="omarchy-widget.png" width="960" height="708" loading="lazy" alt="The Fleet widget in the Omarchy menu bar. Its panel lists three hosts: box is unreachable, laptop is ok, and server has 2 conflicts. The bar icon shows the count, 2.">
+        <div class="widget-text">
+          <ul>
+            <li><b>One icon</b> that is green when every host is ok, amber for a conflict or a stopped timer, red for a host that cannot be reached, with a count of the hosts that are not green.</li>
+            <li><b>A panel</b> with a row for each host: its state, when it last applied, its timer and its first conflict.</li>
+            <li><b>Shortcuts into the bridge</b>: <kbd>enter</kbd> opens a host, <kbd>c</kbd> the conflicts, <kbd>r</kbd> checks now.</li>
+          </ul>
+          <p>It runs only <code>fleet status --all --json</code>, which reads. Pushes and doctor stay in a terminal, behind fleet's own prompts. The screenshot shows made-up hosts.</p>
+          <a class="btn" href="https://github.com/RolfKoenders/fleet-omarchy">fleet-omarchy on GitHub <span aria-hidden="true">→</span></a>
+        </div>
       </div>
     </section>
 
@@ -234,6 +272,8 @@
         <div class="cmdrow"><code>fleet push</code><span>Publish the config and apply it everywhere</span></div>
         <div class="cmdrow"><code>fleet status --all</code><span>Ask every machine over ssh</span></div>
         <div class="cmdrow"><code>fleet bridge</code><span>The full-screen view of every host</span></div>
+        <div class="cmdrow"><code>fleet context</code><span>What each agent loads at startup, as bars</span></div>
+        <div class="cmdrow"><code>fleet skills update --review</code><span>Read what a skill source changed before its pin moves</span></div>
         <div class="cmdrow"><code>fleet doctor</code><span>Start each MCP server and check it answers</span></div>
         <div class="cmdrow"><code>fleet secrets</code><span>Edit, set or rekey encrypted secrets</span></div>
         <div class="cmdrow"><code>fleet adopt</code><span>Take ownership of what already matches</span></div>

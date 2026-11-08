@@ -10,12 +10,11 @@ import { createApp } from "../../src/tui/app.ts";
 import { Headless } from "../../src/tui/headless.ts";
 import { loadModel } from "../../src/tui/model.ts";
 import type { HostResult } from "../../src/tui/probe.ts";
-import { bridgeFor, cannedProbe, makeConfig, ok } from "../../test/tui/fixture.ts";
+import { bridgeFor, cannedProbe, CONTEXTS, makeConfig, ok } from "../../test/tui/fixture.ts";
 import type { Canned } from "../../test/tui/fixture.ts";
+import type { Frame, Span } from "./frame.ts";
+import { recordReview } from "./review.ts";
 import { fakePusher, ok as pushOk, pushBridge, tick } from "../../test/tui/pushfixture.ts";
-
-type Span = [text: string, fg: number, bg: number, attr: number];
-type Frame = { cols: number; rows: number; lines: Span[][] };
 
 /** Every bridge clip is this size; the page scales it to fit. */
 const SIZE = { cols: 104, rows: 27 };
@@ -45,6 +44,27 @@ function encode(b: Buffer): Frame {
   return { cols: b.cols, rows: b.rows, lines };
 }
 
+/** The lines `from` to `to` (exclusive) of a frame, cut to `cols` cells, with the blank end of each line dropped. */
+function crop(f: Frame, from: number, to: number, cols: number): Frame {
+  const lines = f.lines.slice(from, to).map((row) => {
+    const out: Span[] = [];
+    let used = 0;
+    for (const [text, fg, bg, attr] of row) {
+      const part = [...text].slice(0, cols - used).join("");
+      if (part === "") break;
+      out.push([part, fg, bg, attr]);
+      used += [...part].length;
+    }
+    const end = out[out.length - 1];
+    if (end && end[2] === -1 && end[3] === 0) {
+      end[0] = end[0].replace(/ +$/, "");
+      if (end[0] === "") out.pop();
+    }
+    return out;
+  });
+  return { cols, rows: lines.length, lines };
+}
+
 const snap = (h: Headless<any, any>) => encode(h.buffer());
 
 /** Advances the bridge `ms` at the page's frame rate, adding a frame to `into` after each step. */
@@ -66,6 +86,7 @@ const canned = {
     box: { result: "unreachable" as const, status: null, detail: "ssh: connect to host box port 22: Connection timed out" },
     edge: { result: "timer" as const, status: null },
   },
+  contexts: CONTEXTS,
   conflicts: {
     ok: true as const,
     items: [
@@ -106,6 +127,23 @@ async function recordScreens(): Promise<Record<string, Frame>> {
   b.advance(200);
   screens.help = snap(b);
   return screens;
+}
+
+/**
+ * The context screen, played: the bars of every host on one scale with laptop selected, then the selection moves
+ * down the hosts, so the list under the bars shows each one's largest items. `bars` is the top of the first frame
+ * (the legend and the bars of the hosts, cut where the totals end), for a card on the page that shows only those.
+ */
+async function recordContext(): Promise<{ frames: Frame[]; bars: Frame }> {
+  const b = await bridgeFor(makeConfig(), canned, { size: SIZE });
+  b.press("8");
+  const frames: Frame[] = [];
+  play(b, frames, 2000);
+  for (let n = 0; n < 3; n++) {
+    b.press("down");
+    play(b, frames, 1400);
+  }
+  return { frames, bars: crop(frames[0]!, 3, 11, 73) };
 }
 
 /**
@@ -201,6 +239,8 @@ export async function record(): Promise<{ text: string; summary: string }> {
   const screens = await recordScreens();
   const push = await recordPush();
   const homeFill = await recordHomeFill();
+  const context = await recordContext();
+  const review = recordReview();
 
   // Rows repeat a great deal from frame to frame, so each frame keeps only indexes into one table of rows.
   const rows: Span[][] = [];
@@ -220,9 +260,12 @@ export async function record(): Promise<{ text: string; summary: string }> {
     screens: Object.fromEntries(Object.entries(screens).map(([name, frame]) => [name, pack(frame)])),
     push: push.map(pack),
     homeFill: homeFill.map(pack),
+    context: context.frames.map(pack),
+    contextBars: pack(context.bars),
+    review: pack(review),
     rows,
   };
   const text = `// Frames recorded from the fleet bridge by npm run site:frames. Do not edit.\n// Static data: the site never imports TUI code, so the two can change apart.\nwindow.FLEET_FRAMES = ${JSON.stringify(data)};\n`;
-  const summary = `${boot.length} boot frames, ${Object.keys(screens).length} screens, ${push.length} push frames, ${homeFill.length} home frames, ${rows.length} distinct rows`;
+  const summary = `${boot.length} boot frames, ${Object.keys(screens).length} screens, ${push.length} push frames, ${homeFill.length} home frames, ${context.frames.length} context frames, a review of ${review.rows} lines, ${rows.length} distinct rows`;
   return { text, summary };
 }
