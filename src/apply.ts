@@ -132,9 +132,9 @@ function report(plan: Plan, verbs: Verbs, color: boolean): Result {
 }
 
 /**
- * What `fleet status` counts: the changes `diff` would list, as `apply` reports them, and its conflicts, in the order `status --conflicts` lists them. A conflicted
- * link or key is not pending. Reads the host and the clones as they are, so it needs no network; a skill source that
- * is not cloned yet is a result with its reason, not a clone.
+ * What `fleet status` counts: the changes `diff` would list, as `apply` reports them, and its conflicts, in the
+ * order `status --conflicts` lists them. A conflicted link or key is not pending. Reads the host and the clones as
+ * they are, so it needs no network; a skill source that is not cloned yet is a result with its reason, not a clone.
  */
 export function planCounts(configDir: string, home: string): { pending: number; conflicts: Conflict[] } | Result {
   const planned = prepare(configDir, home, "offline");
