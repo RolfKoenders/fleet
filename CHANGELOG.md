@@ -4,6 +4,10 @@ What changed in fleet, newest first. Each version lists what you can do now, wha
 
 ## Unreleased
 
+### Added
+
+- `fleet status --json` and `status --all --json` carry `conflictList` for each host: its first 5 conflicts as `kind` and `path`, in the order `status --conflicts` lists them, so a row can name what is wrong. `conflicts` is still the count. A host that cannot plan its conflicts has `null` for both, and a host on an older fleet has no `conflictList`. The Omarchy widget shows the first one on the host's row.
+
 ### Changed
 
 - The landing page's title is now "fleet · One config. Every machine.", the same line as its heading, in the browser tab and in link previews.
