@@ -358,7 +358,7 @@ test("it is in fleet help, in the primer as read-only, and in the README", () =>
   assert.match(runFleet(s.clone, ["help"], { home: s.home }).stdout, /^ {2}context /m);
   const primer = runFleet(s.clone, ["agent"], { home: s.home }).stdout;
   const readOnly = primer.slice(primer.indexOf("### Read-only"), primer.indexOf("### Changes things"));
-  assert.match(readOnly, /^- `fleet context`/m);
+  assert.match(readOnly, /^- `fleet context( \[--all\])?`/m);
   assert.match(readFileSync(join(import.meta.dirname, "../README.md"), "utf8"), /^\| `fleet context` \|/m);
 });
 
@@ -371,7 +371,7 @@ test("symlinks are followed: a skill that is a link to a directory counts", () =
 });
 
 test("the code that measures imports nothing that starts a process or reads a secret", () => {
-  for (const file of ["context.ts", "contextcmd.ts", "contextview.ts", "agentpaths.ts"]) {
+  for (const file of ["context.ts", "contextcmd.ts", "contextread.ts", "contextview.ts", "agentpaths.ts"]) {
     const imports = [...readFileSync(join(import.meta.dirname, "../src", file), "utf8").matchAll(/^import .* from "(.+)";$/gm)].map((m) => m[1]);
     for (const forbidden of ["node:child_process", "./mcpprobe.ts", "./secrets.ts", "./sops.ts", "./secretscli.ts", "./doctor.ts"]) {
       assert.equal(imports.includes(forbidden), false, `${file} imports ${forbidden}`);

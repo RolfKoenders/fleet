@@ -4,6 +4,7 @@ import { parseArgs } from "node:util";
 import { adopt } from "./adopt.ts";
 import { agent } from "./agent.ts";
 import { apply, diff, failure } from "./apply.ts";
+import { contextAll } from "./contextall.ts";
 import { context } from "./contextcmd.ts";
 import { bridge } from "./tui/bridge.ts";
 import { viewNames } from "./tui/start.ts";
@@ -52,7 +53,7 @@ type Command = {
 const commands: Command[] = [
   { name: "status", usage: "status [--all | --conflicts]", summary: "Report this host: fleet clone, applied state, timer, pending changes, conflicts and tool versions (--all asks every host over ssh; --conflicts lists this host's conflicts in full, reading only)", effect: "read", args: 0, run: ({ color, all, conflicts, found }) => (all ? statusAll(toolDir, configOf(found), color) : conflicts ? statusConflicts(configOf(found), color) : status(toolDir, configOf(found), color)) },
   { name: "doctor", usage: "doctor [--all] [--timeout <seconds>]", summary: "Start this host's MCP servers and ask each what it offers and how large its tool definitions are (saved as this host's doctor result), plus cheap local checks (--all asks every host over ssh). It runs the catalog's commands with real credentials and may make npx download packages, so it runs only when you ask for it, never from the timer", effect: "change", args: 0, run: ({ color, all, timeout, found }) => (all ? doctorAll(configOf(found), color, timeout) : doctor(configOf(found), color, timeout)) },
-  { name: "context", usage: "context", summary: "Show how much each agent on this host loads before the first prompt (instructions, skill descriptions, MCP tool definitions), as bars and an estimate in tokens, with the largest items. MCP sizes are the ones the last doctor run saved; it starts no server and reads no secret", effect: "read", args: 0, run: ({ color, found }) => context("dir" in found ? found.dir : null, color) },
+  { name: "context", usage: "context [--all]", summary: "Show how much each agent on this host loads before the first prompt (instructions, skill descriptions, MCP tool definitions), as bars and an estimate in tokens, with the largest items (--all asks every host over ssh and draws all bars on one scale). MCP sizes are the ones the last doctor run saved; it starts no server and reads no secret", effect: "read", args: 0, run: ({ color, all, found }) => (all ? contextAll(configOf(found), color) : context("dir" in found ? found.dir : null, color)) },
   { name: "diff", usage: "diff", summary: "Show what apply would change, without changing anything", effect: "read", args: 0, run: ({ color, found }) => diff(configOf(found), color) },
   { name: "bridge", usage: "bridge [--view <screen>] [--host <name>]", summary: "Open the full-screen view of every host, the matrix of what each gets, conflicts, timeline, secrets and catalog (--view opens on a screen, --host selects a host on it). It reads until you ask for more: P pushes after you type push, d runs doctor after you confirm (it starts real MCP servers). Needs a terminal", effect: "change", args: 0, run: ({ json, view, host, found }) => bridge(toolDir, () => configOf(found), json, process.env, undefined, { view, host }) },
   { name: "apply", usage: "apply", summary: "Make this host match its config", effect: "change", args: 0, run: ({ color, json, found }) => apply(toolDir, configOf(found), color, undefined, json ? ["apply", "--json"] : ["apply"]) },
@@ -124,7 +125,7 @@ function dispatch(argv: string[]): { result: Promise<Result | Relayed> | Result 
   if (!command) return { result: invalid(`unknown command '${name}'`), json };
   if (rest.length > command.args) return { result: invalid(`unexpected argument '${rest[command.args]}'`), json };
   if (parsed.values.message !== undefined && command.name !== "push") return { result: invalid(`-m is only for 'push'`), json };
-  if (parsed.values.all && command.name !== "status" && command.name !== "doctor") return { result: invalid(`--all is only for 'status' and 'doctor'`), json };
+  if (parsed.values.all && command.name !== "status" && command.name !== "doctor" && command.name !== "context") return { result: invalid(`--all is only for 'status', 'doctor' and 'context'`), json };
   if (parsed.values.conflicts && command.name !== "status") return { result: invalid(`--conflicts is only for 'status'`), json };
   if (parsed.values.conflicts && parsed.values.all) return { result: invalid(`--conflicts and --all cannot be used together`), json };
   if (parsed.values.shell && command.name !== "demo") return { result: invalid(`--shell is only for 'demo'`), json };

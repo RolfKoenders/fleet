@@ -6,7 +6,7 @@ import { theme } from "./tui/theme.ts";
 import type { AgentContext, ContextItem, ContextKind, ContextReport } from "./context.ts";
 
 /**
- * Draws a `ContextReport`: one stacked bar per agent, scaled to the largest, then the largest items and what is
+ * Draws a `ContextReport`: one stacked bar per agent, scaled to the largest (or to a scale given, to compare hosts), then the largest items and what is
  * missing. It takes the report whole, so a later view of several hosts can call it once per host.
  */
 
@@ -119,8 +119,12 @@ function serverNames(items: ContextItem[]): { name: string; fromConfig: boolean 
   return [...names].map(([name, fromConfig]) => ({ name, fromConfig }));
 }
 
-export function renderContext(report: ContextReport, level: Level): string {
-  const largest = Math.max(0, ...report.agents.map((a) => a.tokens));
+/** The tokens of the largest agent in `reports`: the width of a full bar, when several hosts are drawn on one scale. */
+export const largestAgent = (reports: ContextReport[]): number => Math.max(0, ...reports.flatMap((r) => r.agents.map((a) => a.tokens)));
+
+/** `scale` is the tokens a full bar stands for, the report's own largest agent unless given. */
+export function renderContext(report: ContextReport, level: Level, scale: number = largestAgent([report])): string {
+  const largest = scale;
   const nameWidth = Math.max(...report.agents.map((a) => a.agent.length));
   const totals = report.agents.map((a) => `${formatTokens(a.tokens)}${a.complete ? "" : "+"}`);
   const totalWidth = Math.max(...totals.map((t) => t.length));
