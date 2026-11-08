@@ -18,12 +18,13 @@ const MARKER: Record<string, RegExp> = {
   secrets: /secret/i,
   catalog: /catalog|skills/i,
   push: /push/i,
+  context: /What each agent loads/,
 };
 
 test("the valid views are the bridge's tabs, home first, so a new tab is a new view", () => {
   assert.deepEqual(viewNames(), SCREENS.map((s) => s.id));
   assert.equal(viewNames()[0], "home");
-  assert.deepEqual(viewNames(), ["home", "matrix", "conflicts", "timeline", "secrets", "catalog", "push"]);
+  assert.deepEqual(viewNames(), ["home", "matrix", "conflicts", "timeline", "secrets", "catalog", "push", "context"]);
 });
 
 for (const { id } of SCREENS) {

@@ -8,6 +8,10 @@ import { loadModel } from "../../src/tui/model.ts";
 import { readingProbe } from "../../src/tui/probe.ts";
 import type { ConflictsResult, HostResult, Probe, RemoteConflicts } from "../../src/tui/probe.ts";
 import { sourceDir } from "../../src/sources.ts";
+import { agentContext } from "../../src/context.ts";
+import type { ContextItem, ContextKind, ContextReport } from "../../src/context.ts";
+import type { HostContext } from "../../src/contextall.ts";
+import type { Tool } from "../../src/settings.ts";
 import type { StatusFields } from "../../src/status.ts";
 import { makeHome, repoRoot, tempDir } from "../helpers.ts";
 
@@ -35,7 +39,26 @@ export const status = (over: Partial<StatusFields> = {}): StatusFields => ({
 
 export const ok = (over: Partial<StatusFields> = {}): HostResult => ({ result: "ok", status: status(over) });
 
-export type Canned = { remote?: Record<string, RemoteConflicts>; doctor?: Probe["doctor"]; hosts?: Record<string, HostResult | "never">; conflicts?: ConflictsResult; reads?: Pick<Probe, "history" | "commitDiff" | "secrets" | "catalog"> };
+export const item = (kind: ContextKind, name: string, tokens: number | null, fromConfig = true): ContextItem => ({ kind, name, path: kind === "mcp" ? null : name, tokens, fromConfig, measurement: null });
+
+/** A startup context made of the items of each agent. */
+export const contextOf = (agents: Partial<Record<Tool, ContextItem[]>>): ContextReport => ({ agents: (Object.entries(agents) as [Tool, ContextItem[]][]).map(([agent, items]) => agentContext(agent, items, [])), notes: [] });
+
+/**
+ * Made-up startup contexts for the hosts of `makeConfig`: `laptop` is the heaviest and has a server nobody measured
+ * and a skill fleet did not put there, `server` is light, `box` is on an older pin and `edge` has no ssh.
+ */
+export const CONTEXTS: Record<string, ContextReport | Exclude<HostContext["result"], "ok">> = {
+  laptop: contextOf({
+    claude: [item("instructions", "~/.claude/CLAUDE.md", 1240), item("skills", "review", 410), item("skills", "debug", 330), item("skills", "scratch", 180, false), item("mcp", "tracker", 14200), item("mcp", "docs", 3950), item("mcp", "analytics", null, false)],
+    opencode: [item("instructions", "~/.config/opencode/AGENTS.md", 1240), item("skills", "review", 410), item("mcp", "tracker", null), item("mcp", "docs", 3950)],
+  }),
+  server: contextOf({ claude: [item("instructions", "~/.claude/CLAUDE.md", 980), item("skills", "debug", 330), item("mcp", "tracker", 14200)], opencode: [item("instructions", "~/.config/opencode/AGENTS.md", 980)] }),
+  box: "old",
+  edge: "timer",
+};
+
+export type Canned = { contexts?: Record<string, ContextReport | Exclude<HostContext["result"], "ok"> | "never">; remote?: Record<string, RemoteConflicts>; doctor?: Probe["doctor"]; hosts?: Record<string, HostResult | "never">; conflicts?: ConflictsResult; reads?: Pick<Probe, "history" | "commitDiff" | "secrets" | "catalog"> };
 
 /** Reads that find nothing, for tests of other screens. */
 export const noReads: NonNullable<Canned["reads"]> = {
@@ -57,6 +80,16 @@ export function cannedProbe(canned: Canned = {}): Probe {
     async conflicts() {
       return canned.conflicts ?? { ok: true, items: [] };
     },
+    ...(canned.contexts
+      ? {
+          async context(host: { name: string }, signal: AbortSignal): Promise<HostContext> {
+            const c = canned.contexts![host.name];
+            if (c === "never") return new Promise<HostContext>((_, reject) => signal.addEventListener("abort", () => reject(new Error("aborted"))));
+            if (c === undefined || typeof c === "string") return { host: host.name, result: c ?? "old", context: null, ...(c === "unreachable" ? { detail: "ssh: connect to host box port 22: Connection timed out" } : {}) };
+            return { host: host.name, result: "ok", context: c };
+          },
+        }
+      : {}),
     ...(canned.remote ? { hostConflicts: async (host: { name: string }) => canned.remote![host.name] ?? { ok: false as const, reason: "error" as const, detail: "no canned answer" } } : {}),
     ...(canned.doctor ? { doctor: canned.doctor } : {}),
   };

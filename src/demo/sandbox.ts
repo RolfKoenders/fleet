@@ -2,6 +2,9 @@ import { execFileSync } from "node:child_process";
 import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, join, sep } from "node:path";
+import { currentDefinitions } from "../context.ts";
+import { saveDoctorResult } from "../doctorresult.ts";
+import type { RunServer } from "../doctorresult.ts";
 import { MissingToolError } from "../git.ts";
 import { setPinValue } from "../newconfig.ts";
 import { findTool } from "../tools.ts";
@@ -105,6 +108,34 @@ function publishNew(root: string, bare: string, files: (dir: string) => void): s
 
 const SKILLS = ["review", "debug", "notes", "triage"];
 
+/** Made-up sizes (characters of tool definitions) for the servers the example config picks; `devbox` is left unmeasured on purpose. */
+const SERVER_SIZES: Record<string, { tools: number; size: number }> = {
+  docs: { tools: 9, size: 15_800 },
+  tracker: { tools: 31, size: 74_400 },
+  "tracker-local": { tools: 31, size: 74_400 },
+};
+
+/**
+ * What `fleet doctor` would have found, made up: it starts real servers, which the demo never does. Gives the
+ * bridge's context screen sizes to draw. The definition hash is the real one, so nothing is shown as out of date.
+ */
+function seedDoctorResult(sandbox: Sandbox, host: DemoHost): void {
+  if (host.name === "devbox") return;
+  const config = host === sandbox.admin ? sandbox.config : join(host.home, CONFIG_DIR);
+  const run: RunServer[] = [];
+  for (const [key, definition] of currentDefinitions(config, host.name, host.home)) {
+    const [agent, name] = key.split("\0") as ["claude" | "opencode", string];
+    const measured = SERVER_SIZES[name];
+    run.push({ name, agent, result: "ok", tools: measured?.tools ?? null, size: measured?.size ?? null, definition });
+  }
+  saveDoctorResult(host.name, run, host.home, new Date(Date.now() - 3 * 86_400_000));
+}
+
+/** A skill someone put on a host by hand, which fleet did not: the context screen marks it. */
+function addHandMadeSkill(host: DemoHost): void {
+  writeAll(join(host.home, ".claude/skills/scratch"), { "SKILL.md": "---\nname: scratch\ndescription: Notes from an experiment, kept by hand on this host. Not part of the config.\n---\n" });
+}
+
 /** Fakes live in `fakes/`; each host gets links to them in its `~/.local/bin`, which fleet searches first. */
 function installFakes(sandbox: Sandbox, toolDir: string): void {
   const dir = join(sandbox.root, "fakes");
@@ -167,7 +198,9 @@ export function buildSandbox(toolDir: string): Sandbox {
       git(root, root, "clone", "--quiet", join(remotes, "config.git"), join(host.home, CONFIG_DIR));
       writeAll(host.home, { ".config/fleet/host": `${host.name}\n`, ".config/fleet/config": `${join(host.home, CONFIG_DIR)}\n` });
       fleet(sandbox, host, ["apply"]);
+      seedDoctorResult(sandbox, host);
     }
+    addHandMadeSkill(hosts[2]!);
 
     // The conflict: someone typed into the file fleet links on `server`.
     const server = hosts[1]!;

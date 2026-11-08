@@ -190,3 +190,27 @@ test("the demo's bridge takes --view and --host too, and names its own hosts whe
     destroy(sandbox.root);
   }
 });
+
+test("the demo's hosts have a made-up startup context: measured servers, one host with an unmeasured server and a hand-made skill", () => {
+  const sandbox = buildSandbox(repoRoot);
+  try {
+    const context = (name: string) => {
+      const host = sandbox.hosts.find((h) => h.name === name)!;
+      const r = spawnSync(join(host.home, ".local/bin/fleet"), ["context", "--json"], { env: sandboxEnv(sandbox.root, host.home), encoding: "utf8" });
+      assert.equal(r.status, 0, r.stderr);
+      return (JSON.parse(r.stdout).agents as { agent: string; complete: boolean; tokens: number; items: { kind: string; name: string; tokens: number | null; fromConfig: boolean; measurement: { current: boolean | null } | null }[] }[]).find((a) => a.agent === "claude")!;
+    };
+    const laptop = context("laptop");
+    assert.equal(laptop.complete, true);
+    const tracker = laptop.items.find((i) => i.name === "tracker")!;
+    assert.ok(tracker.tokens! > 10_000, "a heavy server to find at a glance");
+    assert.notEqual(tracker.measurement!.current, false, "not shown as out of date");
+    const devbox = context("devbox");
+    assert.equal(devbox.complete, false);
+    assert.equal(devbox.items.find((i) => i.kind === "mcp")!.tokens, null, "unknown, not zero");
+    assert.equal(devbox.items.find((i) => i.name === "scratch")!.fromConfig, false);
+    assert.equal(context("server").complete, true);
+  } finally {
+    destroy(sandbox.root);
+  }
+});

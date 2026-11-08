@@ -73,7 +73,7 @@ test("fleet bridge with an unknown view is exit 2, before any screen, and lists 
   const w = conflicted();
   const r = runFleet(w.clone, ["bridge", "--view", "inbox"], { home: w.home });
   assert.equal(r.code, EXIT.invalid);
-  assert.match(r.stderr, /unknown view 'inbox'\. The views are: home, matrix, conflicts, timeline, secrets, catalog, push/);
+  assert.match(r.stderr, /unknown view 'inbox'\. The views are: home, matrix, conflicts, timeline, secrets, catalog, push, context/);
   assert.equal(r.stdout, "");
   assert.doesNotMatch(r.stderr, /needs a terminal/);
   assert.doesNotMatch(r.stderr + r.stdout, /\u001b/);
@@ -101,7 +101,7 @@ test("fleet bridge with a valid view and host still needs a terminal, and says s
 test("fleet help shows the bridge's --view and --host with the valid views", () => {
   const w = conflicted();
   const r = runFleet(w.clone, ["help"], { home: w.home });
-  assert.match(r.stdout, /--view <name> +With 'bridge': open on this screen \(home, matrix, conflicts, timeline, secrets, catalog, push\)/);
+  assert.match(r.stdout, /--view <name> +With 'bridge': open on this screen \(home, matrix, conflicts, timeline, secrets, catalog, push, context\)/);
   assert.match(r.stdout, /--host <name> +With 'bridge': select this host/);
   assert.match(r.stdout, /^ {2}bridge +Open the full-screen view.*--view.*--host/m);
   const agent = runFleet(w.clone, ["agent"], { home: w.home });

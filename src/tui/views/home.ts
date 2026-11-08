@@ -1,13 +1,14 @@
 import { BOLD, DIM, drawBox } from "../buffer.ts";
 import type { BorderKind, Canvas, Style } from "../buffer.ts";
 import { mix } from "../color.ts";
-import type { HostLive, State } from "../app.ts";
+import type { ContextLive, HostLive, State } from "../app.ts";
 import { CARD_H, firstVisible, homeLayout } from "../layout.ts";
+import { totalLine } from "../contextshown.ts";
 import { counts } from "../model.ts";
 import type { HostInfo } from "../model.ts";
 import { spinner, theme } from "../theme.ts";
 import { stringWidth, truncate, wrap } from "../width.ts";
-import { pad, plural, s, segments, span } from "./ui.ts";
+import { pad, plural, s, segments, segWidth, span } from "./ui.ts";
 import type { Seg } from "./ui.ts";
 
 type Health = "ok" | "warn" | "bad" | "unknown";
@@ -28,7 +29,7 @@ function health(live: HostLive | undefined): Health {
 const num = (n: number | null, bad: Style): Seg => (n === null ? ["?", s.muted] : n === 0 ? ["0", s.ok] : [String(n), bad]);
 
 /** "seen 2h ago" for a host only an earlier run has seen, else null. */
-export function seenAgo(live: HostLive | undefined, now: number): string | null {
+export function seenAgo(live: Pick<HostLive, "seen"> | undefined, now: number): string | null {
   return live?.seen ? `seen ${span(live.seen.agoSeconds + Math.max(0, (now - live.seen.since) / 1000))} ago` : null;
 }
 
@@ -50,6 +51,22 @@ function shimmer(c: Canvas, x: number, y: number, width: number, now: number, mo
 }
 
 const SKELETON = [22, 14, 18, 26, 20];
+
+/**
+ * `context ~18.6k`, with a `+` when a server is not measured, or nothing for a host with no startup context to show
+ * (one on an older pin, or not asked yet). A remembered one is muted and marked, since the card may be live around it.
+ */
+function contextSegs(live: ContextLive | undefined): Seg[] {
+  const total = totalLine(live?.report ?? null);
+  if (total === null) return [];
+  return live?.seen ? [["context ", s.faint], [`${total} ◌`, s.muted]] : [["context ", s.muted], [total, total.endsWith("+") ? s.warn : s.sub]];
+}
+
+/** Draws `left`, and `right` against the other edge when both fit. */
+function sides(line: (n: number, segs: Seg[]) => void, n: number, iw: number, left: Seg[], right: Seg[]): void {
+  const fits = right.length > 0 && segWidth(left) + 2 + segWidth(right) <= iw;
+  line(n, fits ? [...left, [" ".repeat(iw - segWidth(left) - segWidth(right)), s.faint], ...right] : left);
+}
 
 function drawCard(c: Canvas, x: number, y: number, w: number, host: HostInfo, live: HostLive | undefined, selected: boolean, state: State): void {
   const { now, motion, model } = state;
@@ -101,7 +118,7 @@ function drawCard(c: Canvas, x: number, y: number, w: number, host: HostInfo, li
   if (result && result.result !== "ok") {
     line(0, [[result.result === "unreachable" ? "unreachable over ssh" : "no usable answer", result.result === "unreachable" ? s.bad : s.warn]]);
     wrap(result.detail ?? "", iw).slice(0, 3).forEach((t, i) => line(1 + i, [[t, s.muted]]));
-    line(5, [["status unknown", s.faint]]);
+    sides(line, 5, iw, [["status unknown", s.faint]], contextSegs(state.contexts[host.name]));
     line(6, config);
     return;
   }
@@ -114,7 +131,7 @@ function drawCard(c: Canvas, x: number, y: number, w: number, host: HostInfo, li
   const gap = iw >= 36 ? "  " : " ";
   const tool = (name: string, v: string | null): Seg[] => [[`${name} `, s.faint], [v ?? "–", v === null ? s.faint : s.sub], [gap, s.faint]];
   line(0, [["last change ", s.muted], [lastChange(live!, now), status.applied.at === null ? s.warn : s.text]]);
-  line(1, [["timer ", s.muted], [status.timer ?? "unknown", timerStyle]]);
+  sides(line, 1, iw, [["timer ", s.muted], [status.timer ?? "unknown", timerStyle]], contextSegs(state.contexts[host.name]));
   line(2, [["pending ", s.muted], num(status.pending, s.warn), ["   conflicts ", s.muted], num(status.conflicts, s.bad)]);
   line(3, [["clone ", s.muted], [`${fleet.branch ?? "detached"}@${fleet.sha.slice(0, 7)}`, s.sub], [fleet.clean ? " clean" : " dirty", fleet.clean ? s.ok : s.warn], [sync, s.warn]]);
   line(4, [...tool("claude", t.claude), ...tool("opencode", t.opencode)]);
@@ -133,7 +150,9 @@ function drawRow(c: Canvas, y: number, host: HostInfo, live: HostLive | undefine
   const dot = loading && !r ? spinner(state.now, state.motion) : r?.result === "timer" ? "◌" : r && r.result !== "ok" ? "✕" : "●";
   const detail =
     !r ? "asking" : live?.seen ? `${seenAgo(live, state.now)}, not live: ${lastChange(live, state.now)}  p${r.status?.pending ?? "?"} c${r.status?.conflicts ?? "?"}` : r.result === "timer" ? "timer, unknown" : r.result === "unreachable" ? "unreachable" : r.result === "error" ? "no usable answer" : `${lastChange(live!, state.now)}  p${r.status?.pending ?? "?"} c${r.status?.conflicts ?? "?"}`;
-  segments(c, 0, y, [[selected ? "▌" : " ", st(s.brand)], [`${dot} `, st({ fg: color(h) })], [pad(host.name, 12), st(s.bold)], [` ${truncate(detail, Math.max(0, c.w - 17))}`, st(s.sub)]]);
+  const total = totalLine(state.contexts[host.name]?.report ?? null);
+  const withContext = total === null || !r || r.result !== "ok" ? detail : `${detail}  context ${total}`;
+  segments(c, 0, y, [[selected ? "▌" : " ", st(s.brand)], [`${dot} `, st({ fg: color(h) })], [pad(host.name, 12), st(s.bold)], [` ${truncate(withContext, Math.max(0, c.w - 17))}`, st(s.sub)]]);
 }
 
 function summary(state: State): Seg[] {

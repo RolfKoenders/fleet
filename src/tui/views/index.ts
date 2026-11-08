@@ -8,6 +8,7 @@ import { drawFooter, drawHeader } from "./chrome.ts";
 import type { Hint } from "./chrome.ts";
 import { drawCatalog } from "./catalog.ts";
 import { drawConflicts } from "./conflicts.ts";
+import { drawContext } from "./context.ts";
 import { drawHome } from "./home.ts";
 import { drawMatrix } from "./matrix.ts";
 import { drawPush } from "./push.ts";
@@ -44,6 +45,8 @@ function baseHints(state: State): Hint[] {
       return [["↑↓", "commit"], ["pgup/dn", "scroll diff"], ["r", "refresh"], ...COMMON];
     case "secrets":
       return [["↑↓", "select"], ["v", "by name/host"], ["r", "refresh"], ...COMMON];
+    case "context":
+      return [["↑↓", "host"], ["r", "refresh"], ["d", "doctor"], ...COMMON];
     case "catalog":
       return state.catalog.typing ? [["type", "filter"], ["enter", "keep"], ["esc", "clear"]] : [["↑↓", "select"], ["f", "filter"], ["pgup/dn", "scroll"], ["r", "refresh"], ...COMMON];
   }
@@ -70,6 +73,7 @@ export function drawApp(state: State, c: Canvas): void {
   else if (state.screen === "conflicts") drawConflicts(body, state);
   else if (state.screen === "timeline") drawTimeline(body, state);
   else if (state.screen === "secrets") drawSecrets(body, state);
+  else if (state.screen === "context") drawContext(body, state);
   else drawCatalog(body, state);
   if (state.overlay) c.paint(0, 0, c.w, c.h - 1, { attr: DIM });
   drawFooter(c, c.h - 1, hints(state));

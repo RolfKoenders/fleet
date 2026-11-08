@@ -20,7 +20,7 @@ const UNMANAGED_SHOWN = 5;
  * Each part in a colour of the bridge, and in its own character where there is no colour, so the split reads
  * without it. The bars have the same width either way.
  */
-const PARTS: { kind: ContextKind; colour: number; plain: string }[] = [
+export const PARTS: { kind: ContextKind; colour: number; plain: string }[] = [
   { kind: "instructions", colour: theme.brand, plain: "█" },
   { kind: "skills", colour: theme.info, plain: "▓" },
   { kind: "mcp", colour: theme.warn, plain: "░" },
@@ -33,19 +33,19 @@ const paint = (level: Level, colour: number, text: string): string => {
 
 const tokensOf = (agent: AgentContext, kind: ContextKind): number => agent[kind].tokens;
 
-/** Cells for each part, by rounding where the part ends so the bar is as long as the total says, and a part that is there keeps one cell. */
-function cells(agent: AgentContext, largest: number): number[] {
+/** Cells for each part of a bar `width` cells wide, by rounding where the part ends so the bar is as long as the total says, and a part that is there keeps one cell. */
+export function cells(agent: AgentContext, largest: number, width: number = BAR_WIDTH): number[] {
   if (largest === 0) return PARTS.map(() => 0);
   let sum = 0;
   let before = 0;
   const widths = PARTS.map(({ kind }) => {
     sum += tokensOf(agent, kind);
-    const edge = Math.round((BAR_WIDTH * sum) / largest);
-    const width = edge - before;
+    const edge = Math.round((width * sum) / largest);
+    const cellsOfPart = edge - before;
     before = edge;
-    return width;
-  }).map((width, i) => (width === 0 && tokensOf(agent, PARTS[i]!.kind) > 0 ? 1 : width));
-  while (widths.reduce((a, b) => a + b, 0) > BAR_WIDTH) widths[widths.indexOf(Math.max(...widths))]!--;
+    return cellsOfPart;
+  }).map((n, i) => (n === 0 && tokensOf(agent, PARTS[i]!.kind) > 0 ? 1 : n));
+  while (widths.reduce((a, b) => a + b, 0) > width) widths[widths.indexOf(Math.max(...widths))]!--;
   return widths;
 }
 
@@ -58,20 +58,27 @@ function bar(agent: AgentContext, largest: number, level: Level): string {
   return drawn + " ".repeat(BAR_WIDTH - widths.reduce((a, b) => a + b, 0));
 }
 
-function facts(agent: AgentContext, level: Level): string {
-  const label = (kind: ContextKind) => paint(level, PARTS.find((p) => p.kind === kind)!.colour, kind);
+/** What each part of an agent weighs, in words: `none`, `~3.4k (12)`, `up to ~14.2k (3, 1 not measured)`. */
+export function partTexts(agent: AgentContext): Record<ContextKind, string> {
   const { instructions, skills, mcp } = agent;
-  const servers =
-    mcp.count === 0
-      ? "none"
-      : mcp.unmeasured === mcp.count
-        ? `not measured (${mcp.count})`
-        : `up to ${formatTokens(mcp.tokens)} (${mcp.count}${mcp.unmeasured > 0 ? `, ${mcp.unmeasured} not measured` : ""})`;
-  return [
-    `${label("instructions")} ${instructions.count === 0 ? "none" : formatTokens(instructions.tokens)}`,
-    `${label("skills")} ${skills.count === 0 ? "none" : `${formatTokens(skills.tokens)} (${skills.count})`}`,
-    `${label("mcp")} ${servers}`,
-  ].join(" · ");
+  return {
+    instructions: instructions.count === 0 ? "none" : formatTokens(instructions.tokens),
+    skills: skills.count === 0 ? "none" : `${formatTokens(skills.tokens)} (${skills.count})`,
+    mcp:
+      mcp.count === 0
+        ? "none"
+        : mcp.unmeasured === mcp.count
+          ? `not measured (${mcp.count})`
+          : `up to ${formatTokens(mcp.tokens)} (${mcp.count}${mcp.unmeasured > 0 ? `, ${mcp.unmeasured} not measured` : ""})`,
+  };
+}
+
+/** An agent's total, with a `+` when a server is not measured and the total leaves it out. */
+export const totalText = (agent: AgentContext): string => `${formatTokens(agent.tokens)}${agent.complete ? "" : "+"}`;
+
+function facts(agent: AgentContext, level: Level): string {
+  const texts = partTexts(agent);
+  return PARTS.map((part) => `${paint(level, part.colour, part.kind)} ${texts[part.kind]}`).join(" · ");
 }
 
 // ---- items ----
@@ -80,7 +87,7 @@ const key = (item: ContextItem): string => `${item.kind}\0${item.name}`;
 const bySize = (a: ContextItem, b: ContextItem): number => (b.tokens ?? -1) - (a.tokens ?? -1) || a.name.localeCompare(b.name);
 
 /** Each item once, the same skill or server on two agents being one thing; the larger of the two when they differ. */
-function distinct(report: ContextReport, keep: (item: ContextItem) => boolean): ContextItem[] {
+export function distinct(report: ContextReport, keep: (item: ContextItem) => boolean): ContextItem[] {
   const seen = new Map<string, ContextItem>();
   for (const item of report.agents.flatMap((a) => a.items).filter(keep)) {
     const before = seen.get(key(item));
@@ -126,7 +133,7 @@ export const largestAgent = (reports: ContextReport[]): number => Math.max(0, ..
 export function renderContext(report: ContextReport, level: Level, scale: number = largestAgent([report])): string {
   const largest = scale;
   const nameWidth = Math.max(...report.agents.map((a) => a.agent.length));
-  const totals = report.agents.map((a) => `${formatTokens(a.tokens)}${a.complete ? "" : "+"}`);
+  const totals = report.agents.map(totalText);
   const totalWidth = Math.max(...totals.map((t) => t.length));
   const lines = report.agents.map((a, i) => `${a.agent.padEnd(nameWidth)}  ${bar(a, largest, level)}  ${totals[i]!.padStart(totalWidth)}   ${facts(a, level)}`);
 

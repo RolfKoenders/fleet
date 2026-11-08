@@ -4,7 +4,7 @@ import { basename, sep } from "node:path";
 import { readHostName } from "../host.ts";
 import type { Relayed, Result } from "../output.ts";
 import { createApp } from "./app.ts";
-import { readCache, remember } from "./cache.ts";
+import { readCache, readContextCache, remember, rememberContext } from "./cache.ts";
 import { detectLevel } from "./color.ts";
 import type { Env } from "./color.ts";
 import { loadModel } from "./model.ts";
@@ -57,7 +57,7 @@ export async function bridge(toolDir: string, configDir: () => string, json: boo
   const motion = motionAllowed(env);
   const pusher = new RealPusher(toolDir, dir!, home, model.hosts);
   const demo = inDemo(env, home);
-  const app = createApp({ model, probe: realProbe(toolDir, dir!, home), pusher, motion, boot: motion && level !== "none", ...(demo ? { demo: true, noDoctor: "the hosts are made up, and doctor would start real servers" } : {}), cached: readCache(home), ...(where.view !== undefined ? { view: where.view as Screen } : {}), ...(where.host !== undefined ? { host: where.host } : {}), remember: (host, status) => remember(home, host, status) });
+  const app = createApp({ model, probe: realProbe(toolDir, dir!, home), pusher, motion, boot: motion && level !== "none", ...(demo ? { demo: true, noDoctor: "the hosts are made up, and doctor would start real servers" } : {}), cached: readCache(home), cachedContext: readContextCache(home), plain: level === "none", ...(where.view !== undefined ? { view: where.view as Screen } : {}), ...(where.host !== undefined ? { host: where.host } : {}), remember: (host, status) => remember(home, host, status), rememberContext: (host, report) => rememberContext(home, host, report) });
   const code = await runOnTerminal(app, { stdin: process.stdin, stdout: process.stdout }, { level });
   // The screen is gone but a push that was started from it is not: say so, and stay until it has ended.
   const waiting = pusher.whenDone();

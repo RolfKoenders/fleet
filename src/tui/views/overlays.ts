@@ -19,7 +19,7 @@ function frame(c: Canvas, w: number, h: number, title: string): Canvas {
 }
 
 const HELP: [string, string][] = [
-  ["1-7  tab", "switch screen"],
+  ["1-8  tab", "switch screen"],
   ["← ↑ ↓ →  hjkl", "move"],
   ["enter", "home: open in matrix; matrix: show skills"],
   ["ctrl-k  :", "command palette"],

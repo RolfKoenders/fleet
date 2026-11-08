@@ -1,5 +1,5 @@
 // Prints frames of the bridge as plain text: node test/tui/frames.ts [WxH]
-import { bridgeFor, cloneSource, makeConfig, makeRepo, ok } from "./fixture.ts";
+import { bridgeFor, CONTEXTS, cloneSource, makeConfig, makeRepo, ok } from "./fixture.ts";
 
 const [w, h] = (process.argv[2] ?? "100x32").split("x").map(Number) as [number, number];
 const canned = {
@@ -11,9 +11,13 @@ const canned = {
   },
   conflicts: { ok: true as const, items: [{ kind: "link" as const, path: "~/.claude/CLAUDE.md", detail: "~/.claude/CLAUDE.md is a file, not a link to /repo/config/AGENTS.md", fix: "Move or delete it (rm ~/.claude/CLAUDE.md), then run 'fleet apply'. To keep its content, copy it to /repo/config/AGENTS.md first." }, { kind: "key" as const, path: "~/.claude.json mcpServers.docs", detail: "mcpServers.docs was changed outside fleet, or by a tool", fix: "claude mcp remove --scope user docs" }] },
 };
-const b = await bridgeFor(makeConfig(), canned, { size: { cols: w, rows: h } });
+const b = await bridgeFor(makeConfig(), { ...canned, contexts: CONTEXTS }, { size: { cols: w, rows: h } });
 const show = (title: string) => console.log(`\n=== ${title} ===\n${b.frame()}`);
 show("home");
+b.press("8");
+show("context");
+b.press("down", "down", "down");
+show("context, another host");
 b.press("2", "down", "right");
 show("matrix");
 b.press("enter");
