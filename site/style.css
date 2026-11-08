@@ -240,11 +240,25 @@ h2 { margin: 0 0 16px; font: 700 clamp(32px, 4.6vw, 52px)/1.06 var(--sans); lett
   font: 700 17px var(--mono); color: var(--brand-bright);
   background: rgba(63,185,80,.1); border: 1px solid rgba(63,185,80,.25);
 }
+.feat { min-width: 0; }
 .feat.wide { grid-column: span 2; grid-row: span 1; }
+.feat.full { grid-column: 1 / -1; display: flex; align-items: center; gap: 20px; }
+.feat.full .feat-ic { flex: none; }
+.feat.full h3 { margin-top: 0; }
 .feat.accent { border-color: rgba(210,153,34,.3); }
 .feat.accent .feat-ic { color: var(--warn); background: rgba(210,153,34,.1); border-color: rgba(210,153,34,.3); }
 .mini { margin: 18px 0 0; padding: 14px 16px; border-radius: 10px; background: var(--ink); border: 1px solid var(--border-soft); font: 13px/1.7 var(--mono); color: var(--sub); white-space: pre-wrap; }
+/* A recorded terminal block in a card. It scrolls sideways where the card is narrower than the text, so the page never does. */
+.block { margin: 18px 0 0; padding: 14px 16px; border-radius: 10px; background: var(--ink); border: 1px solid var(--border-soft); font-size: 12px; line-height: 1.5; overflow-x: auto; scrollbar-width: thin; }
 .mini .y { color: var(--warn); } .mini .g { color: var(--brand); } .mini .w { color: var(--text); }
+
+/* Omarchy */
+.widget { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 40px; align-items: center; }
+.widget img { display: block; width: 100%; height: auto; border-radius: var(--radius); border: 1px solid var(--border); box-shadow: 0 30px 80px -30px rgba(0,0,0,.9); }
+.widget ul { margin: 0 0 18px; padding: 0; list-style: none; display: grid; gap: 12px; color: var(--sub); font-size: 16px; }
+.widget li b { color: var(--text); font-weight: 600; }
+.widget p { margin: 0 0 22px; color: var(--muted); font-size: 15px; }
+.widget kbd { font: 13px var(--mono); color: var(--text); padding: 0 5px; border-radius: 4px; background: var(--raised); }
 
 /* Get started */
 .steps { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; counter-reset: s; }
@@ -285,6 +299,10 @@ footer a:hover { color: var(--text); }
   .gap { height: 28px; }
   .grid, .steps, .commands { grid-template-columns: minmax(0, 1fr); }
   .feat.wide { grid-column: auto; }
+  .feat.full { grid-column: auto; }
+  .widget { grid-template-columns: minmax(0, 1fr); gap: 24px; }
+  /* On a phone these are wider than the card; the fade at the right edge says there is more to scroll to. */
+  .block { -webkit-mask-image: linear-gradient(90deg, #000 90%, transparent); mask-image: linear-gradient(90deg, #000 90%, transparent); }
   .cmdrow { border-right: 0 !important; }
   .cmdrow:nth-last-child(2) { border-bottom: 1px solid var(--border-soft); }
   .window-title { display: none; }

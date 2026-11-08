@@ -89,7 +89,7 @@
   // Reveal sections as they scroll in. REVEAL_MS is how long the fade takes (style.css .reveal), with its delay.
   const REVEAL_MS = 950;
   const io = new IntersectionObserver((es) => es.forEach((e) => e.isIntersecting && (e.target.classList.add("in"), io.unobserve(e.target))), { threshold: 0.12 });
-  document.querySelectorAll(".section-head, .fan, .window, .feat, .steps li, .commands, .cta > *").forEach((el, i) => {
+  document.querySelectorAll(".section-head, .fan, .window, .feat, .widget, .steps li, .commands, .cta > *").forEach((el, i) => {
     el.classList.add("reveal");
     el.style.transitionDelay = `${(i % 3) * 70}ms`;
     io.observe(el);
@@ -194,6 +194,11 @@
   // Starts once the section has faded in, so the first packets are not drawn half transparent.
   new IntersectionObserver((es) => es[0].isIntersecting && setTimeout(runFan, calm ? 0 : REVEAL_MS), { threshold: 0.4 }).observe(fan);
 
+  // The blocks in the feature cards: the same recorded text as the bridge window, as it is, without a clock.
+  const block = (id, frame) => { document.getElementById(id).innerHTML = html(frame); };
+  block("review", F.review);
+  block("context-bars", F.contextBars);
+
   // The bridge window: real screens, and a push played frame by frame.
   const term = document.getElementById("term");
   const wrap = term.parentElement;
@@ -203,6 +208,7 @@
     matrix: "Which skill bundles and MCP servers each host gets, from the defaults or its own host file.",
     conflicts: "What stopped an apply, and the exact fix. Fleet never overwrites what it did not write.",
     push: "Review what will be published, type push to confirm, then watch it land on each host in turn. edge has no ssh, so it catches up on its own timer.",
+    context: "What each agent loads before its first prompt, in estimated tokens, with every host on one scale. The selection moves down the hosts and the list below shows each one's largest items. box has an older fleet, and edge has no ssh to ask.",
     palette: "ctrl-k jumps anywhere: a host, a server, a screen, or an action like doctor.",
     help: "? lists every key in the bridge. esc closes it and takes you back.",
   };
@@ -221,10 +227,11 @@
     term.style.fontSize = `${Math.min(15, w / (frame.cols * ratio))}px`;
   }
   const paint = (frame) => { current = frame; fit(frame); term.innerHTML = html(frame); };
-  // Home plays its fill-in once and holds on the last frame; the push loops; the other screens are stills.
+  // Home and context play once and hold on the last frame; the push loops; the other screens are stills.
   const clips = {
     home: { frames: F.homeFill },
     push: { frames: F.push, opts: { hold: 3500, loop: true } },
+    context: { frames: F.context },
   };
   for (const c of Object.values(clips)) c.player = player(c.frames.length, (i) => paint(c.frames[i]), c.opts);
 
@@ -262,7 +269,7 @@
 
   // The bridge's keys, while the terminal has focus. Only keys it handles are claimed: tab, arrows, space, page
   // keys and every browser shortcut are left alone, so focus can move on and the page still scrolls.
-  const KEYS = { 1: "home", 2: "matrix", 3: "conflicts", c: "conflicts", 7: "push", P: "push", ":": "palette", "?": "help" };
+  const KEYS = { 1: "home", 2: "matrix", 3: "conflicts", c: "conflicts", 7: "push", P: "push", 8: "context", ":": "palette", "?": "help" };
   // The bridge has these screens; the page has no recording of them yet.
   const MISSING = new Set(["4", "5", "6"]);
   const bar = document.querySelector(".window-bar");
