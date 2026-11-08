@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { git, installFakeSsh, installStatusTools, makeClone, makeHome, publish, repoRoot, tempDir, writeExecutable } from "../helpers.ts";
+import { git, installFakeSsh, installStatusTools, makeClone, makeHome, makeSource, publish, repoRoot, tempDir, writeExecutable } from "../helpers.ts";
 import { EXIT } from "../../src/exit.ts";
 import { LEAVE, ENTER } from "../../src/tui/terminal.ts";
 
@@ -81,6 +81,43 @@ function bridgeWorld() {
   const env = { HOME: home, FLEET_CONFIG: clone, FLEET_NODE: process.execPath, TERM: "xterm-256color", COLORTERM: "truecolor", FLEET_NO_MOTION: "1" };
   return { clone, home, env, command: `${join(clone, "bin/fleet")} bridge; echo "EXIT=$?"; stty -a`, pattern: `${clone}/src/main.ts bridge` };
 }
+
+/** A config repo with one pinned skill source that has moved on by one commit, and the command that reviews it on a terminal. */
+function reviewWorld() {
+  const { clone } = makeClone();
+  const home = makeHome("laptop");
+  const a = makeSource({ "one/SKILL.md": "---\nname: one\n---\nDoes a thing.\n", "one/notes.md": "v1\n" });
+  const to = a.commit({ "one/notes.md": "v2\n", "one/run.sh": "echo hi\n" }, "Add a script");
+  mkdirSync(join(clone, "catalog"), { recursive: true });
+  mkdirSync(join(clone, "hosts"), { recursive: true });
+  const catalog = `sources:\n  aa:\n    repo: ${a.remote}\n    commit: ${a.first}\n    track: main\n    path: .\nbundles:\n  core: [one]\n`;
+  writeFileSync(join(clone, "catalog/skills.yaml"), catalog);
+  writeFileSync(join(clone, "hosts/laptop.yaml"), "bundles: [core]\n");
+  publish(clone, "catalog");
+  const env = { HOME: home, FLEET_CONFIG: clone, FLEET_NODE: process.execPath, TERM: "xterm-256color" };
+  const command = `${join(clone, "bin/fleet")} skills update --review; echo "EXIT=$?"; stty -a`;
+  return { clone, env, command, catalog, from: a.first, to, read: () => readFileSync(join(clone, "catalog/skills.yaml"), "utf8") };
+}
+
+test("pty: skills update --review asks on the terminal, d shows the diff, y moves the pin, and the tty is given back", { skip }, async () => {
+  const w = reviewWorld();
+  const r = await inPty(w.command, { env: w.env, ready: "d full diff", keys: "d", steps: [{ until: "echo hi", keys: "y" }] });
+  assert.match(r.out, new RegExp(`aa  ${w.from.slice(0, 7)} → ${w.to.slice(0, 7)}, 1 commit, 1 of your 1 skill changed \\(0 others\\)`));
+  assert.match(r.out, /! one {2}run\.sh {2}new script/);
+  assert.match(r.out, /one\/run\.sh/, "the full diff was shown");
+  assert.match(r.out, new RegExp(`aa: moved ${w.from.slice(0, 7)} → ${w.to.slice(0, 7)}`));
+  assert.match(r.out, /EXIT=0/);
+  assert.equal(w.read(), w.catalog.replace(w.from, w.to));
+  assert.ok(cooked(r.out.slice(r.out.indexOf("EXIT="))), "the tty is back in cooked mode");
+});
+
+test("pty: n keeps the pin, byte for byte", { skip }, async () => {
+  const w = reviewWorld();
+  const r = await inPty(w.command, { env: w.env, ready: "d full diff", keys: "n" });
+  assert.match(r.out, /aa: kept at/);
+  assert.match(r.out, /EXIT=0/);
+  assert.equal(w.read(), w.catalog);
+});
 
 /** The parameters of every colour or attribute sequence in `out`, as numbers. */
 const sgr = (out: string): number[][] => [...out.matchAll(/\u001b\[([0-9;]*)m/g)].map((m) => m[1]!.split(";").map(Number));

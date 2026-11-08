@@ -374,7 +374,7 @@ test("a missing or unknown subcommand, or a second source name, exits 2", () => 
   for (const args of [["skills"], ["skills", "upgrade"]]) {
     const r = runFleet(s.clone, args, { home: s.home });
     assert.equal(r.code, EXIT.invalid, args.join(" "));
-    assert.match(r.stderr, /usage: fleet skills update \[<source>\]/);
+    assert.match(r.stderr, /usage: fleet skills update \[--review\] \[--yes\] \[<source>\]/);
   }
   assert.equal(runFleet(s.clone, ["skills", "update", "a", "b"], { home: s.home }).code, EXIT.invalid);
 });

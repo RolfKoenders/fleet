@@ -43,7 +43,9 @@ export function useColor(env: NodeJS.ProcessEnv, isTTY: boolean): boolean {
   return isTTY;
 }
 
-export function paint(color: boolean, code: "green" | "yellow", text: string): string {
+const SGR = { green: 32, yellow: 33, dim: 2, bold: 1, red: 31, cyan: 36 } as const;
+
+export function paint(color: boolean, code: keyof typeof SGR, text: string): string {
   if (!color) return text;
-  return `\u001b[${code === "green" ? 32 : 33}m${text}\u001b[0m`;
+  return `\u001b[${SGR[code]}m${text}\u001b[0m`;
 }

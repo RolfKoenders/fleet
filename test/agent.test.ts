@@ -175,7 +175,7 @@ function commandTable(out: string): { name: string; usage: string }[] {
 
 const mentions = (out: string): string[] => [...recipes(out).matchAll(/`fleet ([^`]+)`/g)].map((m) => m[1]!);
 
-test("the primer has a Recipes section with the six jobs, in the JSON as well", () => {
+test("the primer has a Recipes section with the seven jobs, in the JSON as well", () => {
   const s = setup();
   const out = s.run().stdout;
   assert.deepEqual([...blocks(out).keys()], [
@@ -184,6 +184,7 @@ test("the primer has a Recipes section with the six jobs, in the JSON as well", 
     "Add a secret",
     "Adopt what already exists",
     "Set up this machine (onboarding)",
+    "Review a skill source update",
     "Move the tool pin",
   ]);
   const doc = JSON.parse(s.run(["--json"]).stdout);
@@ -212,7 +213,19 @@ test("every fleet command a recipe mentions is in the command table, with its re
     assert.match(mention, usagePattern(entry.usage), `\`fleet ${mention}\` does not follow \`fleet ${entry.usage}\``);
     seen.add(name);
   }
-  for (const name of ["diff", "adopt", "secrets", "update", "new", "init", "push", "apply"]) assert.ok(seen.has(name), `no recipe mentions ${name}`);
+  for (const name of ["diff", "adopt", "secrets", "update", "skills", "new", "init", "push", "apply"]) assert.ok(seen.has(name), `no recipe mentions ${name}`);
+});
+
+test("the skill review recipe runs --review, shows the report, and never passes --yes on its own", () => {
+  const out = setup().run().stdout;
+  const review = blocks(out).get("Review a skill source update")!;
+  assert.match(review, /Run `fleet skills update --review`/);
+  assert.match(review, /Show the user the whole report/);
+  assert.match(review, /Never pass `--yes` on your own/);
+  assert.match(review, /tell you, in this turn, to move a named source/);
+  const yes = mentions(out).filter((m) => m.includes("--yes"));
+  assert.deepEqual(yes, ["skills update --review --yes <source>"]);
+  assert.match(blocks(out).get("Add a skill")!, /Never run `fleet skills update` without `--review`/);
 });
 
 test("the usage matcher accepts the forms the table has and rejects the ones it does not", () => {
