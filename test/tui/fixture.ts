@@ -77,12 +77,16 @@ export const AGE = { laptop: "age1laptopaaaa", server: "age1serverbbbb", box: "a
  * made-up ciphertext (nothing here can be decrypted, which is the point), and a commit subject with an escape
  * sequence in it. `shas` runs from the oldest commit to the newest.
  */
+// A commit can start git's maintenance in the background, which adds and removes files in .git while a test
+// compares the tree before and after.
+const NO_MAINTENANCE = { GIT_CONFIG_COUNT: "2", GIT_CONFIG_KEY_0: "maintenance.auto", GIT_CONFIG_VALUE_0: "false", GIT_CONFIG_KEY_1: "gc.auto", GIT_CONFIG_VALUE_1: "0" };
+
 export function makeRepo(): { dir: string; home: string; shas: string[] } {
   const dir = makeConfig();
   const home = makeHome("laptop");
   const at = (n: number) => `2026-10-0${n}T10:00:00Z`;
   const git = (date: string, ...args: string[]) => {
-    const r = spawnSync("git", args, { cwd: dir, encoding: "utf8", env: { PATH: process.env.PATH ?? "", HOME: home, GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_SYSTEM: "/dev/null", GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@example.com", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@example.com", GIT_AUTHOR_DATE: date, GIT_COMMITTER_DATE: date } });
+    const r = spawnSync("git", args, { cwd: dir, encoding: "utf8", env: { PATH: process.env.PATH ?? "", HOME: home, GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_SYSTEM: "/dev/null", ...NO_MAINTENANCE, GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@example.com", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@example.com", GIT_AUTHOR_DATE: date, GIT_COMMITTER_DATE: date } });
     if (r.status !== 0) throw new Error(`git ${args.join(" ")}: ${r.stderr}`);
     return r.stdout.trim();
   };
@@ -120,7 +124,7 @@ export function cloneSource(home: string): string {
   const dir = sourceDir(home, "example-skills");
   mkdirSync(join(dir, "skills/review"), { recursive: true });
   writeFileSync(join(dir, "skills/review/SKILL.md"), "---\nname: review\n---\nReview the change.\n\u001b[2J\u001b]0;pwned\u0007Then stop.\n");
-  const git = (...args: string[]) => spawnSync("git", args, { cwd: dir, env: { PATH: process.env.PATH ?? "", HOME: home, GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_SYSTEM: "/dev/null", GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@example.com", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@example.com" } });
+  const git = (...args: string[]) => spawnSync("git", args, { cwd: dir, env: { PATH: process.env.PATH ?? "", HOME: home, GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_SYSTEM: "/dev/null", ...NO_MAINTENANCE, GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@example.com", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@example.com" } });
   git("init", "-q");
   git("add", "-A");
   git("commit", "-q", "-m", "skills");
