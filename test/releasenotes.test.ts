@@ -63,12 +63,20 @@ test("the script prints the section, takes a leading v, and exits non-zero for a
   assert.equal(cli([]).code, 2);
 });
 
-test("the repo's changelog has a section for each release, and Unreleased on top", () => {
+test("the repo's changelog has Unreleased on top, then dated releases newest first, none empty", () => {
   const text = readFileSync(join(repoRoot, "CHANGELOG.md"), "utf8");
   const headings = text.split("\n").filter((line) => line.startsWith("## "));
   assert.equal(headings[0], "## Unreleased");
-  assert.deepEqual(headings.slice(1), ["## 2.0.0 - 2026-11-03", "## 1.0.0 - 2026-11-01"]);
-  for (const version of ["2.0.0", "1.0.0"]) assert.notEqual(releaseNotes(text, version), "");
+  const releases = headings.slice(1).map((line) => /^## (\d+)\.(\d+)\.(\d+) - \d{4}-\d{2}-\d{2}$/.exec(line));
+  assert.ok(releases.every((m) => m !== null), `every release heading is '## X.Y.Z - YYYY-MM-DD': ${headings.slice(1).join(", ")}`);
+  const versions = releases.map((m) => m!.slice(1, 4).map(Number));
+  for (let i = 1; i < versions.length; i++) {
+    const [a, b] = [versions[i - 1]!, versions[i]!];
+    const newer = a[0]! - b[0]! || a[1]! - b[1]! || a[2]! - b[2]!;
+    assert.ok(newer > 0, `${headings[i]} is listed above an older or equal ${headings[i + 1]}`);
+  }
+  assert.ok(headings.includes("## 1.0.0 - 2026-11-01") && headings.includes("## 2.0.0 - 2026-11-03"), "the first releases keep their headings");
+  for (const m of releases) assert.notEqual(releaseNotes(text, m!.slice(1, 4).join(".")), "");
 });
 
 /** The release step of the workflow, run for a tag with a fake `gh` that records what it is given. */
