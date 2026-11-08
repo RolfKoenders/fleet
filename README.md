@@ -71,7 +71,7 @@ fleet push -m "Add a skill"
 | `fleet adopt` | Take ownership of an MCP server or skill that already matches |
 | `fleet secrets` | Edit, set or rekey encrypted secrets |
 | `fleet skills update` | Move pinned skill sources to their latest commit; `--review` shows what changed first and asks per source |
-| `fleet update` | Move the pinned tool version to the latest commit and print what changed |
+| `fleet update` | Move the pinned tool version to the newest release (or the latest commit of a branch, see `track` in `fleet.yaml`) and print what changed |
 | `fleet demo` | Try the bridge on made-up hosts in a throwaway sandbox; `--shell` gives a shell instead |
 | `fleet agent` | Print what an agent needs to know, including task recipes |
 

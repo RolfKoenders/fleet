@@ -100,9 +100,9 @@ test("new copies the examples into a new directory, makes it a git repo and pins
 
   const problems: string[] = [];
   const pin = readPin(target, problems);
-  assert.deepEqual(pin, { repo: w.toolRemote, commit: git(w.dev, "rev-parse", "HEAD"), track: "main" }, problems.join());
+  assert.deepEqual(pin, { repo: w.toolRemote, commit: git(w.dev, "rev-parse", "HEAD"), track: "releases" }, problems.join());
   assert.deepEqual(doc.pin, pin);
-  // Only the three values changed: the comments in fleet.yaml are the example's.
+  // Only the repo and the commit changed: `track: releases` is the example's own, and so are the comments in fleet.yaml are the example's.
   assert.equal(
     readFileSync(join(target, "fleet.yaml"), "utf8"),
     readFileSync(join(w.dev, "examples/fleet.yaml"), "utf8").replace("https://github.com/example/fleet.git", w.toolRemote).replace("a".repeat(40), pin!.commit),

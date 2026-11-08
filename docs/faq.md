@@ -22,7 +22,7 @@ It checks for git and Node, clones the tool into `~/.local/share/fleet/fleet`, a
 
 ## How do I update fleet?
 
-Your machines run the tool commit pinned in `fleet.yaml`, so a new version reaches them only when you choose to take it. `fleet update` moves the pin and prints what changed. Read that and `git diff`, then run `fleet push`.
+Your machines run the tool commit pinned in `fleet.yaml`, so a new version reaches them only when you choose to take it. `fleet update` moves the pin to the newest release and prints what changed; a major version is flagged, and its "You need to do" section is the one to read first. If `track:` in `fleet.yaml` names a branch instead of `releases`, it moves to that branch's latest commit. Read the output and `git diff`, then run `fleet push`.
 
 ## Should I work in `~/.local/share/fleet/fleet`?
 

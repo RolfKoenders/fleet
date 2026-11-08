@@ -5,9 +5,12 @@ import { isObject, parseFile } from "./yamlfile.ts";
 export type Pin = {
   repo: string;
   commit: string;
-  /** The branch `fleet update` reads. */
+  /** What `fleet update` follows: the branch of that name, or the tool's releases when it is `releases`. */
   track: string;
 };
+
+/** The `track` value that follows releases. Any other value is a branch. */
+export const TRACK_RELEASES = "releases";
 
 export const PIN_FILE = "fleet.yaml";
 const COMMIT = /^[0-9a-f]{40}$/;
@@ -32,7 +35,7 @@ export function readPin(configDir: string, problems: string[]): Pin | null {
   const { repo, commit, track } = tool;
   if (typeof repo !== "string" || repo === "" || repo.startsWith("-")) problems.push(`${path}: 'tool.repo' must be a URL`);
   if (typeof commit !== "string" || !COMMIT.test(commit)) problems.push(`${path}: 'tool.commit' must be a full 40-character lowercase sha`);
-  if (typeof track !== "string" || track === "") problems.push(`${path}: 'tool.track' must be the branch 'fleet update' reads`);
+  if (typeof track !== "string" || track === "") problems.push(`${path}: 'tool.track' must be the branch 'fleet update' reads, or '${TRACK_RELEASES}'`);
   if (problems.length > before) return null;
   return { repo: repo as string, commit: commit as string, track: track as string };
 }

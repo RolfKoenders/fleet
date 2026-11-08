@@ -128,10 +128,10 @@ export const RECIPES: Recipe[] = [
     title: "Move the tool pin",
     files: ["fleet.yaml (the `commit:` line under `tool:`, and nothing else)"],
     steps: [
-      "Run `fleet update`. It moves `commit:` to the head of the branch `track` names and changes no other byte. It commits, pushes and applies nothing, and no clone moves.",
+      "Run `fleet update`. It moves `commit:` to the newest release when `track` is `releases`, or to the head of the branch `track` names, and changes no other byte. It commits, pushes and applies nothing, and no clone moves.",
       "Read the change in the config repo with `git diff fleet.yaml`, and the tool's own history between the two commits if you can.",
     ],
-    checks: ["`fleet update` prints `tool: <old> -> <new> (<branch>)`, or `up to date`. `fleet diff` still exits as before."],
+    checks: ["`fleet update` prints `tool: <old> -> <new> (<branch>)` (`<release> (<sha>)` when following releases), or `up to date`. `fleet diff` still exits as before."],
     stops: [
       "Hosts run the pinned commit, so this change reaches them only once published. Tell the user to review it and ask for `fleet push`; each host moves its fleet clone at its next apply. Do not run it for them.",
     ],
