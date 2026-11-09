@@ -7,7 +7,8 @@
   <meta name="description" content="Fleet keeps the setup of your coding agents the same on every machine: instructions, skills, MCP servers, settings and encrypted secrets, from one private git repo.">
   <meta property="og:title" content="fleet · One config. Every machine.">
   <meta property="og:description" content="One config for every machine your coding agents run on.">
-  <meta property="og:image" content="https://rolfkoenders.github.io/fleet/social-preview.png">
+  <meta property="og:image" content="https://rolflab.nl/fleet/social-preview.png">
+  <link rel="canonical" href="https://rolflab.nl/fleet/">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="theme-color" content="#0b0f14">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 120 84'%3E%3Cpath d='M8 20h22l10 10v32H8Z' fill='none' stroke='%233fb950' stroke-width='5'/%3E%3Cpath d='M40 42C62 42 62 16 84 16M40 42H84M40 42C62 42 62 68 84 68' fill='none' stroke='%237d8590' stroke-width='4'/%3E%3Crect x='84' y='9' width='32' height='14' rx='2' fill='none' stroke='%23e6edf3' stroke-width='4'/%3E%3Crect x='84' y='35' width='32' height='14' rx='2' fill='none' stroke='%23e6edf3' stroke-width='4'/%3E%3Crect x='84' y='61' width='32' height='14' rx='2' fill='none' stroke='%23e6edf3' stroke-width='4'/%3E%3C/svg%3E">
@@ -18,6 +19,7 @@
   <link rel="preload" href="fonts/JetBrainsMono-Regular.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="preload" href="fonts/JetBrainsMono-Bold.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="style.css">
+  <script defer src="https://analytics.keeply.tools/script.js" data-website-id="ebccdcbe-ca21-4327-b7a4-57136d74c578" data-domains="rolflab.nl"></script>
 </head>
 <body>
   <div class="backdrop" aria-hidden="true"></div>
@@ -32,8 +34,8 @@
       <a href="#bridge">The bridge</a>
       <a href="#omarchy">Omarchy</a>
       <a href="#start">Get started</a>
-      <a href="https://github.com/RolfKoenders/fleet/tree/main/docs">Docs</a>
-      <a class="gh" href="https://github.com/RolfKoenders/fleet">
+      <a href="https://github.com/RolfKoenders/fleet/tree/main/docs" data-umami-event="fleet-docs-click">Docs</a>
+      <a class="gh" href="https://github.com/RolfKoenders/fleet" data-umami-event="fleet-github-click" data-umami-event-where="nav">
         <svg viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
         GitHub
       </a>
@@ -51,7 +53,7 @@
         <div class="cmd" data-copy="curl -fsSL https://raw.githubusercontent.com/RolfKoenders/fleet/main/install.sh | sh">
           <span class="prompt">$</span>
           <code>curl -fsSL https://raw.githubusercontent.com/RolfKoenders/fleet/main/install.sh | sh</code>
-          <button type="button" class="copy" aria-label="Copy install command">copy</button>
+          <button type="button" class="copy" aria-label="Copy install command" data-umami-event="fleet-install-copy" data-umami-event-where="hero">copy</button>
         </div>
         <div class="ctas">
           <a class="btn primary" href="#start">Get started</a>
@@ -227,7 +229,7 @@
             <li><b>Shortcuts into the bridge</b>: <kbd>enter</kbd> opens a host, <kbd>c</kbd> the conflicts, <kbd>r</kbd> checks now.</li>
           </ul>
           <p>It runs only <code>fleet status --all --json</code>, which reads. Pushes and doctor stay in a terminal, behind fleet's own prompts. The screenshot shows made-up hosts.</p>
-          <a class="btn" href="https://github.com/RolfKoenders/fleet-omarchy">fleet-omarchy on GitHub <span aria-hidden="true">→</span></a>
+          <a class="btn" href="https://github.com/RolfKoenders/fleet-omarchy" data-umami-event="fleet-omarchy-click">fleet-omarchy on GitHub <span aria-hidden="true">→</span></a>
         </div>
       </div>
     </section>
@@ -244,7 +246,7 @@
           <div class="step-body">
             <h3>Install fleet</h3>
             <p>No runtime dependencies beyond Node, git and sops.</p>
-            <div class="cmd small" data-copy="curl -fsSL https://raw.githubusercontent.com/RolfKoenders/fleet/main/install.sh | sh"><span class="prompt">$</span><code>curl -fsSL …/install.sh | sh</code><button type="button" class="copy">copy</button></div>
+            <div class="cmd small" data-copy="curl -fsSL https://raw.githubusercontent.com/RolfKoenders/fleet/main/install.sh | sh"><span class="prompt">$</span><code>curl -fsSL …/install.sh | sh</code><button type="button" class="copy" data-umami-event="fleet-install-copy" data-umami-event-where="start">copy</button></div>
           </div>
         </li>
         <li>
@@ -297,7 +299,7 @@
 
   <footer>
     <span>fleet · MIT licensed</span>
-    <span><a href="https://github.com/RolfKoenders/fleet">GitHub</a> · <a href="https://github.com/RolfKoenders/fleet/blob/main/docs/faq.md">FAQ</a> · <a href="https://github.com/RolfKoenders/fleet/blob/main/docs/bridge.md">The bridge</a></span>
+    <span><a href="https://github.com/RolfKoenders/fleet" data-umami-event="fleet-github-click" data-umami-event-where="footer">GitHub</a> · <a href="https://github.com/RolfKoenders/fleet/blob/main/docs/faq.md">FAQ</a> · <a href="https://github.com/RolfKoenders/fleet/blob/main/docs/bridge.md">The bridge</a></span>
   </footer>
 
   <script src="frames.js"></script>

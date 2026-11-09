@@ -3,7 +3,7 @@ name: pages
 on:
   push:
     branches: [main]
-    paths: ["site/**", "assets/social-preview.png", ".github/workflows/pages.yml"]
+    paths: [".github/workflows/pages.yml"]
   workflow_dispatch:
 
 permissions:
@@ -19,14 +19,28 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      # The site is static: frames.js holds frames recorded from the TUI, so nothing here builds or imports it.
-      - name: Assemble the site
+      # The landing page lives at rolflab.nl/fleet (deploy/Dockerfile). Pages only redirects there,
+      # keeping the #section of old links, so the old address keeps working.
+      - name: Write the redirect
         run: |
           set -eu
           mkdir -p _site
-          cp -r site/. _site/
-          cp assets/social-preview.png _site/
+          cat > _site/index.html <<'HTML'
+          <!doctype html>
+          <html lang="en">
+          <head>
+            <meta charset="utf-8">
+            <title>fleet has moved to rolflab.nl/fleet</title>
+            <link rel="canonical" href="https://rolflab.nl/fleet/">
+            <meta http-equiv="refresh" content="0; url=https://rolflab.nl/fleet/">
+            <script>location.replace('https://rolflab.nl/fleet/' + location.hash);</script>
+          </head>
+          <body>
+            <p>fleet's site has moved to <a href="https://rolflab.nl/fleet/">rolflab.nl/fleet</a>.</p>
+          </body>
+          </html>
+          HTML
+          cp _site/index.html _site/404.html
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

@@ -6,6 +6,7 @@ What changed in fleet, newest first. Each version lists what you can do now, wha
 
 ### Added
 
+- The landing page is served from `rolflab.nl/fleet`. `deploy/Dockerfile` builds it as a container that serves `site/` under `/fleet/`. The old GitHub Pages address redirects there, keeping the section of the link.
 - `track: releases` in `fleet.yaml` makes `fleet update` follow releases instead of a branch. It moves the pin to the newest release, the highest `vX.Y.Z` tag (tags with a suffix such as `v3.0.0-rc.1` are ignored), and prints `tool: <old> -> v2.2.0 (a1b2c3d)` with the changelog sections in between; `--json` adds `release`. On the newest release it says `up to date (v2.1.0)`; a pin that is already past it stays where it is until the next release. A move to a new major version adds a line to read "You need to do" before you push. A repo with no release tag exits 2. Any other `track` is a branch, as before.
 - `fleet status --json` and `status --all --json` carry `conflictList` for each host: its first 5 conflicts as `kind` and `path`, in the order `status --conflicts` lists them, so a row can name what is wrong. `conflicts` is still the count. A host that cannot plan its conflicts has `null` for both, and a host on an older fleet has no `conflictList`. The Omarchy widget shows the first one on the host's row.
 
