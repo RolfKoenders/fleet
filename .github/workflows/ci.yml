@@ -6,11 +6,14 @@ on:
   pull_request:
 
 jobs:
-  # Whether the change touches only the landing page, which the tests cannot see (except its frames.js).
+  # What the change can break, from the files it touches:
+  #   docs: only files nothing builds or tests (deploy/, assets/, docs/, the pages workflow, ...): no tests.
+  #   site: those plus the landing page (site/), whose tests read index.html and main.js: only the site tests.
+  #   code: anything else, including README, CHANGELOG and GLOSSARY, which tests read: everything.
   changes:
     runs-on: ubuntu-latest
     outputs:
-      site-only: ${{ steps.diff.outputs.site-only }}
+      scope: ${{ steps.diff.outputs.scope }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -20,16 +23,25 @@ jobs:
           BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
         run: |
           set -eu
-          only=false
+          docs='^(deploy/|assets/|docs/|\.github/workflows/pages\.yml$|LICENSE$|AGENTS\.md$|CLAUDE\.md$)'
+          site='^site/'
+          scope=code
           if git cat-file -e "$BASE^{commit}" 2>/dev/null; then
             files=$(git diff --name-only "$BASE" HEAD)
-            # site/frames.js is recorded from the bridge and a test checks it, so a change to it runs the tests.
-            if [ -n "$files" ] && ! printf '%s\n' "$files" | grep -qvE '^(site/|\.github/workflows/pages\.yml$)' && ! printf '%s\n' "$files" | grep -qxF site/frames.js; then only=true; fi
+            if [ -n "$files" ]; then
+              if ! printf '%s\n' "$files" | grep -qvE "$docs"; then
+                scope=docs
+              # site/frames.js is recorded from the bridge and a test compares the two, so it is code.
+              elif ! printf '%s\n' "$files" | grep -qvE "$docs|$site" && ! printf '%s\n' "$files" | grep -qxF site/frames.js; then
+                scope=site
+              fi
+            fi
           fi
-          echo "site-only=$only" >> "$GITHUB_OUTPUT"
-          echo "site-only=$only"
+          echo "scope=$scope" >> "$GITHUB_OUTPUT"
+          printf 'scope=%s\n%s\n' "$scope" "${files:-}"
 
-  # test (22.18) and test (24) are required checks, so on a landing page change they still run, skip every step and pass.
+  # test (22.18) and test (24) are required checks, so they always run: with no steps for docs,
+  # with only the site tests for site, and with everything for code.
   test:
     needs: changes
     runs-on: ubuntu-latest
@@ -37,18 +49,22 @@ jobs:
       matrix:
         node: ["22.18", "24", "26"]
     env:
-      SKIP: ${{ needs.changes.outputs.site-only }}
+      SCOPE: ${{ needs.changes.outputs.scope }}
     steps:
-      - if: env.SKIP == 'true'
-        run: echo "Only the landing page changed; the pages workflow builds it."
-      - if: env.SKIP != 'true'
+      - if: env.SCOPE == 'docs'
+        run: echo "Nothing that is built or tested changed."
+      - if: env.SCOPE != 'docs'
         uses: actions/checkout@v4
-      - if: env.SKIP != 'true'
+      - if: env.SCOPE != 'docs'
         uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node }}
+      - if: env.SCOPE == 'site'
+        run: npm ci
+      - if: env.SCOPE == 'site'
+        run: node --test test/site-frames.test.ts
       - name: Install sops and age
-        if: env.SKIP != 'true'
+        if: env.SCOPE == 'code'
         run: |
           set -eu
           mkdir -p "$HOME/.local/bin" "$RUNNER_TEMP/dl"
@@ -63,18 +79,18 @@ jobs:
           install -m 755 sops-v3.13.3.linux.amd64 "$HOME/.local/bin/sops"
           tar -xzf age-v1.3.2-linux-amd64.tar.gz age/age-keygen
           install -m 755 age/age-keygen "$HOME/.local/bin/age-keygen"
-      - if: env.SKIP != 'true'
+      - if: env.SCOPE == 'code'
         run: npm ci
-      - if: env.SKIP != 'true'
+      - if: env.SCOPE == 'code'
         run: npx tsc --noEmit
-      - if: env.SKIP != 'true'
+      - if: env.SCOPE == 'code'
         run: npm test
 
-  # Apple Silicon is macos-latest, Intel is macos-15-intel. Not required, so a landing page change skips it whole.
+  # Apple Silicon is macos-latest, Intel is macos-15-intel. Not required, so it runs for code changes only.
   test-macos:
     name: test (macOS)
     needs: changes
-    if: needs.changes.outputs.site-only != 'true'
+    if: needs.changes.outputs.scope == 'code'
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
