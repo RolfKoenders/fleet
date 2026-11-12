@@ -281,7 +281,6 @@ export function apply(toolDir: string, configDir: string, color: boolean, home: 
       save();
       done("write-keys", file);
     }
-    const updating = new Set(plan.keys.updates.map(keyName));
     try {
       for (const remove of claudeRemoves) {
         removeServer(claude, home, remove);
@@ -290,8 +289,7 @@ export function apply(toolDir: string, configDir: string, color: boolean, home: 
         done("remove-server", keyName(remove));
       }
       for (const set of claudeSets) {
-        if (updating.has(keyName(set))) removeServer(claude, home, set);
-        keys.set(keyName(set), addServer(claude, home, set));
+        keys.set(keyName(set), addServer(home, set));
         save();
         done("add-server", keyName(set));
       }
