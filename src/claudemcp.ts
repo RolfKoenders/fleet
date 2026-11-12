@@ -1,7 +1,7 @@
 import { spawnSync } from "node:child_process";
-import { chmodSync, statSync } from "node:fs";
+import { chmodSync, mkdirSync, rmdirSync, statSync } from "node:fs";
 import { MissingToolError } from "./git.ts";
-import { readBack, readDoc } from "./keys.ts";
+import { readDoc, writeKeys } from "./keys.ts";
 import type { KeyChange } from "./keys.ts";
 import { CLAUDE_JSON } from "./mcp.ts";
 import { expandTarget } from "./plan.ts";
@@ -10,8 +10,13 @@ import type { KeyRecord } from "./state.ts";
 import { findTool } from "./tools.ts";
 import { isObject } from "./yamlfile.ts";
 
-// Claude rewrites `~/.claude.json` constantly, so fleet's entries go in and out through `claude mcp` only.
+// Claude rewrites `~/.claude.json` constantly. Every Claude process writes it holding `~/.claude.json.lock`, a
+// directory, and reads the file again inside it; fleet's own write takes the same lock. A removal still goes
+// through `claude mcp remove`, which carries no secret.
 const PREFIX = "mcpServers.";
+const LOCK_WAIT_MS = 5000;
+/** A lock this old was left by a process that died: a writer holds it for milliseconds. */
+const LOCK_STALE_MS = 10_000;
 
 export const isClaudeServer = (key: { file: string }): boolean => key.file === CLAUDE_JSON;
 
@@ -33,15 +38,46 @@ export function removeServer(claude: string, home: string, key: { path: string }
   if (r.status !== 0) throw new Error(`claude mcp remove ${name} failed: ${firstLine(r.stderr ?? "")}`);
 }
 
+const sleep = (ms: number): void => void Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+
+/** Runs `write` holding Claude's own lock on `~/.claude.json`, as `claude mcp` does around its writes. */
+function withClaudeLock<T>(home: string, write: () => T): T {
+  const lock = `${expandTarget(CLAUDE_JSON, home)}.lock`;
+  const deadline = Date.now() + LOCK_WAIT_MS;
+  for (;;) {
+    try {
+      mkdirSync(lock);
+      break;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+      let age = 0;
+      try {
+        age = Date.now() - statSync(lock).mtimeMs;
+      } catch {
+        continue; // released between the two calls
+      }
+      if (age > LOCK_STALE_MS) {
+        rmdirSync(lock);
+        continue;
+      }
+      if (Date.now() > deadline) throw new Error(`${CLAUDE_JSON} is locked by a running Claude; apply again in a moment`);
+      sleep(50);
+    }
+  }
+  try {
+    return write();
+  } finally {
+    rmdirSync(lock);
+  }
+}
+
 /**
- * Adds one server and returns its record, with `actual` read back from the file. The entry holds
- * secrets, so a failure reports the exit status and nothing `claude` printed.
+ * Adds or replaces one server in `~/.claude.json` and returns its record, with `actual` read back from the
+ * file. It is written by fleet, not by `claude mcp add-json`: that command takes the entry, secrets and all,
+ * as an argument, where any user on the host can read it.
  */
-export function addServer(claude: string, home: string, change: KeyChange): KeyRecord {
-  const name = serverName(change);
-  const r = claudeMcp(claude, home, ["add-json", "--scope", "user", name, JSON.stringify(change.value)]);
-  if (r.status !== 0) throw new Error(`claude mcp add-json ${name} failed with exit status ${r.status}`);
-  return readBack(CLAUDE_JSON, [change], home)[0]!;
+export function addServer(home: string, change: KeyChange): KeyRecord {
+  return withClaudeLock(home, () => writeKeys(CLAUDE_JSON, [], [change], home)[0]!);
 }
 
 /** The file holds tokens. Whatever mode Claude left it in, it ends up readable by this user only. */

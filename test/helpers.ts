@@ -169,12 +169,8 @@ if (group !== "mcp" || rest[0] !== "--scope" || rest[1] !== "user") process.exit
 const name = rest[2];
 const doc = read();
 doc.mcpServers = doc.mcpServers || {};
-if (verb === "add-json") {
-  const entry = JSON.parse(rest[3]);
-  // Like the real tool, store defaults the caller left out.
-  doc.mcpServers[name] = entry.type === "stdio" ? { type: "stdio", command: entry.command, args: entry.args || [], env: entry.env || {} } : entry;
-  write(doc);
-} else if (verb === "remove") {
+// No add-json: it takes the entry, secrets and all, as an argument. Fleet writes entries itself.
+if (verb === "remove") {
   if (!(name in doc.mcpServers)) { console.error("No MCP server found with name: " + name); process.exit(1); }
   delete doc.mcpServers[name];
   write(doc);

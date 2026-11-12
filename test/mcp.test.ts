@@ -1,5 +1,5 @@
-import { spawnSync } from "node:child_process";
-import { lstatSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { spawn, spawnSync } from "node:child_process";
+import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, rmSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -72,15 +72,12 @@ test("an npx server runs the npx beside Node, with a PATH that finds it; empty a
   const path = `${NODE_DIR}:/usr/local/bin:/usr/bin:/bin`;
   assert.deepEqual(s.readJson(".claude.json").mcpServers, {
     components: { type: "stdio", command: join(NODE_DIR, "npx"), args: ["-y", "components@4.23.0", "mcp"], env: { PATH: path } },
-    metrics: { type: "stdio", command: join(s.home, ".local/bin/mcp-metrics"), args: [], env: { METRICS_URL: "https://metrics.example.com:8443" } },
+    metrics: { type: "stdio", command: join(s.home, ".local/bin/mcp-metrics"), env: { METRICS_URL: "https://metrics.example.com:8443" } },
   });
   assert.deepEqual(s.readJson(".config/opencode/opencode.jsonc").mcp, {
     components: { type: "local", command: [join(NODE_DIR, "npx"), "-y", "components@4.23.0", "mcp"], environment: { PATH: path } },
     metrics: { type: "local", command: [join(s.home, ".local/bin/mcp-metrics")], environment: { METRICS_URL: "https://metrics.example.com:8443" } },
   });
-  // What fleet sent to claude has no empty fields; the stored `args: []` is the tool's own normalising.
-  const sent = claudeCalls(s.home).map((c) => ({ name: c[4]!, entry: JSON.parse(c[5]!) }));
-  assert.deepEqual(sent.find((c) => c.name === "metrics")!.entry, { type: "stdio", command: join(s.home, ".local/bin/mcp-metrics"), env: { METRICS_URL: "https://metrics.example.com:8443" } });
 });
 
 const BOTH = `servers:
@@ -160,12 +157,15 @@ test("a catalog entry that is neither stdio nor network, or puts a secret in its
   }
 });
 
-test("Claude's entries go through claude mcp only, and the file ends up mode 600", () => {
+test("fleet writes Claude's entries itself under Claude's lock, and the file ends up mode 600", () => {
   const s = setup({ catalog: BOTH, host: "mcp:\n  include: [everywhere]\n" });
-  const r = s.run(["apply"], { env: { FAKE_CLAUDE_MODE: "644" } });
+  writeFileSync(join(s.home, ".claude.json"), JSON.stringify({ numStartups: 3 }), { mode: 0o644 });
+  const r = s.run(["apply"]);
   assert.equal(r.code, EXIT.ok, r.stderr);
-  assert.deepEqual(claudeCalls(s.home), [["mcp", "add-json", "--scope", "user", "everywhere", JSON.stringify({ type: "http", url: "https://a.example.com" })]]);
+  assert.deepEqual(claudeCalls(s.home), [], "no claude mcp add-json");
+  assert.deepEqual(s.readJson(".claude.json"), { numStartups: 3, mcpServers: { everywhere: { type: "http", url: "https://a.example.com" } } });
   assert.equal(lstatSync(join(s.home, ".claude.json")).mode & 0o777, 0o600);
+  assert.deepEqual(readdirSync(s.home).filter((f) => f.startsWith(".claude.json") || f.startsWith("..claude.json")), [".claude.json"], "no lock or temp file is left");
 });
 
 test("dropping a server also leaves ~/.claude.json at mode 600", () => {
@@ -178,13 +178,13 @@ test("dropping a server also leaves ~/.claude.json at mode 600", () => {
   assert.equal(lstatSync(join(s.home, ".claude.json")).mode & 0o777, 0o600);
 });
 
-test("a second apply changes nothing, even though claude stored the entry in its own shape", () => {
+test("a second apply changes nothing", () => {
   const s = setup({
     catalog: "servers:\n  tool:\n    command: [run-it]\n",
     host: "mcp:\n  include: [tool]\n",
   });
   assert.equal(s.run(["apply"]).code, EXIT.ok);
-  assert.deepEqual(s.readJson(".claude.json").mcpServers.tool, { type: "stdio", command: "run-it", args: [], env: {} });
+  assert.deepEqual(s.readJson(".claude.json").mcpServers.tool, { type: "stdio", command: "run-it" });
   const calls = claudeCalls(s.home).length;
 
   const again = s.json(["apply"]);
@@ -192,9 +192,6 @@ test("a second apply changes nothing, even though claude stored the entry in its
   assert.deepEqual(again.doc.created, []);
   assert.deepEqual(again.doc.updated, []);
   assert.equal(claudeCalls(s.home).length, calls);
-
-  const entry = JSON.parse(readFileSync(join(s.home, ".local/state/fleet/applied.json"), "utf8")).keys.find((k: { path: string }) => k.path === "mcpServers.tool");
-  assert.notEqual(entry.actual, entry.desired, "state holds the hash of what claude stored, not of what fleet sent");
 });
 
 test("servers added by hand beside fleet's are left alone in both tools", () => {
@@ -208,13 +205,13 @@ test("servers added by hand beside fleet's are left alone in both tools", () => 
   const claude = s.readJson(".claude.json");
   assert.deepEqual(Object.keys(claude.mcpServers).sort(), ["everywhere", "mine"]);
   assert.equal(claude.numStartups, 7);
-  assert.deepEqual(claudeCalls(s.home).map((c) => c[4]), ["everywhere"]);
+  assert.deepEqual(claudeCalls(s.home), []);
   const opencode = s.readJson(".config/opencode/opencode.jsonc");
   assert.deepEqual(Object.keys(opencode.mcp).sort(), ["everywhere", "mine"]);
   assert.equal(opencode.theme, "x");
 });
 
-test("changing a server removes then adds it in Claude, and dropping it removes it from both tools", () => {
+test("changing a server replaces its entry in Claude, and dropping it removes it from both tools", () => {
   const s = setup({ catalog: BOTH, host: "mcp:\n  include: [everywhere, host-only]\n" });
   assert.equal(s.run(["apply"]).code, EXIT.ok);
 
@@ -224,11 +221,7 @@ test("changing a server removes then adds it in Claude, and dropping it removes 
   const r = s.run(["apply"]);
   assert.equal(r.code, EXIT.ok, r.stderr);
 
-  assert.deepEqual(claudeCalls(s.home).slice(before), [
-    ["mcp", "remove", "--scope", "user", "host-only"],
-    ["mcp", "remove", "--scope", "user", "everywhere"],
-    ["mcp", "add-json", "--scope", "user", "everywhere", JSON.stringify({ type: "http", url: "https://a2.example.com" })],
-  ]);
+  assert.deepEqual(claudeCalls(s.home).slice(before), [["mcp", "remove", "--scope", "user", "host-only"]]);
   assert.deepEqual(s.readJson(".claude.json").mcpServers, { everywhere: { type: "http", url: "https://a2.example.com" } });
   assert.deepEqual(s.readJson(".config/opencode/opencode.jsonc").mcp, { everywhere: { type: "remote", url: "https://a2.example.com" } });
 });
@@ -341,18 +334,73 @@ test("secrets are rendered into both tools; diff, output and applied state show 
   assert.equal(JSON.stringify(claude.tracker.args).includes(TOKEN), false);
 });
 
-test("rotating a secret updates the entry in Claude through remove and add-json", () => {
+test("no decrypted secret is ever on a command line, where any user on the host can read it", () => {
+  const s = withSecret();
+  // A shim in front of sops logs its arguments; the fake claude logs its own.
+  const sops = findTool("sops")!;
+  rmSync(join(s.home, ".local/bin/sops"));
+  writeFileSync(join(s.home, ".local/bin/sops"), `#!/bin/sh\nprintf '%s\\n' "$*" >> "$HOME/sops-calls.log"\nexec ${sops} "$@"\n`, { mode: 0o755 });
+  assert.equal(s.run(["apply"]).code, EXIT.ok);
+  assert.equal(s.run(["secrets", "set", "shared", "TRACKER_API_KEY"], { input: `${TOKEN}-v2` }).code, EXIT.ok);
+  const r = s.run(["apply"]);
+  assert.equal(r.code, EXIT.ok, r.stderr);
+  assert.equal(s.readJson(".claude.json").mcpServers.github.headers.Authorization, `Bearer ${TOKEN}-v2`, "the secret did reach the file");
+  const logs = readdirSync(s.home).filter((f) => f.endsWith("-calls.log"));
+  assert.ok(logs.includes("sops-calls.log"));
+  for (const log of logs) assert.equal(readFileSync(join(s.home, log), "utf8").includes(TOKEN), false, log);
+});
+
+test("rotating a secret replaces the entry in Claude", () => {
   const s = withSecret();
   assert.equal(s.run(["apply"]).code, EXIT.ok);
   assert.equal(s.run(["secrets", "set", "shared", "TRACKER_API_KEY"], { input: `${TOKEN}-v2` }).code, EXIT.ok);
   const before = claudeCalls(s.home).length;
   const r = s.run(["apply"]);
   assert.equal(r.code, EXIT.ok, r.stderr);
-  assert.deepEqual(claudeCalls(s.home).slice(before).map((c) => c.slice(1, 5)), [
-    ["remove", "--scope", "user", "tracker"],
-    ["add-json", "--scope", "user", "tracker"],
-    ["remove", "--scope", "user", "github"],
-    ["add-json", "--scope", "user", "github"],
-  ]);
+  assert.deepEqual(claudeCalls(s.home).slice(before), []);
   assert.equal(s.readJson(".claude.json").mcpServers.github.headers.Authorization, `Bearer ${TOKEN}-v2`);
+});
+
+// ---- Claude's lock ----
+
+const LOCK = ".claude.json.lock";
+
+test("apply waits for Claude's lock and reads the file again inside it, so a save Claude makes meanwhile is kept", () => {
+  const s = setup({ catalog: BOTH, host: "mcp:\n  include: [everywhere]\n" });
+  writeFileSync(join(s.home, ".claude.json"), JSON.stringify({ numStartups: 1 }));
+  mkdirSync(join(s.home, LOCK));
+  // Stands in for a running Claude: it holds the lock, saves, then lets go.
+  const claude = spawn(process.execPath, ["-e", `
+    const fs = require("node:fs");
+    setTimeout(() => {
+      fs.writeFileSync(${JSON.stringify(join(s.home, ".claude.json"))}, JSON.stringify({ numStartups: 2 }));
+      fs.rmdirSync(${JSON.stringify(join(s.home, LOCK))});
+    }, 800);`]);
+  const r = s.run(["apply"]);
+  claude.kill();
+  assert.equal(r.code, EXIT.ok, r.stderr);
+  assert.deepEqual(s.readJson(".claude.json"), { numStartups: 2, mcpServers: { everywhere: { type: "http", url: "https://a.example.com" } } });
+  assert.equal(existsSync(join(s.home, LOCK)), false);
+});
+
+test("a lock Claude still holds after the wait stops apply with a message, and the file is not written", () => {
+  const s = setup({ catalog: BOTH, host: "mcp:\n  include: [everywhere]\n" });
+  writeFileSync(join(s.home, ".claude.json"), JSON.stringify({ numStartups: 1 }));
+  mkdirSync(join(s.home, LOCK));
+  const r = s.run(["apply"]);
+  assert.notEqual(r.code, EXIT.ok);
+  assert.match(r.stderr, /~\/\.claude\.json is locked by a running Claude; apply again in a moment/);
+  assert.deepEqual(s.readJson(".claude.json"), { numStartups: 1 });
+  assert.equal(existsSync(join(s.home, LOCK)), true, "a lock that is not fleet's is left alone");
+});
+
+test("a lock left behind by a Claude that died is cleared, and apply goes on", () => {
+  const s = setup({ catalog: BOTH, host: "mcp:\n  include: [everywhere]\n" });
+  mkdirSync(join(s.home, LOCK));
+  const old = new Date(Date.now() - 60_000);
+  utimesSync(join(s.home, LOCK), old, old);
+  const r = s.run(["apply"]);
+  assert.equal(r.code, EXIT.ok, r.stderr);
+  assert.deepEqual(s.readJson(".claude.json").mcpServers, { everywhere: { type: "http", url: "https://a.example.com" } });
+  assert.equal(existsSync(join(s.home, LOCK)), false);
 });

@@ -29,11 +29,7 @@ function claude(): number {
   if (group !== "mcp" || scope !== "--scope" || user !== "user" || name === undefined) return 2;
   const doc = existsSync(file) ? JSON.parse(readFileSync(file, "utf8")) : {};
   doc.mcpServers ??= {};
-  if (verb === "add-json" && json !== undefined) {
-    const entry = JSON.parse(json);
-    // Like the real tool, store the defaults the caller left out.
-    doc.mcpServers[name] = entry.type === "stdio" ? { type: "stdio", command: entry.command, args: entry.args ?? [], env: entry.env ?? {} } : entry;
-  } else if (verb === "remove") {
+  if (verb === "remove") {
     if (!(name in doc.mcpServers)) {
       console.error(`No MCP server found with name: ${name}`);
       return 1;

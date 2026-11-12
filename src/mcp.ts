@@ -5,7 +5,7 @@ import { fillVars, hasSecretRef } from "./template.ts";
 import { isObject, isStringList, parseFile } from "./yamlfile.ts";
 import type { Obj } from "./yamlfile.ts";
 
-/** Where Claude keeps its user-scope servers. Fleet reads it and never writes it: `claude mcp` does. */
+/** Where Claude keeps its user-scope servers. Fleet writes its entries holding Claude's lock; see `claudemcp.ts`. */
 export const CLAUDE_JSON = "~/.claude.json";
 
 const SERVER_PATH: Record<Tool, string> = { claude: "mcpServers", opencode: "mcp" };
