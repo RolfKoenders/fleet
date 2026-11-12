@@ -4,6 +4,8 @@ What changed in fleet, newest first. Each version lists what you can do now, wha
 
 ## Unreleased
 
+## 2.2.0 - 2026-11-12
+
 ### Security
 
 - `fleet apply` no longer puts a Claude MCP server's decrypted secrets on a command line. It used to add a server with `claude mcp add-json`, which takes the whole entry as an argument, and any user on the host could read that from the process list while it ran. Fleet now writes the entry into `~/.claude.json` itself, holding the same `~/.claude.json.lock` Claude takes around its own writes, so a running Claude session neither loses fleet's entry nor has its own save lost. Removing a server still uses `claude mcp remove`, which carries no secret.
