@@ -1,5 +1,6 @@
 import { join } from "node:path";
 import { isObject, isStringList, parseFile } from "./yamlfile.ts";
+import type { Overlay } from "./yamlfile.ts";
 import type { Obj } from "./yamlfile.ts";
 
 export type Source = {
@@ -84,10 +85,10 @@ function parseSource(at: string, name: string, raw: unknown, problems: string[])
  * Reads and checks `catalog/skills.yaml`. A missing file is an empty catalog. Checks that need
  * no clone: shapes, reserved names, and a skill listed in two bundles.
  */
-export function parseCatalog(configDir: string, problems: string[]): Catalog {
+export function parseCatalog(configDir: string, problems: string[], overlay?: Overlay): Catalog {
   const path = join(configDir, "catalog/skills.yaml");
   const empty: Catalog = { sources: [], bundles: new Map() };
-  const doc = parseFile(path, true, problems);
+  const doc = parseFile(path, true, problems, overlay);
   if (doc === null) return empty;
 
   for (const key of Object.keys(doc)) {

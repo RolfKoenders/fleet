@@ -14,7 +14,7 @@ import { readPin } from "./pin.ts";
 import { probedNode } from "./tools.ts";
 import { fillVars, hasSecretRef, secretNames } from "./template.ts";
 import { isObject, isStringList, parseFile } from "./yamlfile.ts";
-import type { Obj } from "./yamlfile.ts";
+import type { Obj, Overlay } from "./yamlfile.ts";
 
 export class InvalidConfigError extends Error {
   readonly problems: string[];
@@ -48,6 +48,8 @@ export type LoadOptions = {
   home?: string;
   /** `apply` puts skill sources in place; `diff` and `validate` only clone missing ones; `offline` clones nothing; `none` leaves them alone and skips skills. */
   sources?: SourceMode | "none";
+  /** Texts for config files, keyed by repo-relative path (`hosts/laptop.yaml`), read instead of the files on disk. */
+  overlay?: Readonly<Record<string, string>>;
 };
 
 type UnresolvedRecord = { source: string; target: string };
@@ -186,10 +188,11 @@ export function loadConfig(configDir: string, host: string, options: LoadOptions
   const problems: string[] = [];
   const defaultsPath = join(configDir, "hosts/_defaults.yaml");
   const hostPath = join(configDir, "hosts", `${host}.yaml`);
-  const defaults = parseFile(defaultsPath, true, problems);
-  const own = parseFile(hostPath, false, problems);
-  const catalog = parseCatalog(configDir, problems);
-  readPin(configDir, problems);
+  const overlay: Overlay | undefined = options.overlay && { root: configDir, files: options.overlay };
+  const defaults = parseFile(defaultsPath, true, problems, overlay);
+  const own = parseFile(hostPath, false, problems, overlay);
+  const catalog = parseCatalog(configDir, problems, overlay);
+  readPin(configDir, problems, overlay);
 
   const empty: Checked = { records: [], declared: [], vars: {} };
   const checkedDefaults = defaults ? checkFile(defaultsPath, defaults, false, problems) : empty;
@@ -201,7 +204,7 @@ export function loadConfig(configDir: string, host: string, options: LoadOptions
     return { ...key, value };
   });
 
-  const servers = parseMcpCatalog(configDir, problems);
+  const servers = parseMcpCatalog(configDir, problems, overlay);
   for (const [path, doc, key] of [[defaultsPath, defaults, "include"], [defaultsPath, defaults, "exclude"], [hostPath, own, "include"], [hostPath, own, "exclude"]] as const) {
     for (const name of mcpListOf(doc, key)) {
       if (!servers.has(name)) problems.push(`${path}: 'mcp.${key}' names server '${name}', which is not in catalog/mcp.yaml`);
