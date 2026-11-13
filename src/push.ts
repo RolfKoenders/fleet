@@ -6,6 +6,7 @@ import { failure } from "./apply.ts";
 import { eventsOn, readLine, send } from "./events.ts";
 import { parseCatalog } from "./catalog.ts";
 import { loadConfig } from "./config.ts";
+import { acquirePushLock, LockedError } from "./lock.ts";
 import { repoState, runGit, UnreachableError } from "./git.ts";
 import { readHostName } from "./host.ts";
 import { paint } from "./output.ts";
@@ -236,7 +237,40 @@ function render(records: HostRecord[], color: boolean): string {
   return lines.join("\n");
 }
 
-export async function push(toolDir: string, configDir: string, message: string | undefined, color: boolean, home: string = homedir()): Promise<Result> {
+/**
+ * Runs `work` holding the push lock, so that only one push runs at a time, whoever starts it. A second one is
+ * refused at once ("locked"), never queued. The lock is let go on every way out, ctrl-c and a terminate included.
+ * `fleet push --host` must go through this too.
+ */
+export async function whileHoldingPushLock(home: string, work: () => Promise<Result>): Promise<Result> {
+  let release: () => void;
+  try {
+    release = acquirePushLock(home);
+  } catch (error) {
+    if (error instanceof LockedError) return { code: "locked", messages: [`fleet: ${error.message}`] };
+    throw error;
+  }
+  const leave = (code: number) => () => {
+    release();
+    process.exit(code);
+  };
+  const [onInt, onTerm] = [leave(130), leave(143)];
+  process.on("SIGINT", onInt);
+  process.on("SIGTERM", onTerm);
+  try {
+    return await work();
+  } finally {
+    process.off("SIGINT", onInt);
+    process.off("SIGTERM", onTerm);
+    release();
+  }
+}
+
+export function push(toolDir: string, configDir: string, message: string | undefined, color: boolean, home: string = homedir()): Promise<Result> {
+  return whileHoldingPushLock(home, () => pushLocked(toolDir, configDir, message, color, home));
+}
+
+async function pushLocked(toolDir: string, configDir: string, message: string | undefined, color: boolean, home: string): Promise<Result> {
   const events = eventsOn();
   try {
     send({ event: "stage", stage: "validate" });

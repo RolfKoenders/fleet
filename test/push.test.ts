@@ -455,3 +455,52 @@ test("the document shape: ok, code, host and one record per host", () => {
     { host: "server", result: "timer", changes: 0, conflicts: [] },
   ]);
 });
+
+const PUSH_LOCK = ".local/state/fleet/push.lock";
+const holdPushLock = (home: string, pid: number | string) => {
+  mkdirSync(join(home, PUSH_LOCK), { recursive: true });
+  writeFileSync(join(home, PUSH_LOCK, "pid"), `${pid}\n`);
+};
+
+test("a push is refused at once while another push holds the lock, and touches nothing", () => {
+  const s = setup({ hosts: { server: "alice@server" }, ssh: { "alice@server": OK } });
+  s.write("notes.md", "one\n");
+  const before = s.remoteHead();
+  holdPushLock(s.home, process.pid);
+  const { r, doc } = s.json();
+  assert.equal(r.code, EXIT.locked, r.stderr);
+  assert.equal(doc.code, "locked");
+  assert.equal(doc.ok, false);
+  assert.match(r.stderr, new RegExp(`a push is already running \\(pid ${process.pid}\\)`));
+  assert.equal(s.remoteHead(), before);
+  assert.deepEqual(s.sshCalls(), []);
+  assert.equal(readFileSync(join(s.home, PUSH_LOCK, "pid"), "utf8"), `${process.pid}\n`, "the holder's lock is left alone");
+  const plain = s.run();
+  assert.equal(plain.code, EXIT.locked);
+  assert.match(plain.stderr, /a push is already running/);
+});
+
+test("the apply lock does not stop a push", () => {
+  const s = setup();
+  mkdirSync(join(s.home, ".local/state/fleet/lock"), { recursive: true });
+  writeFileSync(join(s.home, ".local/state/fleet/lock/pid"), `${process.pid}\n`);
+  // The push applies here as its own apply, which the held apply lock refuses; the push itself was not refused.
+  assert.doesNotMatch(s.run().stderr, /a push is already running/);
+});
+
+test("a push lock left by a process that is gone is taken over, and the lock is gone after the push", () => {
+  const s = setup();
+  holdPushLock(s.home, 2 ** 22 + 12345);
+  const r = s.run();
+  assert.equal(r.code, EXIT.ok, r.stderr);
+  assert.equal(existsSync(join(s.home, PUSH_LOCK)), false);
+});
+
+test("the push lock is gone after a push that fails, and after one whose config does not load", () => {
+  const s = setup({ hosts: { server: "alice@server" }, ssh: { "alice@server": UNREACHABLE } });
+  assert.equal(s.run().code, EXIT.unreachable);
+  assert.equal(existsSync(join(s.home, PUSH_LOCK)), false);
+  s.write("hosts/laptop.yaml", "nonsense: true\n");
+  assert.equal(s.run().code, EXIT.invalid);
+  assert.equal(existsSync(join(s.home, PUSH_LOCK)), false);
+});

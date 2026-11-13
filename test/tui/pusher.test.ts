@@ -111,3 +111,14 @@ test("the preview flags the plaintext secrets that would be committed, among all
   assert.deepEqual([...repo.flagged].sort(), [".env.production".replace(/^/, "zz/"), "deploy.key"].sort());
   assert.ok(repo.files.length <= 200, "the list is cut but the flags are not");
 });
+
+test("a push refused because another holds the lock ends with the refusal, for the push screen to show", async () => {
+  const w = world({}, {});
+  mkdirSync(join(w.home, ".local/state/fleet/push.lock"), { recursive: true });
+  writeFileSync(join(w.home, ".local/state/fleet/push.lock/pid"), `${process.pid}\n`);
+  const end = await w.pusher.run(() => {});
+  assert.equal(end.code, "locked");
+  assert.equal(end.exit, 7);
+  assert.deepEqual(end.messages, [`fleet: a push is already running (pid ${process.pid})`]);
+  assert.equal(w.pusher.running(), null);
+});
