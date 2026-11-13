@@ -79,7 +79,7 @@ test("site changelog: the landing page links Compare and What's new, and has no 
   for (const id of ["compare", "whats-new"]) assert.match(index, new RegExp(`<section class="${id}" id="${id}">`));
   assert.doesNotMatch(index, /id="push-live"/);
   assert.doesNotMatch(index, /never does/i);
-  for (const text of [index, read("site/changelog/index.html"), read("site/style.css")]) assert.doesNotMatch(text, /—/);
+  for (const text of [index, read("site/changelog/index.html"), read("site/style.css")]) assert.doesNotMatch(text, /\u2014/);
 });
 
 test("site: a headline ends at the first full stop outside code and quotes", () => {
