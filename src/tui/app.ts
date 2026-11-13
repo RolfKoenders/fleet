@@ -6,9 +6,11 @@ import type { StatusFields } from "../status.ts";
 import type { ContextReport } from "../context.ts";
 import type { HostContext } from "../contextall.ts";
 import type { PreviewResult, Pusher } from "./pusher.ts";
+import { advanceReplay, startReplay, versus } from "../journal.ts";
+import type { JournalEntry, Replay, StoredJournal } from "../journal.ts";
 import { finish, reduce, startRun } from "../pushrun.ts";
 import type { PushEnd, PushRun } from "../pushrun.ts";
-import { CONFIRM_WORD, MESSAGE_MAX, pickedLane, pushBlock } from "./views/push.ts";
+import { CONFIRM_WORD, MESSAGE_MAX, pickedLane, pushBlock, replayOver } from "./views/push.ts";
 import { homeLayout } from "./layout.ts";
 import { items, search } from "./palette.ts";
 import type { Action, Screen } from "./palette.ts";
@@ -64,6 +66,14 @@ export type PushState =
   /** `selected` is the lane picked with the arrows, null to follow the host being applied; `notice` is why the last key did nothing. */
   | { phase: "running" | "finished"; run: PushRun; selected: number | null; notice: string | null };
 
+/** The push history, opened with `h` on the push screen: the list of recorded pushes, or one of them being replayed. */
+export type JournalView =
+  | { phase: "closed" }
+  /** `entries` is null while they are being read. */
+  | { phase: "list"; entries: JournalEntry[] | null; selected: number }
+  /** `loading` is the file being read for a replay. `lane` is the host picked with the arrows, null to follow the one being applied. */
+  | { phase: "replay"; entries: JournalEntry[]; selected: number; replay: Replay | null; lane: number | null };
+
 export type TimelineLive = {
   phase: "loading" | "done";
   history: History | null;
@@ -101,6 +111,9 @@ export type State = {
   plain: boolean;
   conflicts: ConflictsLive;
   push: PushState;
+  journal: JournalView;
+  /** How much faster (negative: slower) the push that just ended was than the last one of its scope, or null. */
+  versus: number | null;
   doctor: DoctorLive;
   /** Counts the reviews, so the answer to an old one is ignored. */
   reviews: number;
@@ -121,6 +134,9 @@ export type Msg =
   | { type: "doctor"; gen: number; result: DoctorResult }
   | { type: "push"; event: FleetEvent }
   | { type: "pushEnd"; end: PushEnd }
+  | { type: "versus"; delta: number | null }
+  | { type: "journals"; entries: JournalEntry[] }
+  | { type: "replay"; file: string; stored: StoredJournal | null }
   | { type: "history"; result: History }
   | { type: "commitDiff"; sha: string; result: CommitDiff }
   | { type: "secrets"; view: SecretsView }
@@ -187,9 +203,15 @@ export function createApp(options: Options): App<State, Msg> {
   };
   // The one place a push starts. It is the real `fleet push`; its events come back as messages.
   const startPush = (message: string, host?: string): Cmd<Msg> => async ({ send }) => {
+    const since = Date.now();
     const end = await pusher!.run((event) => send({ type: "push", event }), message === "" ? undefined : message, host);
     send({ type: "pushEnd", end });
+    // The push wrote its journal before it ended, so the newest one is this push.
+    send({ type: "versus", delta: versus(pusher?.journal?.list() ?? [], since) });
   };
+
+  const askJournals: Cmd<Msg> = async ({ send }) => send({ type: "journals", entries: pusher?.journal?.list() ?? [] });
+  const askReplay = (file: string): Cmd<Msg> => async ({ send }) => send({ type: "replay", file, stored: pusher?.journal?.read(file) ?? null });
 
   // The one place doctor is asked. It starts real servers, so it is only reached from the confirmation.
   const askDoctor = (gen: number, all: boolean): Cmd<Msg> => async ({ send, signal }) => {
@@ -241,7 +263,7 @@ export function createApp(options: Options): App<State, Msg> {
       // Enter in the message box only moves on to the word. Whatever is typed there is a message, never the word.
       if (field === "message") return [{ ...state, push: { ...p, focus: "confirm" } }, []];
       if (p.typed !== CONFIRM_WORD || pusher === undefined || pushBlock(p) !== null) return [state, []];
-      return [{ ...state, push: { phase: "running", run: startRun(model.hosts, state.now), selected: null, notice: null } }, [startPush(p.message.trim())]];
+      return [{ ...state, push: { phase: "running", run: startRun(model.hosts, state.now), selected: null, notice: null }, versus: null }, [startPush(p.message.trim())]];
     }
     return [state, []];
   }
@@ -263,13 +285,34 @@ export function createApp(options: Options): App<State, Msg> {
       if (p.phase === "running") return note("a push is running; r runs one host once it is over");
       if (pusher === undefined) return note("pushing is not offered in this view");
       if (info === undefined || (!info.self && info.ssh === null)) return note(`${lane.host} has no ssh destination; it applies on its own timer`);
-      return [{ ...state, push: { phase: "running", run: startRun(model.hosts.filter((h) => h.name === lane.host), state.now), selected: null, notice: null } }, [startPush("", lane.host)]];
+      return [{ ...state, push: { phase: "running", run: startRun(model.hosts.filter((h) => h.name === lane.host), state.now), selected: null, notice: null }, versus: null }, [startPush("", lane.host)]];
     }
     if (ch === "f") {
       if (lane.result !== "conflict") return note(`${lane.host} has no conflict to open`);
       return [{ ...state, screen: "conflicts", conflicts: { ...state.conflicts, first: lane.host, selected: 0 } }, []];
     }
     return null;
+  }
+
+  /**
+   * `h` on the push screen opens the history of pushes this host recorded; enter replays the one selected, esc goes back.
+   * While it is open it takes the keys of the push behind it, so none of them starts anything.
+   */
+  function onJournal(state: State, key: Key): [State, Cmd<Msg>[]] | null {
+    const j = state.journal;
+    const ch = key.ctrl || key.alt ? undefined : key.text;
+    if (j.phase === "closed") return ch === "h" && state.push.phase !== "review" ? [{ ...state, journal: { phase: "list", entries: null, selected: 0 } }, [askJournals]] : null;
+    if (key.name === "escape") return [{ ...state, journal: j.phase === "replay" ? { phase: "list", entries: j.entries, selected: j.selected } : { phase: "closed" } }, []];
+    const d = key.name === "down" || ch === "j" ? 1 : key.name === "up" || ch === "k" ? -1 : 0;
+    if (j.phase === "list") {
+      if (j.entries === null) return [state, []];
+      if (d !== 0) return [{ ...state, journal: { ...j, selected: clamp(j.selected + d, 0, Math.max(0, j.entries.length - 1)) } }, []];
+      const entry = j.entries[j.selected];
+      if (key.name === "enter" && entry !== undefined) return [{ ...state, journal: { phase: "replay", entries: j.entries, selected: j.selected, replay: null, lane: null } }, [askReplay(entry.file)]];
+    } else if (d !== 0 && j.replay !== null) {
+      return [{ ...state, journal: { ...j, lane: clamp(pickedLane(replayOver(j.replay, j.lane)) + d, 0, Math.max(0, j.replay.run.lanes.length - 1)) } }, []];
+    }
+    return ch === "r" || ch === "f" || ch === "P" || ch === "h" ? [state, []] : null;
   }
 
   const askHistory: Cmd<Msg> = async ({ send, signal }) => send({ type: "history", result: await probe.history(signal) });
@@ -496,7 +539,7 @@ export function createApp(options: Options): App<State, Msg> {
     if (ch === ":" || ch === "/") return [{ ...state, overlay: { kind: "palette", query: "", selected: 0 } }, []];
     if (ch === "q") return leave(state);
     if (state.screen === "push") {
-      const handled = onRun(state, key);
+      const handled = onJournal(state, key) ?? onRun(state, key);
       if (handled !== null) return handled;
     }
     if (ch === "P") return review(state);
@@ -561,6 +604,8 @@ export function createApp(options: Options): App<State, Msg> {
         plain: options.plain === true,
         conflicts: { phase: "loading", items: [], detail: null, selected: 0, remote: {}, first: asked >= 0 ? options.host! : null },
         push: { phase: "idle" },
+        journal: { phase: "closed" },
+        versus: null,
         doctor: { phase: "idle", gen: 0, scope: "all", result: null },
         reviews: 0,
         timeline: { phase: "loading", history: null, selected: 0, diffs: {}, scroll: 0 },
@@ -588,7 +633,8 @@ export function createApp(options: Options): App<State, Msg> {
             // Skip the animation when the terminal cannot keep up with it.
             if (message.now - boot.start >= BOOT_MS || message.late > LAG_MS) boot.done = true;
           }
-          return [{ ...state, now: message.now, boot }, []];
+          const journal = state.journal.phase === "replay" && state.journal.replay !== null ? { ...state.journal, replay: advanceReplay(state.journal.replay, message.now) } : state.journal;
+          return [{ ...state, now: message.now, boot, journal }, []];
         }
         case "host": {
           const current = state.live[message.host];
@@ -654,6 +700,19 @@ export function createApp(options: Options): App<State, Msg> {
           const [next, cmds] = refresh({ ...state, overlay: state.overlay?.kind === "leave" ? null : state.overlay, push: { ...state.push, phase: "finished", run: finish(state.push.run, message.end, state.now) } });
           return [next, cmds];
         }
+        case "versus":
+          return [{ ...state, versus: state.push.phase === "finished" ? message.delta : null }, []];
+        case "journals": {
+          if (state.journal.phase !== "list") return [state, []];
+          return [{ ...state, journal: { ...state.journal, entries: message.entries, selected: 0 } }, []];
+        }
+        case "replay": {
+          const j = state.journal;
+          if (j.phase !== "replay" || j.replay !== null || j.entries[j.selected]?.file !== message.file) return [state, []];
+          // A file that cannot be read goes back to the list.
+          if (message.stored === null) return [{ ...state, journal: { phase: "list", entries: j.entries, selected: j.selected } }, []];
+          return [{ ...state, journal: { ...j, replay: advanceReplay(startReplay(message.stored, state.now), state.now) } }, []];
+        }
         case "history": {
           const t = state.timeline;
           const n = message.result.ok ? message.result.commits.length : 0;
@@ -675,7 +734,7 @@ export function createApp(options: Options): App<State, Msg> {
     tick(state) {
       if (!state.boot.done) return 33;
       const loading = Object.values(state.live).some((l) => l.phase === "loading") || Object.values(state.contexts).some((l) => l.phase === "loading") || state.conflicts.phase === "loading" || state.timeline.phase === "loading" || state.secrets.phase === "loading" || state.catalog.phase === "loading";
-      const pushing = state.push.phase === "running" || state.doctor.phase === "running" || (state.push.phase === "review" && state.push.preview === null);
+      const pushing = state.push.phase === "running" || (state.journal.phase === "replay" && state.journal.replay?.over !== true) || state.doctor.phase === "running" || (state.push.phase === "review" && state.push.preview === null);
       return (loading || pushing) && state.motion ? 80 : 1000;
     },
   };

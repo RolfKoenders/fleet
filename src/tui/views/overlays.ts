@@ -24,6 +24,7 @@ const HELP: [string, string][] = [
   ["enter", "home: open in matrix; matrix: show skills"],
   ["ctrl-k  :", "command palette"],
   ["P", "review a push, then type push to run it"],
+  ["h", "push screen: the pushes this host recorded; enter replays one"],
   ["r", "ask every host again"],
   ["d", "doctor: ask each MCP server if it works (asks first; fills the matrix)"],
   ["c", "home: go to conflicts"],

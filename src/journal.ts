@@ -196,3 +196,14 @@ export function advanceReplay(replay: Replay, now: number): Replay {
   if (next < events.length || now < replay.startedAt + header.ms) return { ...replay, run, next };
   return { ...replay, run: finish(run, endOf(header), replay.startedAt + header.ms), next, over: true };
 }
+
+/**
+ * How much faster (positive, ms) or slower (negative) the push that began at `since` (a wall-clock ms) was than the
+ * last one of its scope, or null: when it left no journal (it could not be written), or there is nothing to compare with.
+ */
+export function versus(entries: JournalEntry[], since: number): number | null {
+  const current = entries[0];
+  if (current === undefined || Date.parse(current.header.time) < since) return null;
+  const last = comparable(entries, current);
+  return last === null ? null : last.header.ms - current.header.ms;
+}

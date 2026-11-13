@@ -11,6 +11,7 @@ import { drawConflicts } from "./conflicts.ts";
 import { drawContext } from "./context.ts";
 import { drawHome } from "./home.ts";
 import { drawMatrix } from "./matrix.ts";
+import { drawHistory } from "./journal.ts";
 import { drawPush, pickedLane } from "./push.ts";
 import { drawSecrets } from "./secrets.ts";
 import { drawTimeline } from "./timeline.ts";
@@ -36,7 +37,9 @@ function baseHints(state: State): Hint[] {
     case "home":
       return [[homeLayout(state.size).mode === "cards" ? "←↑↓→" : "↑↓", "select"], ["enter", "matrix"], ["r", "refresh"], ["d", "doctor"], ["P", "push"], ...COMMON];
     case "push":
-      return [...pushHints(state), ["P", state.push.phase === "running" ? "watch" : "review a push"], ["esc", "home"], ...COMMON];
+      if (state.journal.phase === "list") return [["↑↓", "select"], ["enter", "replay"], ["esc", "back"], ...COMMON];
+      if (state.journal.phase === "replay") return [["↑↓", "host"], ["esc", "back"], ...COMMON];
+      return [...pushHints(state), ["h", "history"], ["P", state.push.phase === "running" ? "watch" : "review a push"], ["esc", "home"], ...COMMON];
     case "matrix":
       return [["←↑↓→", "move"], ["enter", "skills"], ["d", "doctor"], ["r", "refresh"], ...COMMON];
     case "conflicts":
@@ -77,7 +80,7 @@ export function drawApp(state: State, c: Canvas): void {
   const body = c.sub(0, BODY_TOP, c.w, bodyHeight(state.size));
   if (state.screen === "home") drawHome(body, state);
   else if (state.screen === "matrix") drawMatrix(body, state);
-  else if (state.screen === "push") drawPush(body, state);
+  else if (state.screen === "push") (state.journal.phase === "list" ? drawHistory : drawPush)(body, state);
   else if (state.screen === "conflicts") drawConflicts(body, state);
   else if (state.screen === "timeline") drawTimeline(body, state);
   else if (state.screen === "secrets") drawSecrets(body, state);
