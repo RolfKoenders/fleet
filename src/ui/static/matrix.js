@@ -3,7 +3,10 @@
 
 /**
  * @typedef {{ on: boolean, picked: "defaults" | "host" | "both" | null, excluded: "defaults" | "host" | "both" | null }} Cell
- * @typedef {{ op: "add" | "remove", host: string, kind: "bundles" | "mcp", name: string }} Op
+ * @typedef {{ op: "add" | "remove", host: string, kind: "bundles" | "mcp", name: string }} PickOp
+ * @typedef {{ op: "addServer" | "addSource", name: string, entry: Record<string, any> }} EntryOp
+ * @typedef {{ op: "addBundle", name: string, skills: string[] }} BundleOp
+ * @typedef {PickOp | EntryOp | BundleOp} Op
  * @typedef {{ skills: { added: string[], removed: string[] }, servers: { added: string[], removed: string[] } }} PickChange
  */
 
@@ -23,7 +26,10 @@ export function cellState(cell) {
 /** The mark and the word a cell shows. @type {Record<CellState, [string, string]>} */
 export const WORDS = { defaults: ["✓", "default"], added: ["+", "added"], excluded: ["✕", "excluded"], off: ["·", "off"] };
 
-const same = (/** @type {Op} */ a, /** @type {Op} */ b) => a.host === b.host && a.kind === b.kind && a.name === b.name;
+/** @param {Op} o @returns {o is PickOp} */
+export const isPick = (o) => o.op === "add" || o.op === "remove";
+
+const same = (/** @type {Op} */ a, /** @type {PickOp} */ b) => isPick(a) && a.host === b.host && a.kind === b.kind && a.name === b.name;
 
 /**
  * What a click on a cell does to the held edits. A cell with an edit held has it taken back; otherwise the smallest edit
@@ -36,9 +42,10 @@ const same = (/** @type {Op} */ a, /** @type {Op} */ b) => a.host === b.host && 
  * @returns {Op[]}
  */
 export function clickCell(ops, host, kind, name, base) {
-  const target = { host, kind, name };
-  if (ops.some((o) => same(o, /** @type {Op} */ (target)))) return ops.filter((o) => !same(o, /** @type {Op} */ (target)));
-  return [...ops, { op: base?.on ? "remove" : "add", ...target }];
+  /** @type {PickOp} */
+  const target = { op: base?.on ? "remove" : "add", host, kind, name };
+  if (ops.some((o) => same(o, target))) return ops.filter((o) => !same(o, target));
+  return [...ops, target];
 }
 
 /** @param {string[]} names @param {string} one @param {string} many */
@@ -60,21 +67,32 @@ export function summaryLine(c) {
 }
 
 /** An edit in words, for the list of edits that no longer apply. @param {Op} op */
-export const opLabel = (op) => `${op.op === "add" ? "give" : "take"} ${op.kind === "bundles" ? "bundle" : "server"} ${op.name} ${op.op === "add" ? "to" : "from"} ${op.host}`;
+export function opLabel(op) {
+  if (isPick(op)) return `${op.op === "add" ? "give" : "take"} ${op.kind === "bundles" ? "bundle" : "server"} ${op.name} ${op.op === "add" ? "to" : "from"} ${op.host}`;
+  if (op.op === "addServer") return `add server ${op.name} to the catalog`;
+  if (op.op === "addSource") return `add skill source ${op.name} to the catalog`;
+  return `add bundle ${op.name} to the catalog`;
+}
 
 const list = (/** @type {string[]} */ names) => (names.length <= 2 ? names.join(" and ") : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`);
 
 /**
- * A commit message from the edits: `Give box extra and tracker; take docs from server`. A long one falls back to a count.
+ * A commit message from the edits: `Add server linear; give box linear`, `Give box extra and tracker; take docs from server`.
+ * A long one falls back to a count.
  * @param {Op[]} ops
  */
 export function suggestMessage(ops) {
   if (ops.length === 0) return "";
   /** @type {string[]} */
   const parts = [];
-  const hosts = [...new Set(ops.map((o) => o.host))];
+  for (const [op, word] of /** @type {const} */ ([["addServer", "server"], ["addSource", "skill source"], ["addBundle", "bundle"]])) {
+    const names = ops.filter((o) => o.op === op).map((o) => o.name);
+    if (names.length > 0) parts.push(`add ${word}${names.length === 1 ? "" : "s"} ${list(names)}`);
+  }
+  const picks = ops.filter(isPick);
+  const hosts = [...new Set(picks.map((o) => o.host))];
   for (const host of hosts) {
-    const mine = ops.filter((o) => o.host === host);
+    const mine = picks.filter((o) => o.host === host);
     const gives = mine.filter((o) => o.op === "add").map((o) => o.name);
     const takes = mine.filter((o) => o.op === "remove").map((o) => o.name);
     if (gives.length > 0) parts.push(`give ${host} ${list(gives)}`);
@@ -82,7 +100,11 @@ export function suggestMessage(ops) {
   }
   const text = parts.join("; ");
   const message = text.charAt(0).toUpperCase() + text.slice(1);
-  return message.length <= 72 ? message : `Change what ${hosts.length} host${hosts.length === 1 ? "" : "s"} get${hosts.length === 1 ? "s" : ""}`;
+  if (message.length <= 72) return message;
+  const added = ops.length - picks.length;
+  const catalog = added === 0 ? "" : `Add ${added} catalog entr${added === 1 ? "y" : "ies"}`;
+  const changed = hosts.length === 0 ? "" : `change what ${hosts.length} host${hosts.length === 1 ? "" : "s"} get${hosts.length === 1 ? "s" : ""}`;
+  return catalog === "" ? `Change${changed.slice("change".length)}` : changed === "" ? catalog : `${catalog}; ${changed}`;
 }
 
 /**

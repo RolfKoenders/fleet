@@ -2,6 +2,7 @@
 import { ApiError, createClient, openStream } from "./api.js";
 import { changed, counts, lineDiff, splitLines, tokenize } from "./diff.js";
 import { fill, h } from "./dom.js";
+import { bundleDraft, checkLines, cloneKey, confirmText, opWarnings, secretOf, secretsOf, serverDraft, skillChoices, sourceDraft, takeBack } from "./catalog.js";
 import { blockers, cellState, clickCell, opLabel, suggestMessage, summaryLine, WORDS } from "./matrix.js";
 import { heldFiles, idlePush, pushEnd, pushEvent, routeOf, statusView, tokenOf } from "./state.js";
 
@@ -26,7 +27,8 @@ $("local").textContent = `${location.host} · only this machine`;
  *   base: any, ops: Op[], preview: any, held: Held, focus: string | null, expanded: Set<string>,
  *   plan: { key: string, doc: any, error: string | null } | null,
  *   message: string, messageEdited: boolean, secrets: any, secretsError: string | null,
- *   push: PushState, pushError: string | null, link: "connecting" | "live" | "reconnecting"
+ *   push: PushState, pushError: string | null, link: "connecting" | "live" | "reconnecting",
+ *   skills: { name: string, source: string, bundle: string | null }[], stagedSkills: Record<string, string[]>, form: any
  * }}
  */
 const model = {
@@ -34,6 +36,7 @@ const model = {
   base: null, ops: [], preview: null, held: {}, focus: null, expanded: new Set(),
   plan: null, message: "", messageEdited: false, secrets: null, secretsError: null,
   push: idlePush(), pushError: null, link: "connecting",
+  skills: [], stagedSkills: {}, form: null,
 };
 
 const client = token === null ? null : createClient(token);
@@ -41,7 +44,7 @@ const client = token === null ? null : createClient(token);
 /** @type {Record<string, [string, string]>} */
 const SCREENS = {
   matrix: ["Matrix", "What each host gets: every skill bundle and MCP server against every host. Click a cell to give it to a host or take it away. Fleet writes the smallest change: an item the defaults give is taken away with exclude, not by editing the defaults."],
-  catalog: ["Catalog", "The MCP servers and skill bundles your hosts can pick from. Read-only for now: adding to the catalog comes later."],
+  catalog: ["Catalog", "The MCP servers, skill sources and skill bundles your hosts can pick from. Adding one here gives it to no host yet: pick it in the Matrix. An addition is held like any edit, and written when you push."],
   hosts: ["Hosts", "The hosts in this config, and how each is reached. Read-only for now."],
   secrets: ["Secrets", "Which secrets exist and which hosts can read them. Names only: a value is never read or shown."],
 };
@@ -156,7 +159,7 @@ function matrixScreen() {
         kind === "bundles"
           ? h("button", { class: "twist", "aria-expanded": String(open), title: open ? "Hide its skills" : "Show its skills", onclick: () => { open ? model.expanded.delete(row.name) : model.expanded.add(row.name); render(); } }, open ? "▾ " : "▸ ", row.name)
           : row.name,
-        h("small", {}, small),
+        h("small", {}, baseRow === undefined ? `${small} · new, held` : small),
       ),
       ...hosts.map((/** @type {any} */ host) => {
         const state = cellState(row.cells[host.name]);
@@ -246,24 +249,407 @@ function outsideNotice() {
   );
 }
 
+// ---- Catalog
+
+const CATALOG_FILE = { server: "catalog/mcp.yaml", source: "catalog/skills.yaml", bundle: "catalog/skills.yaml" };
+
+/** The words after an error: the server's own, or the fallback. @param {unknown} e @param {string} fallback */
+const said = (e, fallback) => (e instanceof ApiError ? e.messages.join("; ") || e.message : fallback);
+
+const blankServer = () => ({ name: "", kind: "command", command: "", url: "", rows: [{ key: "", mode: "secret", value: "" }], claude: true, opencode: true });
+const blankSource = () => ({ name: "", repo: "", path: ".", branch: "", mode: "pin", review: true });
+
+/** @param {"server" | "source" | "bundle"} kind */
+const freshForm = (kind) => ({ kind, server: blankServer(), source: blankSource(), bundle: { name: "", picked: [], extra: "" }, live: null, confirm: false, check: null, clone: { state: "idle", doc: null, error: null } });
+
+const skillOptions = () => skillChoices(model.skills, model.ops, model.stagedSkills);
+
+/** What the open form would hold, or why it cannot yet. @param {any} f */
+function draftOf(f) {
+  const view = shownMatrix();
+  if (f.kind === "server") return serverDraft(f.server, view.servers.map((/** @type {any} */ r) => r.name));
+  if (f.kind === "source") return sourceDraft(f.source, (view.sources ?? []).map((/** @type {any} */ r) => r.name), f.clone.doc);
+  return bundleDraft(f.bundle, view.bundles.map((/** @type {any} */ r) => r.name), skillOptions());
+}
+
+/** @param {"server" | "source" | "bundle"} kind */
+function openForm(kind) {
+  dropClone();
+  model.form = freshForm(kind);
+  render();
+  loadSkills();
+  loadSecrets();
+  scheduleLive();
+}
+
+function closeForm() {
+  dropClone();
+  clearTimeout(liveTimer);
+  model.form = null;
+  render();
+}
+
+/** The temp clone on the server is deleted when the form is closed, replaced or the page goes away. */
+function dropClone() {
+  const id = model.form?.clone?.doc?.id;
+  if (client !== null && id) client.discardClone(id).catch(() => {});
+}
+window.addEventListener("pagehide", dropClone);
+
+/** Something in the form changed: draw it again, and ask the server what the file would look like. */
+function edited() {
+  render();
+  scheduleLive();
+}
+
+/** @param {any} f @param {any} op */
+function stage(f, op) {
+  if (op.op === "addSource" && f.clone.doc) model.stagedSkills[op.name] = f.clone.doc.skills;
+  model.ops = [...model.ops, op];
+  model.messageEdited = false;
+  closeForm();
+  refreshPreview();
+}
+
+/** @param {Op} op */
+function unstage(op) {
+  model.ops = takeBack(model.ops, op);
+  model.messageEdited = false;
+  refreshPreview();
+}
+
+let liveTimer = 0;
+let liveSeq = 0;
+
+function scheduleLive() {
+  clearTimeout(liveTimer);
+  liveTimer = window.setTimeout(loadLive, 250);
+}
+
+/** What the file would be with the form's edit added to the held ones: the server's own replay, not a copy of its rules. */
+async function loadLive() {
+  const f = model.form;
+  if (f === null || client === null) return;
+  const d = draftOf(f);
+  if (d.op === null) {
+    f.live = null;
+    return;
+  }
+  const key = JSON.stringify(d.op);
+  const seq = ++liveSeq;
+  try {
+    const doc = await client.preview([...model.ops, d.op]);
+    if (seq !== liveSeq || model.form !== f) return;
+    f.live = { key, doc, error: null };
+  } catch (e) {
+    if (seq !== liveSeq || model.form !== f) return;
+    f.live = { key, doc: null, error: said(e, "the file could not be previewed") };
+  }
+  render();
+}
+
+async function loadSkills() {
+  if (client === null) return;
+  try {
+    model.skills = (await client.skills()).skills;
+  } catch {
+    // the list is a help: a bundle can still be made from names typed in
+  }
+  render();
+}
+
+async function lookAtRepo() {
+  const f = model.form;
+  if (f === null || client === null) return;
+  const s = f.source;
+  const key = cloneKey(s);
+  dropClone();
+  f.clone = { state: "running", doc: null, error: null };
+  render();
+  try {
+    const doc = await client.clone(s.repo.trim(), s.path.trim() || ".", s.branch.trim());
+    if (model.form !== f) return void client.discardClone(doc.id).catch(() => {});
+    f.clone = { state: "done", doc: { ...doc, key, headBranch: doc.branch }, error: null };
+  } catch (e) {
+    if (model.form !== f) return;
+    f.clone = { state: "error", doc: null, error: said(e, "the repo could not be cloned") };
+  }
+  edited();
+}
+
+async function runCheck() {
+  const f = model.form;
+  const d = f === null ? null : draftOf(f);
+  if (f === null || client === null || d === null || d.op === null || d.op.op !== "addServer") return;
+  const key = JSON.stringify(d.op);
+  f.confirm = false;
+  f.check = { key, state: "running" };
+  render();
+  try {
+    const doc = await client.probe(d.op.name, d.op.entry);
+    if (f.check?.key === key) f.check = { key, state: "done", doc };
+  } catch (e) {
+    if (f.check?.key === key) f.check = { key, state: "error", error: said(e, "the check could not run") };
+  }
+  render();
+}
+
+// -- drawing the forms
+
+/** @param {string} id @param {string} label @param {Node} control @param {Node | string | (Node | string)[] | null} [help] */
+const field = (id, label, control, help = null) => h("div", { class: "field" }, h("label", { for: id }, label), control, help === null ? null : h("div", { class: "help" }, ...[help].flat()));
+
+/** A text input that changes the form as it is typed in. @param {string} id @param {string} value @param {(v: string) => void} set @param {Record<string, string>} [extra] */
+const textInput = (id, value, set, extra = {}) =>
+  h("input", { type: "text", id, value, autocomplete: "off", spellcheck: "false", maxlength: "500", ...extra, oninput: (e) => { set(/** @type {HTMLInputElement} */ (e.target).value); edited(); } });
+
+/** @param {string[]} labels @param {string[]} values @param {string} current @param {(v: string) => void} set */
+const seg = (labels, values, current, set) =>
+  h("div", { class: "seg", role: "group" }, ...values.map((v, i) => h("button", { type: "button", class: v === current ? "on" : "", "aria-pressed": String(v === current), onclick: () => { set(v); edited(); } }, labels[i])));
+
+/** @param {string} id @param {string} label @param {boolean} checked @param {(v: boolean) => void} set @param {boolean} [disabled] */
+const check = (id, label, checked, set, disabled = false) =>
+  h("label", { class: "check", for: id }, h("input", { type: "checkbox", id, checked, disabled, onchange: (e) => { set(/** @type {HTMLInputElement} */ (e.target).checked); edited(); } }), label);
+
+/** Whether this host can read a secret: from the names the Secrets screen reads, never a value. @param {string} name */
+function secretTag(name) {
+  const entry = model.secrets?.entries?.find((/** @type {any} */ e) => e.name === name);
+  if (model.secrets === null || name === "") return null;
+  const here = entry && model.base?.self && entry.readers.includes(model.base.self);
+  return h("span", { class: "tag " + (here ? "ok" : "warn") }, here ? "set on this host" : "not set here yet");
+}
+
+/** @param {any} f */
+function serverFields(f) {
+  const s = f.server;
+  const net = s.kind !== "command";
+  const d = draftOf(f);
+  const commandProblem = !net && d.problems.find((/** @type {string} */ p) => p.includes("'command'"));
+  return [
+    field("f-name", "Name", textInput("f-name", s.name, (v) => (s.name = v)), ["How host files pick it: ", h("code", {}, `mcp.include: [${s.name.trim() || "name"}]`)]),
+    field("f-kind", "It runs", seg(["on the machine (command)", "at a URL (http)", "at a URL (sse)"], ["command", "http", "sse"], s.kind, (v) => (s.kind = v))),
+    net
+      ? field("f-url", "URL", textInput("f-url", s.url, (v) => (s.url = v), { placeholder: "where the server listens: https, then the address" }))
+      : field("f-cmd", "Command", textInput("f-cmd", s.command, (v) => (s.command = v), { placeholder: "npx -y @example/server@1.2.3" }), commandProblem ? h("span", { class: "bad" }, commandProblem) : "Pin the version. A secret can never go here: the process list shows command lines."),
+    ...d.warnings.map((w) => h("div", { class: "notice inline" }, w)),
+    h(
+      "div",
+      { class: "field" },
+      h("label", {}, net ? "Headers" : "Environment"),
+      ...s.rows.map((/** @type {any} */ r, /** @type {number} */ i) =>
+        h(
+          "div",
+          { class: "envrow" },
+          textInput(`f-ek${i}`, r.key, (v) => (r.key = v), { placeholder: net ? "Authorization" : "API_KEY", "aria-label": net ? "header name" : "variable name" }),
+          h("select", { id: `f-em${i}`, "aria-label": "kind of value", onchange: (e) => { r.mode = /** @type {HTMLSelectElement} */ (e.target).value; edited(); } }, h("option", { value: "secret", selected: r.mode === "secret" }, "a secret"), h("option", { value: "plain", selected: r.mode === "plain" }, "a plain value")),
+          textInput(`f-ev${i}`, r.value, (v) => (r.value = v), { placeholder: r.mode === "secret" ? (net ? "SECRET_NAME" : `${r.key.trim() || "SECRET_NAME"} (this variable's own name)`) : "value", "aria-label": r.mode === "secret" ? "secret name" : "value" }),
+          h("div", { class: "row tail" }, r.mode === "secret" ? secretTag(secretOf(r)) : null, h("button", { type: "button", class: "btn ghost x", title: "Remove this row", "aria-label": "remove this row", onclick: () => { s.rows.splice(i, 1); edited(); } }, "✕")),
+        ),
+      ),
+      h("button", { type: "button", class: "btn ghost small", onclick: () => { s.rows.push({ key: "", mode: "secret", value: "" }); edited(); } }, net ? "+ Add a header" : "+ Add a variable"),
+      h("div", { class: "help" }, "A secret is stored encrypted, by name. This form never sees its value: set it under Secrets."),
+    ),
+    h("div", { class: "field" }, h("label", {}, "Agents"), h("div", { class: "row" }, check("f-c", "Claude Code", s.claude, (v) => (s.claude = v)), check("f-o", "opencode", s.opencode, (v) => (s.opencode = v)))),
+  ];
+}
+
+/** @param {any} f */
+function sourceFields(f) {
+  const s = f.source;
+  const c = f.clone;
+  const fresh = c.doc !== null && c.doc.key === cloneKey(s);
+  return [
+    field("s-name", "Name", textInput("s-name", s.name, (v) => (s.name = v)), "What bundles and messages call it."),
+    field("s-repo", "Repo", textInput("s-repo", s.repo, (v) => (s.repo = v), { placeholder: "the repo URL, or a path on this machine" }), "A URL, or a path on this machine. It is cloned shallowly into a temp directory to list its skills, and the clone is deleted when you close this form."),
+    field("s-path", "Path in the repo", textInput("s-path", s.path, (v) => (s.path = v), { placeholder: "." }), "Where to look for skills: directories with a SKILL.md, at any depth. Use . for the whole repo."),
+    field("s-branch", "Branch", textInput("s-branch", s.branch, (v) => (s.branch = v), { placeholder: "the repo's default" })),
+    field("s-mode", "Keep it", seg(["pinned to a commit", "following the branch"], ["pin", "follow"], s.mode, (v) => (s.mode = v)), s.mode === "pin" ? "A pinned source moves only when you run fleet skills update, so a change upstream cannot reach your machines unreviewed." : "A followed source is on the newest commit of its branch at every apply. Use it for skills you write."),
+    s.mode === "pin" ? h("div", { class: "field" }, check("s-review", "Review what a move brings in before the pin changes (review: true)", s.review, (v) => (s.review = v))) : null,
+    h(
+      "div",
+      { class: "row" },
+      h("button", { type: "button", class: "btn", disabled: s.repo.trim() === "" || c.state === "running", onclick: lookAtRepo }, c.state === "running" ? "Cloning..." : fresh ? "Look again" : "Look at the repo"),
+      c.state === "error" ? h("span", { class: "bad" }, c.error) : null,
+    ),
+    fresh && c.doc.problem === null
+      ? h("div", { class: "found" }, h("div", { class: "muted" }, `${c.doc.skills.length} skill${c.doc.skills.length === 1 ? "" : "s"} found at ${c.doc.path}; head ${c.doc.commit.slice(0, 7)}${c.doc.headBranch ? ` on ${c.doc.headBranch}` : ""}`), h("div", { class: "row" }, ...c.doc.skills.slice(0, 40).map((/** @type {string} */ sk) => h("span", { class: "tag" }, sk))))
+      : null,
+  ];
+}
+
+/** @param {any} f */
+function bundleFields(f) {
+  const b = f.bundle;
+  const options = skillOptions();
+  return [
+    field("b-name", "Name", textInput("b-name", b.name, (v) => (b.name = v)), ["How host files pick it: ", h("code", {}, `bundles: [${b.name.trim() || "name"}]`)]),
+    h(
+      "div",
+      { class: "field" },
+      h("label", {}, "Skills"),
+      options.length === 0
+        ? h("div", { class: "help" }, "No source has been cloned here yet, so no skill is listed. Add a skill source first, or type the names below.")
+        : h("div", { class: "skills" }, ...options.map((k, i) => check(`b-s${i}`, `${k.name}${k.bundle ? ` (in ${k.bundle})` : ""}`, b.picked.includes(k.name), (v) => (b.picked = v ? [...b.picked, k.name] : b.picked.filter((/** @type {string} */ x) => x !== k.name)), k.bundle !== null))),
+    ),
+    field("b-extra", "Other skill names", textInput("b-extra", b.extra, (v) => (b.extra = v), { placeholder: "names, separated by commas" }), "For a skill in a source that is not cloned here."),
+  ];
+}
+
+/** The part of a diff around its changes, for a file too long to show whole. @param {[string, string][]} d @param {number} context */
+function nearChanges(d, context) {
+  /** @type {[string, string][]} */
+  const out = [];
+  let gap = false;
+  d.forEach(([op, line], i) => {
+    const near = d.slice(Math.max(0, i - context), i + context + 1).some(([o]) => o !== " ");
+    if (near) {
+      if (gap) out.push([" ", "..."]);
+      out.push([op, line]);
+      gap = false;
+    } else gap = true;
+  });
+  return out;
+}
+
+/** The YAML this form would add, as the server splices it into the file, or why it cannot yet. @param {any} f @param {any} d */
+function yamlPane(f, d) {
+  const path = CATALOG_FILE[/** @type {"server" | "source" | "bundle"} */ (f.kind)];
+  const head = (/** @type {Node | string} */ tag) => h("div", { class: "ph" }, path, h("span", { class: "spacer" }), tag);
+  if (d.op === null) return h("div", {}, head(h("span", { class: "tag" }, "not ready")), h("div", { class: "hint" }, "To add it:", h("ul", {}, ...d.problems.map((/** @type {string} */ p) => h("li", {}, p)))));
+  const live = f.live;
+  if (live === null || live.key !== JSON.stringify(d.op)) return h("div", {}, head(h("span", { class: "tag" }, "reading")), h("div", { class: "hint" }, "Reading the file..."));
+  if (live.error !== null) return h("div", {}, head(h("span", { class: "tag bad" }, "refused")), h("div", { class: "notice bad inset" }, live.error));
+  const doc = live.doc;
+  const dropped = doc.dropped.find((/** @type {any} */ x) => JSON.stringify(x.op) === live.key);
+  if (dropped) return h("div", {}, head(h("span", { class: "tag bad" }, "does not apply")), h("div", { class: "notice bad inset" }, dropped.reason));
+  const file = doc.files.find((/** @type {any} */ x) => x.path === path);
+  const broken = doc.checks.filter((/** @type {any} */ c) => !c.loads);
+  const before = model.held[path]?.after ?? file?.before ?? "";
+  const lines = nearChanges(lineDiff(splitLines(before), splitLines(file?.after ?? "")), 2);
+  return h(
+    "div",
+    {},
+    head(h("span", { class: "tag ok" }, f.kind === "bundle" || f.kind === "source" ? `+ added at the end of ${f.kind === "bundle" ? "bundles" : "sources"}` : "+ added at the end of servers")),
+    diffBody(lines),
+    broken.length > 0 ? h("div", { class: "notice bad inset" }, `With this, the config does not load for ${broken.map((/** @type {any} */ c) => c.host).join(", ")}: ${broken[0].problems[0] ?? ""}`) : null,
+  );
+}
+
+/** What "Check it starts" says: first the question, then the answer. @param {any} f @param {any} d */
+function probeBox(f, d) {
+  if (f.kind !== "server") return null;
+  if (f.confirm && d.op !== null) {
+    return h(
+      "div",
+      { class: "probe confirm", role: "alertdialog", "aria-label": "Confirm the check" },
+      h("div", {}, confirmText(d.op)),
+      h("div", { class: "row" }, h("button", { type: "button", class: "btn primary", onclick: runCheck }, "Run the check"), h("button", { type: "button", class: "btn ghost", onclick: () => { f.confirm = false; render(); } }, "Cancel")),
+    );
+  }
+  const c = f.check;
+  if (c !== null && d.op !== null && c.key === JSON.stringify(d.op)) {
+    if (c.state === "running") return h("div", { class: "probe" }, h("span", { class: "muted" }, "Starting it and asking for its tools..."));
+    if (c.state === "error") return h("div", { class: "probe" }, h("span", { class: "bad" }, c.error));
+    const r = checkLines(c.doc);
+    return h("div", { class: "probe" }, ...r.lines.map((l, i) => h("div", { class: i === 0 ? r.tone : "muted" }, l)));
+  }
+  return h("div", { class: "probe" }, h("span", { class: "muted" }, "Check it starts: runs fleet doctor's probe on this one server, here, before anything is pushed. It asks first."));
+}
+
+function addForm() {
+  const f = model.form;
+  const d = draftOf(f);
+  const title = { server: "Add an MCP server", source: "Add a skill source", bundle: "Add a bundle" }[/** @type {"server" | "source" | "bundle"} */ (f.kind)];
+  const fields = f.kind === "server" ? serverFields(f) : f.kind === "source" ? sourceFields(f) : bundleFields(f);
+  const warnings = f.kind === "bundle" ? d.warnings.map((/** @type {string} */ w) => h("div", { class: "notice inline" }, w)) : [];
+  return h(
+    "div",
+    { class: "panel addform", id: "addform" },
+    h("div", { class: "ph" }, title, h("span", { class: "spacer" }), h("button", { type: "button", class: "btn ghost", onclick: closeForm }, "Cancel")),
+    h(
+      "div",
+      { class: "split flush" },
+      h("div", { class: "form" }, ...fields),
+      h(
+        "div",
+        { class: "formright" },
+        yamlPane(f, d),
+        ...warnings,
+        probeBox(f, d),
+        h(
+          "div",
+          { class: "ph foot" },
+          f.kind === "server" ? h("button", { type: "button", class: "btn", disabled: d.op === null || f.confirm || f.check?.state === "running", onclick: () => { f.confirm = true; render(); } }, "Check it starts") : null,
+          h("span", { class: "spacer" }),
+          h("button", { type: "button", class: "btn primary", disabled: d.op === null, onclick: () => d.op && stage(f, d.op) }, "Stage it"),
+        ),
+      ),
+    ),
+  );
+}
+
+/** @param {"server" | "source" | "bundle"} kind @param {string} label */
+const addCard = (kind, label) => h("button", { type: "button", class: "panel card add", onclick: () => openForm(kind) }, label);
+
+/** The button that takes back a held addition. @param {Op | undefined} op */
+const heldTag = (op) => (op ? h("span", { class: "tag ok" }, "held") : null);
+const takeBackBtn = (/** @type {Op | undefined} */ op) => (op ? h("button", { type: "button", class: "btn ghost small", onclick: () => unstage(op) }, "Take back") : null);
+
+/** @param {string} kind @param {string} name @returns {Op | undefined} */
+const heldOp = (kind, name) => model.ops.find((o) => o.op === kind && o.name === name);
+
 function catalogScreen() {
   const [title, about] = SCREENS.catalog;
   if (model.base === null) return loadingOrError(title, model.matrixError);
-  const hosts = model.base.hosts;
+  const view = shownMatrix();
+  const hosts = view.hosts;
   const uses = (/** @type {any} */ row) => hosts.filter((/** @type {any} */ x) => row.cells[x.name]?.on).length;
+  const onHosts = (/** @type {any} */ row) => h("span", { class: "tag " + (uses(row) > 0 ? "ok" : "") }, `on ${uses(row)} of ${hosts.length} host${hosts.length === 1 ? "" : "s"}`);
+  const form = model.form;
+  const where = (/** @type {string} */ kind) => (form !== null && form.kind === kind ? addForm() : null);
+  const sources = view.sources ?? [];
+  const skillsOf = (/** @type {string} */ name) => [...new Set([...model.skills.filter((k) => k.source === name).map((k) => k.name), ...(model.stagedSkills[name] ?? [])])];
   return h(
     "div",
     {},
     h("h1", {}, title),
     h("p", { class: "sub" }, about),
     h("h2", {}, "MCP servers"),
-    model.base.servers.length === 0 ? h("div", { class: "panel empty" }, "No MCP servers in the catalog.") : h("div", { class: "cards" }, ...model.base.servers.map((/** @type {any} */ sv) =>
-      h("div", { class: "panel card" }, h("h3", {}, sv.name, h("span", { class: "tag" }, sv.server?.kind ?? "")), h("p", {}, serverLine(sv)), h("span", { class: "tag " + (uses(sv) > 0 ? "ok" : "") }, `on ${uses(sv)} of ${hosts.length} host${hosts.length === 1 ? "" : "s"}`)),
-    )),
+    h("div", { class: "cards" },
+      ...view.servers.map((/** @type {any} */ sv) => {
+        const op = heldOp("addServer", sv.name);
+        return h("div", { class: "panel card" }, h("h3", {}, sv.name, h("span", { class: "tag" }, sv.server?.kind ?? ""), heldTag(op)), h("p", {}, serverLine(sv)), h("div", { class: "row" }, onHosts(sv), takeBackBtn(op)));
+      }),
+      addCard("server", "+ Add an MCP server"),
+    ),
+    where("server"),
+    h("h2", {}, "Skill sources"),
+    h("div", { class: "cards" },
+      ...sources.map((/** @type {any} */ src) => {
+        const op = heldOp("addSource", src.name);
+        const skills = skillsOf(src.name);
+        return h(
+          "div",
+          { class: "panel card" },
+          h("h3", {}, src.name, h("span", { class: "tag " + (src.commit ? "info" : "ok") }, src.commit ? "pinned" : "followed"), src.review ? h("span", { class: "tag warn" }, "review") : null, heldTag(op)),
+          h("p", {}, [src.repo, src.commit ? src.commit.slice(0, 7) : null, src.commit ? `tracks ${src.track}` : src.branch].filter((x) => x).join(" · ")),
+          skills.length > 0 ? h("div", { class: "row" }, ...skills.slice(0, 12).map((/** @type {string} */ sk) => h("span", { class: "tag" }, sk)), skills.length > 12 ? h("span", { class: "muted" }, `+${skills.length - 12}`) : null) : null,
+          takeBackBtn(op),
+        );
+      }),
+      addCard("source", "+ Add a skill source"),
+    ),
+    where("source"),
     h("h2", {}, "Skill bundles"),
-    model.base.bundles.length === 0 ? h("div", { class: "panel empty" }, "No skill bundles in the catalog.") : h("div", { class: "cards" }, ...model.base.bundles.map((/** @type {any} */ b) =>
-      h("div", { class: "panel card" }, h("h3", {}, b.name), h("div", { class: "row" }, ...b.skills.map((/** @type {string} */ sk) => h("span", { class: "tag" }, sk))), h("p", {}, ""), h("span", { class: "tag " + (uses(b) > 0 ? "ok" : "") }, `on ${uses(b)} of ${hosts.length} host${hosts.length === 1 ? "" : "s"}`)),
-    )),
+    h("div", { class: "cards" },
+      ...view.bundles.map((/** @type {any} */ b) => {
+        const op = heldOp("addBundle", b.name);
+        return h("div", { class: "panel card" }, h("h3", {}, b.name, heldTag(op)), h("div", { class: "row" }, ...b.skills.map((/** @type {string} */ sk) => h("span", { class: "tag" }, sk))), h("p", {}, ""), h("div", { class: "row" }, onHosts(b), takeBackBtn(op)));
+      }),
+      addCard("bundle", "+ Add a bundle"),
+    ),
+    where("bundle"),
+    model.ops.length > 0 ? h("div", { class: "row heldbar" }, h("span", { class: "tag ok" }, `${model.ops.length} held`), h("a", { class: "btn primary", href: "#/review" }, "Review & push")) : null,
   );
 }
 
@@ -333,8 +719,9 @@ function reviewScreen() {
     dropped.length > 0
       ? h("div", { class: "notice" }, h("b", {}, "Some edits no longer apply to the files on disk:"), h("ul", {}, ...dropped.map((/** @type {any} */ d) => h("li", {}, `${opLabel(d.op)}: ${d.reason}`))), h("button", { class: "btn", onclick: forgetDropped }, "Forget them"))
       : null,
-    !editing ? h("div", { class: "panel empty" }, "Nothing is held. Click a cell in the Matrix to give or take away a pick.") : h("h2", {}, "Checks"),
+    !editing ? h("div", { class: "panel empty" }, "Nothing is held. Click a cell in the Matrix to give or take away a pick, or add to the Catalog.") : h("h2", {}, "Checks"),
     editing ? h("div", { class: "checks" }, ...checks.map(checkCard)) : null,
+    model.ops.flatMap(opWarnings).length > 0 ? h("div", { class: "notice inline" }, h("b", {}, "Worth a look before you push:"), h("ul", {}, ...model.ops.flatMap(opWarnings).map((w) => h("li", {}, w)))) : null,
     editing ? planPanel() : null,
     editing ? h("h2", {}, "Files") : null,
     editing ? h("div", { class: "files" }, ...files.map((file) => diffPanel(file, model.held[file].before, model.held[file].after))) : null,
@@ -376,6 +763,17 @@ function planPanel() {
   );
 }
 
+/** The lines of a diff, each as the YAML highlighter draws it. @param {[string, string][]} d */
+function diffBody(d) {
+  return h(
+    "pre",
+    { class: "yaml" },
+    ...d.map(([op, line]) =>
+      h("span", { class: "line " + (op === "+" ? "add" : op === "-" ? "del" : "") }, `${op === " " ? " " : op} `, ...tokenize(line).map((t) => (t.cls === "" ? t.text : h("span", { class: t.cls }, t.text)))),
+    ),
+  );
+}
+
 /** @param {string} file @param {string} before @param {string} after */
 export function diffPanel(file, before, after) {
   const d = lineDiff(splitLines(before), splitLines(after));
@@ -384,13 +782,7 @@ export function diffPanel(file, before, after) {
     "div",
     { class: "panel" },
     h("div", { class: "ph" }, file, h("span", { class: "spacer" }), h("span", { class: "tag " + (changed(d) ? "ok" : "") }, changed(d) ? `+${added} -${removed}` : "unchanged")),
-    h(
-      "pre",
-      { class: "yaml" },
-      ...d.map(([op, line]) =>
-        h("span", { class: "line " + (op === "+" ? "add" : op === "-" ? "del" : "") }, `${op === " " ? " " : op} `, ...tokenize(line).map((t) => (t.cls === "" ? t.text : h("span", { class: t.cls }, t.text)))),
-      ),
-    ),
+    diffBody(d),
   );
 }
 
@@ -539,7 +931,7 @@ async function loadStatus() {
 }
 
 async function loadSecrets() {
-  if (client === null || routeOf(location.hash) !== "secrets") return;
+  if (client === null) return;
   try {
     model.secrets = await client.secrets();
     model.secretsError = null;

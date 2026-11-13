@@ -117,7 +117,7 @@ function localChecks(home: string, usesSecrets: boolean | null): Check[] {
 
 // ---- servers ----
 
-type Planned = { server: string; tool: "claude" | "opencode"; transport: ServerCheck["transport"]; target: ProbeTarget | null; credentials: boolean };
+export type Planned = { server: string; tool: "claude" | "opencode"; transport: ServerCheck["transport"]; target: ProbeTarget | null; credentials: boolean };
 
 /** A server's check, and the hash of its catalog entry as the config has it before any secret is filled in. */
 type Checked = { check: ServerCheck; definition: string };
@@ -125,8 +125,8 @@ type Checked = { check: ServerCheck; definition: string };
 const strings = (v: unknown): string[] | null => (Array.isArray(v) && v.every((x) => typeof x === "string") ? (v as string[]) : null);
 const stringMap = (v: unknown): Record<string, string> => (isObject(v) ? (Object.fromEntries(Object.entries(v).filter(([, x]) => typeof x === "string")) as Record<string, string>) : {});
 
-/** What to probe for one rendered entry, in the shape `mcp.ts` renders for that tool. Null when the entry is not of that shape. */
-function planEntry(server: string, tool: "claude" | "opencode", entry: unknown, cwd: string): Planned {
+/** What to probe for one rendered entry (the page probes an entry that is not on disk yet), in the shape `mcp.ts` renders for that tool. Null when the entry is not of that shape. */
+export function planEntry(server: string, tool: "claude" | "opencode", entry: unknown, cwd: string): Planned {
   const bad = (transport: ServerCheck["transport"]): Planned => ({ server, tool, transport, target: null, credentials: false });
   if (!isObject(entry)) return bad("stdio");
   if (tool === "claude" && entry.type === "stdio" && typeof entry.command === "string") {
@@ -145,7 +145,7 @@ function planEntry(server: string, tool: "claude" | "opencode", entry: unknown, 
 }
 
 /** Text that is safe to show: no secret value in it, and only printable characters. */
-function clean(text: string, secrets: string[]): string {
+export function clean(text: string, secrets: string[]): string {
   let out = text;
   for (const secret of secrets) if (secret !== "") out = out.split(secret).join("***");
   return printable(out) ?? "";

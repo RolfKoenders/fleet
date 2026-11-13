@@ -114,7 +114,7 @@ function launch(command: string[], env: Record<string, string>, node: string): {
   return { command: [join(bin, "npx"), ...command.slice(1)], env: { ...env, PATH: `${bin}:/usr/local/bin:/usr/bin:/bin` } };
 }
 
-function renderFor(tool: Tool, server: Server, node: string): Obj {
+export function renderFor(tool: Tool, server: Server, node: string): Obj {
   if (server.command !== null) {
     const { command, env } = launch(server.command, server.env, node);
     return tool === "claude"

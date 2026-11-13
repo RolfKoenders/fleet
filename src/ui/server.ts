@@ -5,6 +5,7 @@ import type { IncomingMessage, Server, ServerResponse } from "node:http";
 import { extname, join, sep } from "node:path";
 import { BadRequest, routes } from "./api.ts";
 import type { ApiResponse } from "./api.ts";
+import { CloneStore } from "./clones.ts";
 
 /**
  * The server behind `fleet ui`. It can write config and push, so it must be reachable by you and nothing else:
@@ -74,7 +75,9 @@ export async function startUi(options: UiOptions): Promise<UiServer> {
   const broadcast = (event: string, data: unknown) => {
     for (const stream of streams) stream.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
   };
+  const clones = new CloneStore();
   const api = routes({
+    clones,
     toolDir: options.toolDir,
     configDir: options.configDir,
     home: options.home,
@@ -108,6 +111,7 @@ export async function startUi(options: UiOptions): Promise<UiServer> {
     if (idleTimer) clearTimeout(idleTimer);
     for (const stream of streams) stream.end();
     streams.clear();
+    clones.clear();
     server.closeAllConnections();
     await new Promise<void>((resolve) => server.close(() => resolve()));
     stop(why);

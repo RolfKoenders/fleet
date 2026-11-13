@@ -43,6 +43,14 @@ export function createClient(token, fetcher = (...args) => fetch(...args)) {
     status: () => call("/api/status"),
     matrix: () => call("/api/matrix"),
     secrets: () => call("/api/secrets"),
+    /** The skills in the source clones fleet already has. */
+    skills: () => call("/api/skills"),
+    /** Shallow-clones a repo to a temp directory on the server and lists its skills. @param {string} repo @param {string} path @param {string} branch */
+    clone: (repo, path, branch) => send("/api/catalog/clone", branch === "" ? { repo, path } : { repo, path, branch }),
+    /** Deletes a temp clone. `keepalive` lets it finish while the page is closing. @param {string} id */
+    discardClone: (id) => call("/api/catalog/discard", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id }), keepalive: true }),
+    /** Runs the server on this machine, with real credentials: only after the person has confirmed. @param {string} name @param {unknown} entry */
+    probe: (name, entry) => send("/api/catalog/probe", { name, entry, confirm: true }),
     /** @param {unknown[]} ops @param {string} [show] a host file to show whether or not the edits change it */
     preview: (ops, show) => send("/api/preview", show ? { ops, show } : { ops }),
     /** @param {unknown[]} ops */

@@ -25,7 +25,16 @@ The first screen, named like the bridge's Matrix screen and read the same way. O
 | `✕ excluded` | the host (or the defaults) excludes it |
 | `· off` | nothing picks it |
 
-Clicking a cell holds the smallest edit to that host's file: an item the defaults give is taken away with `exclude` in the host's file (the defaults are not edited), an item the host added is taken out of its list, an exclude is taken back. Clicking the same cell again takes the held edit back. A pane beside the table shows the host's file as it will be written, with comments, blank lines and list style kept; nothing is on disk yet. Version 1 edits host picks only: Catalog, Hosts and Secrets list what the config has, read-only (adding to them comes later).
+Clicking a cell holds the smallest edit to that host's file: an item the defaults give is taken away with `exclude` in the host's file (the defaults are not edited), an item the host added is taken out of its list, an exclude is taken back. Clicking the same cell again takes the held edit back. A pane beside the table shows the host's file as it will be written, with comments, blank lines and list style kept; nothing is on disk yet. Hosts and Secrets list what the config has, read-only for now. A server, skill source or bundle you add in the Catalog is a row of the Matrix at once, off for every host, held like any edit.
+
+### Catalog
+
+The MCP servers, skill sources and skill bundles your hosts can pick from, each with an add card. Adding one gives it to no host: pick it in the Matrix. An addition is a held edit, so it shows in Review & push like a pick does, and a held one has a Take back button (which takes back the picks of it too).
+
+- **An MCP server.** A name, whether it runs on the machine (a command) or at a URL (http or sse), the environment (or, for a URL, headers) as a plain value or `secret:NAME`, and which agents get it. The YAML it will add shows beside the form, as the server splices it into `catalog/mcp.yaml`. A secret can never be in the command (the loader's rule, with its message), and a command such as `npx pkg` or `uvx pkg` with no version gets a warning and can still be held.
+- **Check it starts.** Runs doctor's probe on the one server you are adding, on this machine, and shows its tools and their size in tokens. It asks first, naming the command: it runs with the real credentials fleet can read for this host and may download packages. A secret that has no value on this host is left out and named, so the server starts without it. Nothing is written.
+- **A skill source.** A name, a repo (a URL, an scp-style address or a path on this machine), a path and an optional branch. Look at the repo clones it shallowly into a temp directory, lists its skills and reads its head commit. A pinned source (the default) is written with that commit, `track` for the branch and `review: true`; a followed one with its `branch`. The temp clone is deleted when you close the form, when a newer one replaces it and when the server stops.
+- **A bundle.** A name and its skills, picked from the sources fleet has cloned and from a source you hold, or typed in.
 
 ### Review & push
 
@@ -36,7 +45,7 @@ Clicking a cell holds the smallest edit to that host's file: an item the default
 
 Write and push writes the files, commits them with the message, runs the real `fleet push` and shows each host's lane as it goes. Discard all drops the held edits; until you push, nothing has touched the disk.
 
-The page holds the edits as operations (`add` or `remove` of a bundle or server for a host). Every preview replays them, through the edit engine in `src/edit/`, on the files as they are on disk at that moment. An edit that no longer applies (the file changed under it) is listed as dropped with its reason, and nothing is written while any is.
+The page holds the edits as operations (`add` or `remove` of a bundle or server for a host, and `addServer`, `addSource` and `addBundle` for the catalog). The server rebuilds each from the fields it may have and checks an entry with the loader's own code, so the page can add nothing the loader would refuse. Every preview replays them, through the edit engine in `src/edit/`, on the files as they are on disk at that moment. An edit that no longer applies (the file changed under it) is listed as dropped with its reason, and nothing is written while any is.
 
 **Changes the page did not make.** When the config repo has uncommitted changes of its own (`git status --porcelain`), the page lists them and refuses to write or push until you commit or discard them outside the page. The server checks again right before writing, so a change made after the page last looked is still caught. The server also refuses, before writing anything, while a push is running (`a push is already running (pid N)`), when an edit is stale, and when the edited config would not load for a host.
 
@@ -49,6 +58,10 @@ Every route is JSON under `/api/` and sits behind the checks below. Request bodi
 | `GET /api/status` | what `fleet status --json` knows about this host |
 | `GET /api/matrix` | hosts, bundles with their skills, servers, and each host's cell; plus `outside`, the uncommitted changes in the config repo |
 | `GET /api/secrets` | secret names and who can read them, never a value |
+| `GET /api/skills` | the skills in the source clones fleet already has, and the bundle that holds each; nothing is cloned or fetched |
+| `POST /api/catalog/clone` | `{repo, path?, branch?}`: a shallow clone in a temp directory; answers its `id`, head `commit`, `branch` and `skills`. The repo must be a URL, an scp-style address or an absolute path, never something git reads as an option, and goes after `--` |
+| `POST /api/catalog/discard` | `{id}`: deletes that temp clone |
+| `POST /api/catalog/probe` | `{name, entry, confirm: true}`: doctor's probe on one entry that is not on disk, on this machine; refused unless `confirm` is true. Answers `result`, `tools`, `tokens` and `unset` (secret names with no value here), never a value |
 | `POST /api/preview` | `{ops, show?}`: the files the edits change (before and after), dropped edits, the matrix after, a check per host |
 | `POST /api/plan` | `{ops}`: this host's plan from `fleet diff` on the edited config |
 | `POST /api/write` | `{ops, message}`: writes, commits, then pushes; 409 `locked`, `outside-changes` or `stale`, 422 `invalid` |

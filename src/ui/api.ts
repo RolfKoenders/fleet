@@ -2,9 +2,16 @@ import { readHostName } from "../host.ts";
 import { LockedError, acquirePushLock } from "../lock.ts";
 import { loadModel } from "../tui/model.ts";
 import { readSecrets } from "../tui/reads.ts";
-import type { EditOp } from "../edit/index.ts";
 import { outsideChanges, plan, preview, WriteRefused, writeAndCommit } from "./edits.ts";
 import { status } from "../status.ts";
+import { BadRequest } from "./request.ts";
+import { opsOf } from "./opsof.ts";
+import { CloneStore } from "./clones.ts";
+import { checkEntry } from "./probe.ts";
+import { parseCatalog } from "../catalog.ts";
+import { existsSync } from "node:fs";
+import { join } from "node:path";
+import { findSkills, sourceDir } from "../sources.ts";
 import { RealPusher } from "../tui/pusher.ts";
 import type { FleetEvent } from "../events.ts";
 import type { PushEnd } from "../pushrun.ts";
@@ -35,7 +42,17 @@ import type { PushEnd } from "../pushrun.ts";
  *                      `pushend` (the end document). EventSource cannot send headers, so this one route also takes the
  *                      token as `?token=`.
  *
- * Edits are operations (`EditOp`, host picks only for now: `add` and `remove`), held by the page and replayed here.
+ *   GET  /api/skills   The skills found in the source clones fleet already has: name, source, and the bundle that holds it (or null).
+ *   POST /api/catalog/clone    Body `{"repo": "...", "path": ".", "branch": "main"}` (path and branch optional). Shallow-clones the repo to a
+ *                      temp directory and answers `id`, `commit` (the head, full sha), `branch`, `skills` and `problem`. The repo is
+ *                      checked first (a URL, scp-style address or absolute path, never a leading `-`), and git gets it after `--`.
+ *   POST /api/catalog/discard  Body `{"id": "..."}`. Deletes that temp clone. The server deletes the rest when it stops.
+ *   POST /api/catalog/probe    Body `{"name": "...", "entry": {...}, "confirm": true}`. Doctor's probe on one catalog entry that is not on
+ *                      disk, on this machine, with the secrets it can read: `result`, `tools`, `size`, `tokens`, `unset` (secret names with
+ *                      no value here, left out). Refused unless `confirm` is true. No value is ever in the answer.
+ *
+ * Edits are operations (`EditOp`) held by the page and replayed here: `add` and `remove` of a bundle or server for a host, and the
+ * catalog additions `addServer`, `addSource` and `addBundle`. Each is checked by `opsOf`, with the loader's own rules.
  */
 
 export type ApiResponse = { status: number; body: unknown };
@@ -45,7 +62,7 @@ export type ApiRequest = {
   json(): Promise<unknown>;
 };
 
-export class BadRequest extends Error {}
+export { BadRequest };
 
 export type Route = {
   method: "GET" | "POST";
@@ -61,6 +78,8 @@ export type ApiDeps = {
   broadcast(event: string, data: unknown): void;
   /** Marks a long job as running, so the server does not stop itself under it. Returns the call that says it ended. */
   busy(): () => void;
+  /** The temp clones of the Add-a-skill-source form; the server clears them when it stops. */
+  clones: CloneStore;
 };
 
 export function routes(deps: ApiDeps): Route[] {
@@ -101,6 +120,69 @@ export function routes(deps: ApiDeps): Route[] {
       handle: () => {
         const view = readSecrets(deps.configDir, deps.home);
         return { status: 200, body: { ok: true, hosts: view.hosts, problems: view.problems, entries: view.entries.map((e) => ({ name: e.name, file: e.file, readers: e.readers, servers: e.servers })) } };
+      },
+    },
+    {
+      method: "GET",
+      path: "/api/skills",
+      handle: () => {
+        // Read from the clones fleet already has; nothing is cloned or fetched here.
+        const problems: string[] = [];
+        const catalog = parseCatalog(deps.configDir, problems);
+        const owner = new Map(catalog.bundles.entries().flatMap(([bundle, skills]) => skills.map((s) => [s, bundle] as const)));
+        const skills = catalog.sources
+          .filter((src) => existsSync(join(sourceDir(deps.home, src.name), ".git")))
+          .flatMap((src) => [...findSkills(src, deps.home).dirs.keys()].map((name) => ({ name, source: src.name, bundle: owner.get(name) ?? null })));
+        return { status: 200, body: { ok: true, skills, problems } };
+      },
+    },
+    {
+      method: "POST",
+      path: "/api/catalog/clone",
+      handle: async (req) => {
+        const body = await req.json();
+        if (typeof body !== "object" || body === null || Array.isArray(body)) throw new BadRequest("the body must be a JSON object");
+        const { repo, path, branch } = body as Record<string, unknown>;
+        if (typeof repo !== "string") throw new BadRequest("repo must be a string");
+        if (path !== undefined && typeof path !== "string") throw new BadRequest("path must be a string");
+        if (branch !== undefined && typeof branch !== "string") throw new BadRequest("branch must be a string");
+        const done = deps.busy();
+        try {
+          return { status: 200, body: { ok: true, ...(await deps.clones.create(repo, path ?? ".", branch === undefined || branch === "" ? null : branch)) } };
+        } catch (error) {
+          if (error instanceof BadRequest) throw error;
+          return refused(422, "clone-failed", (error as Error).message);
+        } finally {
+          done();
+        }
+      },
+    },
+    {
+      method: "POST",
+      path: "/api/catalog/discard",
+      handle: async (req) => {
+        const body = await req.json();
+        const id = typeof body === "object" && body !== null ? (body as Record<string, unknown>).id : undefined;
+        if (typeof id !== "string" || id.length > 100) throw new BadRequest("id must be a string");
+        deps.clones.discard(id);
+        return { status: 200, body: { ok: true } };
+      },
+    },
+    {
+      method: "POST",
+      path: "/api/catalog/probe",
+      handle: async (req) => {
+        const body = await req.json();
+        // The page asks first, naming the command; a call that did not is refused.
+        if (typeof body !== "object" || body === null || (body as Record<string, unknown>).confirm !== true) throw new BadRequest("the check runs the server with real credentials: it must be confirmed");
+        const op = opsOf({ ops: [{ op: "addServer", name: (body as Record<string, unknown>).name, entry: (body as Record<string, unknown>).entry }] })[0]!;
+        if (op.op !== "addServer") throw new BadRequest("the check takes one server");
+        const done = deps.busy();
+        try {
+          return { status: 200, body: { ok: true, ...(await checkEntry(deps.configDir, readHostName(deps.home), deps.home, op.name, op.entry)) } };
+        } finally {
+          done();
+        }
       },
     },
     {
@@ -171,23 +253,7 @@ export function routes(deps: ApiDeps): Route[] {
 const refused = (status: number, code: string, message: string, extra: Record<string, unknown> = {}): ApiResponse => ({ status, body: { ok: false, code, messages: [`fleet: ${message}`], ...extra } });
 
 /** The matrix as the page gets it: the bridge's model, without its directory. */
-const matrixDoc = (model: ReturnType<typeof loadModel>) => ({ self: model.self, hosts: model.hosts, bundles: model.bundles, servers: model.servers, problems: model.problems });
-
-const NAME = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
-const MAX_OPS = 200;
-
-/** The edits in a request body. The page may only pick: `add` and `remove` of a bundle or server for a host. */
-function opsOf(body: unknown): EditOp[] {
-  if (typeof body !== "object" || body === null || Array.isArray(body)) throw new BadRequest("the body must be a JSON object");
-  const list = (body as Record<string, unknown>).ops;
-  if (!Array.isArray(list) || list.length > MAX_OPS) throw new BadRequest(`ops must be a list of at most ${MAX_OPS} edits`);
-  return list.map((raw, i): EditOp => {
-    const o = (typeof raw === "object" && raw !== null ? raw : {}) as Record<string, unknown>;
-    const ok = (o.op === "add" || o.op === "remove") && (o.kind === "bundles" || o.kind === "mcp") && typeof o.host === "string" && NAME.test(o.host) && typeof o.name === "string" && NAME.test(o.name);
-    if (!ok) throw new BadRequest(`ops[${i}] is not an add or remove of a bundle or server for a host`);
-    return { op: o.op as "add" | "remove", host: o.host as string, kind: o.kind as "bundles" | "mcp", name: o.name as string };
-  });
-}
+const matrixDoc = (model: ReturnType<typeof loadModel>) => ({ self: model.self, hosts: model.hosts, bundles: model.bundles, servers: model.servers, sources: model.sources, problems: model.problems });
 
 function showOf(body: unknown): string | null {
   const show = (body as Record<string, unknown>).show;

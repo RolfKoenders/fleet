@@ -212,7 +212,7 @@ async function withServer(body: (base: string, token: string) => Promise<void>) 
   }
 }
 
-const modules = ["app.js", "api.js", "state.js", "diff.js", "dom.js"];
+const modules = ["app.js", "api.js", "state.js", "diff.js", "dom.js", "matrix.js", "catalog.js"];
 
 test("the page, its modules, its style and its bundled fonts are served with the right types", async () => {
   await withServer(async (base) => {

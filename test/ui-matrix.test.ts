@@ -235,7 +235,7 @@ test("write: a stale edit, an edit that breaks a host, and nothing to write are 
   });
 });
 
-test("write and preview refuse bad bodies, and the page may only add or remove picks", async () => {
+test("write and preview refuse bad bodies and shapes the page may not send", async () => {
   await withServer({}, async (s) => {
     for (const body of [{}, { ops: "x" }, { ops: [{ op: "addServer", name: "x", entry: {} }] }, { ops: [{ op: "add", host: "../x", kind: "mcp", name: "docs" }] }, { ops: [add("laptop", "docs", "files")] }]) {
       assert.equal((await post(s, "/api/preview", body)).status, 400, JSON.stringify(body));

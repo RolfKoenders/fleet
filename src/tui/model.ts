@@ -30,12 +30,16 @@ export type Row = {
   cells: Record<string, Cell>;
 };
 
+export type SourceInfo = { name: string; repo: string; path: string; commit: string | null; track: string | null; branch: string | null; review: boolean };
+
 export type Model = {
   configDir: string;
   self: string | null;
   hosts: HostInfo[];
   bundles: Row[];
   servers: Row[];
+  /** The skill sources of the catalog, as written. */
+  sources: SourceInfo[];
   /** Why the config could not be read in full. Shown, never thrown: the bridge opens on a broken config too. */
   problems: string[];
 };
@@ -89,7 +93,7 @@ export function loadModel(configDir: string, self: string | null, held?: Readonl
       },
     }),
   );
-  return { configDir, self, hosts, bundles, servers: serverRows, problems };
+  return { configDir, self, hosts, bundles, servers: serverRows, sources: catalog.sources, problems };
 }
 
 /** The rows of the matrix as shown: bundles, then servers, with the skills of the bundles named in `expanded` under them. */
