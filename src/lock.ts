@@ -15,18 +15,27 @@ function isAlive(pid: number): boolean {
   }
 }
 
+/** The apply lock: `~/.local/state/fleet/lock/`, which covers one host's files. */
+export const acquireLock = (home: string = homedir()): (() => void) =>
+  acquireNamed(home, "lock", (pid) => `another fleet apply is running (pid ${pid})`);
+
+/** The push lock: `~/.local/state/fleet/push.lock/`, which covers a whole push, from validate to the last host. */
+export const acquirePushLock = (home: string = homedir()): (() => void) =>
+  acquireNamed(home, "push.lock", (pid) => `a push is already running (pid ${pid})`);
+
 /**
- * Takes `~/.local/state/fleet/lock/`, a directory holding a `pid` file. The directory is built
+ * Takes `~/.local/state/fleet/<name>/`, a directory holding a `pid` file. The directory is built
  * beside it and renamed into place, so it never exists without its pid. A lock whose pid is
- * not a live process is stale and is replaced. Returns the release function.
+ * not a live process is stale and is replaced. Returns the release function. `busy` words the
+ * refusal when a live process holds it.
  */
-export function acquireLock(home: string = homedir()): () => void {
+function acquireNamed(home: string, name: string, busy: (pid: number) => string): () => void {
   const dir = stateDir(home);
-  const lock = join(dir, "lock");
+  const lock = join(dir, name);
   mkdirSync(dir, { recursive: true, mode: 0o700 });
 
   for (let attempt = 0; attempt < 3; attempt++) {
-    const staging = mkdtempSync(join(dir, "lock-"));
+    const staging = mkdtempSync(join(dir, `${name}-`));
     writeFileSync(join(staging, "pid"), `${process.pid}\n`);
     try {
       renameSync(staging, lock);
@@ -40,9 +49,9 @@ export function acquireLock(home: string = homedir()): () => void {
     const seen = readPid(lock);
     const pid = Number.parseInt(seen, 10);
     if (Number.isInteger(pid) && pid > 0 && isAlive(pid)) {
-      throw new LockedError(`another fleet apply is running (pid ${pid})`);
+      throw new LockedError(busy(pid));
     }
-    removeStale(lock, seen);
+    removeStale(lock, seen, busy);
   }
   throw new Error(`could not take the lock at ${lock}`);
 }
@@ -51,7 +60,7 @@ export function acquireLock(home: string = homedir()): () => void {
  * Moves the stale lock aside before deleting it, because a rename has one winner. Two applies
  * that both judged the same lock stale cannot then delete the lock the first one just took.
  */
-function removeStale(lock: string, seenPid: string): void {
+function removeStale(lock: string, seenPid: string, busy: (pid: number) => string): void {
   const aside = `${lock}.stale-${process.pid}`;
   try {
     renameSync(lock, aside);
@@ -66,7 +75,7 @@ function removeStale(lock: string, seenPid: string): void {
     } catch {
       // someone took the path again; the stale copy is still ours to drop
     }
-    throw new LockedError(`another fleet apply is running (pid ${Number.parseInt(readPid(lock), 10)})`);
+    throw new LockedError(busy(Number.parseInt(readPid(lock), 10)));
   }
   rmSync(aside, { recursive: true, force: true });
 }
