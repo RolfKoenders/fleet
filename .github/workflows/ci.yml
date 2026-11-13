@@ -62,7 +62,7 @@ jobs:
       - if: env.SCOPE == 'site'
         run: npm ci
       - if: env.SCOPE == 'site'
-        run: node --test test/site-frames.test.ts
+        run: node --test test/site-frames.test.ts test/site-changelog.test.ts
       - name: Install sops and age
         if: env.SCOPE == 'code'
         run: |

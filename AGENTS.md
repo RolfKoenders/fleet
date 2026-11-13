@@ -12,6 +12,7 @@ Terms are defined in `GLOSSARY.md`. Use them as written there.
 - Tests run in a temp `HOME`.
 - Never run `fleet apply` or `fleet init` against a real `HOME` while developing.
 - The landing page's terminal clips are recorded from the bridge: `npm run site:frames` rewrites `site/frames.js`, and a test fails when a change to the bridge makes the committed file stale. To add a clip, see the top of `scripts/site-frames/record.ts`.
+- The landing page's What's new section, release pill and `site/changelog/index.html` are generated from `CHANGELOG.md`: `npm run site:changelog` rewrites them, and a test fails when `CHANGELOG.md` changes without it.
 
 ## Changelog
 

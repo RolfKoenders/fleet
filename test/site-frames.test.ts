@@ -37,7 +37,8 @@ test("site: the page loads its frames as data and imports nothing from the tool"
   for (const f of files) {
     const text = readFileSync(join(repoRoot, "site", f), "utf8");
     assert.doesNotMatch(text, /\bimport\b[^;\n]*["'`]|import\(|require\(/, `${f} imports a module`);
-    assert.doesNotMatch(text, /src\/|\.\.\/(test|scripts)/, `${f} refers to the tool's code`);
+    // The changelog page quotes what the changelog says, which may name the tool's code.
+    if (f !== join("changelog", "index.html")) assert.doesNotMatch(text, /src\/|\.\.\/(test|scripts)/, `${f} refers to the tool's code`);
   }
 });
 
