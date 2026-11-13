@@ -3,6 +3,8 @@ import { join } from "node:path";
 import { Worker } from "node:worker_threads";
 import { parseEvent } from "../events.ts";
 import type { FleetEvent } from "../events.ts";
+import { listJournals, readJournal } from "../journal.ts";
+import type { JournalEntry, StoredJournal } from "../journal.ts";
 import { probedNode } from "../tools.ts";
 import { describeRunning, finish, readEnd, reduce, startRun } from "../pushrun.ts";
 import type { PushEnd, PushRun } from "../pushrun.ts";
@@ -22,6 +24,8 @@ export type Pusher = {
    * event as it arrives, and resolves when it has ended.
    */
   run(onEvent: (event: FleetEvent) => void, message?: string, host?: string): Promise<PushEnd>;
+  /** The push journal of this host, where the bridge offers it: the pushes it recorded (newest first), and one of them in full. */
+  journal?: { list(): JournalEntry[]; read(file: string): StoredJournal | null };
   /** What a push still in flight is doing, or null. After the screen is gone this is what is left to say. */
   running(): string | null;
   whenDone(): Promise<PushEnd> | null;
@@ -104,6 +108,8 @@ export class RealPusher implements Pusher {
     });
     return this.ended;
   }
+
+  readonly journal = { list: (): JournalEntry[] => listJournals(this.home), read: (file: string): StoredJournal | null => readJournal(file, this.home) };
 
   /** What the push in flight is doing, or null when none is. */
   running(): string | null {

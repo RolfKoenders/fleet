@@ -3,6 +3,7 @@ import type { Canvas, Style } from "../buffer.ts";
 import type { State } from "../app.ts";
 import { spinner, theme } from "../theme.ts";
 import { truncate, wrap } from "../width.ts";
+import type { Replay } from "../../journal.ts";
 import { looksSecret, STEP_WORDS } from "../../pushrun.ts";
 import type { Change, Lane, Phase, PushRun } from "../../pushrun.ts";
 import { pad, plural, s, segments } from "./ui.ts";
@@ -273,7 +274,21 @@ function drawHostPane(c: Canvas, run: PushRun, lane: Lane, x: number, y: number,
 
 const laneStage = (l: Lane): string => (l.stage === null ? (l.via === "ssh" ? "connecting over ssh" : "starting") : (STAGE_WORDS[l.stage] ?? l.stage));
 
-function drawRun(c: Canvas, state: State, p: Over): void {
+/** What the history's push replay looks like to the screen of a live push: running until its end has come. */
+export function replayOver(replay: Replay, lane: number | null): Over {
+  const { time, only } = replay.stored.header;
+  const when = new Date(time);
+  const pad2 = (n: number) => String(n).padStart(2, "0");
+  const at = `${when.getFullYear()}-${pad2(when.getMonth() + 1)}-${pad2(when.getDate())} ${pad2(when.getHours())}:${pad2(when.getMinutes())}`;
+  return { phase: replay.over ? "finished" : "running", run: replay.run, selected: lane, notice: `Replay of the push of ${at}${only === null ? "" : ` to ${only}`}. esc goes back.` };
+}
+
+/** How the push that just ended compares with the last one of its scope. */
+export function versusText(delta: number): string {
+  return Math.abs(delta) < 50 ? "as fast as the last push" : `${clock(Math.abs(delta))} ${delta > 0 ? "faster" : "slower"} than the last push`;
+}
+
+function drawRun(c: Canvas, state: State, p: Over, versus: number | null = null): void {
   const run = p.run;
   const running = p.phase === "running";
   drawPipeline(c, run, state, 0);
@@ -301,6 +316,7 @@ function drawRun(c: Canvas, state: State, p: Over): void {
       wrap(`fix: ${k.fix}`, c.w - 6).slice(0, 2).forEach((t) => c.text(4, y++, t, s.sub));
     }
     for (const m of end.messages) if (y < c.h - 1) c.text(2, y++, truncate(m, c.w - 4), s.muted);
+    if (versus !== null && y < c.h - 1) c.text(2, y++, truncate(versusText(versus), c.w - 4), versus > 0 ? s.ok : s.muted);
   }
   if (p.notice !== null) c.text(2, y++, truncate(p.notice, c.w - 4), s.warn);
   // By width: everything from PANE_WIDTH, no host pane below it, and no feed below FEED_WIDTH.
@@ -317,12 +333,19 @@ function drawRun(c: Canvas, state: State, p: Over): void {
 }
 
 export function drawPush(c: Canvas, state: State): void {
+  const j = state.journal;
+  if (j.phase === "replay") {
+    if (j.replay === null) return void segments(c, 2, 1, [[`${spinner(state.now, state.motion)} `, s.brand], ["reading the journal", s.sub]]);
+    return drawRun(c, state, replayOver(j.replay, j.lane));
+  }
   const p = state.push;
   if (p.phase === "idle") {
     c.text(2, 1, "No push yet", s.bold);
-    wrap("Press P to see what would be pushed. Nothing happens until you type push and press enter. The push itself is the real fleet push, run for you, with its progress shown here.", c.w - 4).forEach((t, i) => c.text(2, 3 + i, t, s.muted));
+    const lines = wrap("Press P to see what would be pushed. Nothing happens until you type push and press enter. The push itself is the real fleet push, run for you, with its progress shown here.", c.w - 4);
+    lines.forEach((t, i) => c.text(2, 3 + i, t, s.muted));
+    c.text(2, 4 + lines.length, truncate("Press h for the pushes this host recorded: enter replays one.", c.w - 4), s.muted);
     return;
   }
   if (p.phase === "review") return drawReview(c, state);
-  drawRun(c, state, p);
+  drawRun(c, state, p, state.versus);
 }

@@ -18,6 +18,7 @@ A name that is not one is refused with exit 2 before the screen is taken over, a
 
 - `?` lists the keys, `ctrl-k` opens a palette, and `r` asks the hosts again.
 - `P` reviews a push. Nothing runs until you type `push` and press enter. `tab` moves to an optional commit message (the same as `fleet push -m`); a message never starts a push. A push goes on by itself if you quit or the terminal closes, and the bridge waits for it when it can.
+- `h` on the push screen opens the push history; `enter` replays the selected push and `esc` goes back (see "The push journal").
 - `d` runs `fleet doctor --json` (`--all` across hosts) after you confirm. It starts real MCP servers with real credentials, so opening the bridge never does it. The result fills a health mark beside each server in the matrix; a server that only needs a login is shown as neutral, and any result the bridge does not know is shown as unknown.
 
 ## Startup context
@@ -39,6 +40,12 @@ While a push runs the pipeline row ends with the total time, and each lane ends 
 The layout follows the width. From 100 columns everything shows. From 80 to 99 the host pane goes, and below 80 the feed goes too, leaving the lanes and the clock. The bridge itself needs at least 30 x 8.
 
 When the push is over, `r` on the selected lane runs `fleet push --host <name>`: it publishes as usual, then applies only on that host. A host without an ssh destination is refused with the reason. `f` on a lane with a conflict opens the Conflicts screen with that host first; it only shows the conflict and its fix.
+
+## The push journal
+
+Every `fleet push` writes what it did to a file in `~/.local/state/fleet/pushes/` on the host that ran it, whether it was started from a terminal, from the bridge or with `--host`, and keeps the last 20 (older files are deleted when a new one is written). The file is named by its UTC start time and pid, such as `20261113T094103.123Z-4242.jsonl`, and is private to you (mode 0600, in a 0700 directory). The first line is a header: the time, the commit pushed (the config repo's HEAD after publish, `null` when the push never got that far), which host `--host` named (or all), the hosts visited, how long it took, and how it ended. The other lines are the push's events as they arrived, each with `t`, the milliseconds since the push began. A push that is refused before it starts (locked, an unknown `--host`, an invalid config) writes nothing. A push that is cut short with ctrl-c keeps what it has and is marked interrupted. A journal that cannot be written is a message on stderr and never fails the push.
+
+The journal is never shared: each host has only its own, and `fleet agent` does not read it. There is no command for it. In the bridge, `h` on the push screen lists the recorded pushes, newest first, with time, scope (all hosts or the one host), result, duration and host count. `enter` replays the selected one at its real speed through the same screen a live push uses, so the clock, lanes, feed and host pane replay too; `↑` and `↓` pick a host as they do live, and `esc` goes back. When a push that ended ok is over, the bridge says how much faster or slower it was than the last earlier push of the same scope that also ended ok (`1.4s faster than the last push`), and leaves the line out when there is none.
 
 ## Conflicts
 
