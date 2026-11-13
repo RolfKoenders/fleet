@@ -4,6 +4,10 @@ What changed in fleet, newest first. Each version lists what you can do now, wha
 
 ## Unreleased
 
+### Added
+
+- `fleet ui` starts a local web server and opens a page in your browser, which shows this host and can push with live progress. It listens on `127.0.0.1` only, on a random port, and the URL it prints carries a random token the page sends with every call; a request with another `Host`, or a write from another `Origin`, is refused. It stops on ctrl-c or after 10 minutes with no page open. `--port <n>` picks the port, `--no-open` keeps the browser closed (it is not opened in an ssh session either), and `--json` is refused. A push from the page takes the push lock like any other. See [the page](docs/ui.md).
+
 ## 2.3.0 - 2026-11-14
 
 ### Added
