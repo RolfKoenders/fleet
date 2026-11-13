@@ -198,6 +198,7 @@
   const block = (id, frame) => { document.getElementById(id).innerHTML = html(frame); };
   block("review", F.review);
   block("context-bars", F.contextBars);
+  block("watch-piped", F.watchPiped);
 
   // The bridge window: real screens, and a push played frame by frame.
   const term = document.getElementById("term");
@@ -213,6 +214,17 @@
     help: "? lists every key in the bridge. esc closes it and takes you back.",
   };
   let ratio = 0.6;
+  // Watch it land: the push as a terminal draws it, looping while it is on screen, with its summary held at the end.
+  const watch = document.getElementById("watch-term");
+  const watchFit = () => { watch.style.fontSize = `${Math.min(15, (watch.parentElement.clientWidth - 24) / (F.watch[0].cols * ratio))}px`; };
+  const watchPlayer = player(F.watch.length, (i) => { watch.innerHTML = html(F.watch[i]); }, { hold: 1000, loop: true });
+  const paintWatch = () => { watchFit(); watch.innerHTML = html(F.watch[F.watch.length - 1]); };
+  let watchFaded = null, watchWake;
+  whileVisible(watch, 0.35, () => {
+    watchFaded ??= performance.now() + (calm ? 0 : REVEAL_MS);
+    watchWake = setTimeout(watchPlayer.play, Math.max(0, watchFaded - performance.now()));
+  }, () => { clearTimeout(watchWake); watchPlayer.pause(); });
+  addEventListener("resize", watchFit);
   function measure() {
     const probe = document.createElement("span");
     probe.style.cssText = "position:absolute;visibility:hidden;font:100px var(--mono);white-space:pre";
@@ -295,5 +307,5 @@
     if (!e.repeat) show(screen);
   }
   for (const el of [bar.closest(".window"), document.getElementById("keys")]) el.addEventListener("keydown", onKey);
-  document.fonts.ready.then(() => { measure(); show("home"); });
+  document.fonts.ready.then(() => { measure(); show("home"); paintWatch(); });
 })();

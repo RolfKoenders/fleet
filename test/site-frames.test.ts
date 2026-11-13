@@ -74,7 +74,7 @@ test("site: the bridge's keys and the chips under the window lead to tabs", () =
 });
 
 type Packed = { cols: number; rows: number; lines: number[] };
-type Data = { rows: [string, number, number, number][][]; context: Packed[]; contextBars: Packed; review: Packed };
+type Data = { rows: [string, number, number, number][][]; context: Packed[]; contextBars: Packed; review: Packed; watch: Packed[]; watchPiped: Packed };
 const data = (): Data => {
   const window: { FLEET_FRAMES?: Data } = {};
   new Function("window", committed())(window);
@@ -131,4 +131,33 @@ test("site: the cards show those blocks, and the widget's screenshot is one file
   const readme = readFileSync(join(repoRoot, "README.md"), "utf8");
   assert.match(readme, /<img alt="[^"]+" src="assets\/omarchy-widget\.png"/);
   assert.ok(readme.includes(`](${plugin})`), "the README links to the plugin's repo");
+});
+
+test("site: Watch it land is the real push drawn by its own renderer, and the hero button leads to it", () => {
+  const d = data();
+  const first = lines(d, d.watch[0]!);
+  assert.equal(first[0], '$ fleet push -m "Add the triage skill"');
+  assert.match(first[1]!, /validate/);
+  assert.ok(d.watch.every((f) => f.cols === d.watch[0]!.cols && f.lines.length === d.watch[0]!.lines.length), "the clip never changes size");
+  const all = d.watch.map((f) => lines(d, f).join("\n"));
+  assert.ok(all.some((t) => /█+░* \d+\/\d+ link /.test(t)), "a lane shows its bar and step");
+  assert.ok(all.some((t) => /⠋|⠙|⠹/.test(t) && /waiting its turn/.test(t)), "hosts wait their turn while another runs");
+  assert.ok(all.some((t) => /^server: 1 conflict; nothing was written\n/m.test(t) && /validate/.test(t)), "a host's own text is above the block");
+  const last = lines(d, d.watch[d.watch.length - 1]!);
+  assert.doesNotMatch(last.join("\n"), /validate|[⠋-⠏]/, "the block is gone at the end");
+  assert.match(last.join("\n"), /^laptop: ok · 1 link \(\d+\.\ds\)\ndevbox: ok · 1 link/m);
+  assert.match(last.join("\n"), /^server: conflict .*\n {2}~\/\.claude\/rules\/host\.md: [^\n]*\n[^\n]*\n {2}fix: Move or delete it/m);
+  assert.match(last.join("\n"), /pushed in \d+\.\ds: 2 ok, 1 conflict$/);
+  const piped = lines(d, d.watchPiped);
+  assert.equal(piped[0], '$ fleet push -m "Add the triage skill" 2>&1 | tee push.log');
+  assert.deepEqual(piped.slice(1, 4).map((l) => l.replace(/\(\d+\.\ds\)/, "(T)")), ["09:41:03 laptop: started", "09:41:06 laptop: ok · 1 link (T)", "09:41:07 devbox: started"]);
+  assert.ok(!piped.some((l) => /write-|█/.test(l)), "no line per step when piped");
+
+  const html = readFileSync(join(repoRoot, "site/index.html"), "utf8");
+  assert.ok(html.indexOf('id="how"') < html.indexOf('id="watch"') && html.indexOf('id="watch"') < html.indexOf('id="bridge"'), "the section follows How it works");
+  assert.match(html, /<a class="btn" href="#watch">Watch a push/);
+  assert.match(html, /id="watch-term"/);
+  assert.match(html, /id="watch-piped"/);
+  const main = readFileSync(join(repoRoot, "site/main.js"), "utf8");
+  assert.match(main, /block\("watch-piped", F\.watchPiped\)/);
 });

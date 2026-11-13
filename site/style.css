@@ -254,6 +254,13 @@ h2 { margin: 0 0 16px; font: 700 clamp(32px, 4.6vw, 52px)/1.06 var(--sans); lett
 .block { margin: 18px 0 0; padding: 14px 16px; border-radius: 10px; background: var(--ink); border: 1px solid var(--border-soft); font-size: 12px; line-height: 1.5; overflow-x: auto; scrollbar-width: thin; }
 .mini .y { color: var(--warn); } .mini .g { color: var(--brand); } .mini .w { color: var(--text); }
 
+/* Watch it land: the push in a window, then the same push piped. */
+.watch .window { max-width: 920px; margin: 0 auto; }
+.watch-plain { max-width: 920px; margin: 56px auto 0; }
+.watch-plain h3 { margin: 0 0 8px; font-size: 18px; }
+.watch-plain p { margin: 0; color: var(--muted); font-size: 15px; }
+.watch-plain p code { font-size: .92em; }
+
 /* Omarchy */
 .widget { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 40px; align-items: center; }
 .widget img { display: block; width: 100%; height: auto; border-radius: var(--radius); border: 1px solid var(--border); box-shadow: 0 30px 80px -30px rgba(0,0,0,.9); }
