@@ -496,7 +496,7 @@ test("a push lock left by a process that is gone is taken over, and the lock is 
   assert.equal(existsSync(join(s.home, PUSH_LOCK)), false);
 });
 
-test("the push lock is gone after a push that fails, and after one that is refused for a conflict", () => {
+test("the push lock is gone after a push that fails, and after one whose config does not load", () => {
   const s = setup({ hosts: { server: "alice@server" }, ssh: { "alice@server": UNREACHABLE } });
   assert.equal(s.run().code, EXIT.unreachable);
   assert.equal(existsSync(join(s.home, PUSH_LOCK)), false);
