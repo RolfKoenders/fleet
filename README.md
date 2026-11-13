@@ -57,7 +57,7 @@ fleet diff
 fleet push -m "Add a skill"
 ```
 
-`fleet push` applies the change on every machine with an `ssh:` line in its host file. Every machine also pulls and applies by itself every 30 minutes.
+`fleet push` applies the change on every machine with an `ssh:` line in its host file. Every machine also pulls and applies by itself every 30 minutes. On a terminal it shows each host's progress live and leaves a summary; piped, it prints one timestamped line per host start and result.
 
 | Command | What it does |
 |---|---|

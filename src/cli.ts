@@ -17,6 +17,7 @@ import { readHostName } from "./host.ts";
 import { init } from "./init.ts";
 import { newConfig } from "./newconfig.ts";
 import { push } from "./push.ts";
+import { progressFor } from "./pushview.ts";
 import { emit, useColor } from "./output.ts";
 import type { Relayed, Result, Sink } from "./output.ts";
 import { secrets } from "./secretscli.ts";
@@ -57,7 +58,7 @@ const commands: Command[] = [
   { name: "diff", usage: "diff", summary: "Show what apply would change, without changing anything", effect: "read", args: 0, run: ({ color, found }) => diff(configOf(found), color) },
   { name: "bridge", usage: "bridge [--view <screen>] [--host <name>]", summary: "Open the full-screen view of every host, the matrix of what each gets, conflicts, timeline, secrets and catalog (--view opens on a screen, --host selects a host on it). It reads until you ask for more: P pushes after you type push, d runs doctor after you confirm (it starts real MCP servers). Needs a terminal", effect: "change", args: 0, run: ({ json, view, host, found }) => bridge(toolDir, () => configOf(found), json, process.env, undefined, { view, host }) },
   { name: "apply", usage: "apply", summary: "Make this host match its config", effect: "change", args: 0, run: ({ color, json, found }) => apply(toolDir, configOf(found), color, undefined, json ? ["apply", "--json"] : ["apply"]) },
-  { name: "push", usage: "push [-m <message>]", summary: "Publish changes to GitHub, then apply on every host (-m sets the commit message)", effect: "change", args: 0, run: ({ color, message, found }) => push(toolDir, configOf(found), message, color) },
+  { name: "push", usage: "push [-m <message>]", summary: "Publish changes to GitHub, then apply on every host (-m sets the commit message)", effect: "change", args: 0, run: ({ color, message, found }) => push(toolDir, configOf(found), message, color, undefined, progressFor(process.env, process.stderr)) },
   { name: "adopt", usage: "adopt mcp|skill <name>", summary: "Record an existing MCP server or skill as fleet's", effect: "change", args: 2, run: ({ color, args, found }) => adopt(configOf(found), args, color) },
   // Unbounded: `secrets` checks its own arguments, so a value typed by mistake is never echoed back.
   { name: "secrets", usage: "secrets edit <file> | set <file> <NAME> | rekey", summary: "Edit, set or rekey encrypted secrets", effect: "change", args: Infinity, run: ({ args, found }) => secrets(configOf(found), args) },

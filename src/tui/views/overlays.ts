@@ -2,7 +2,7 @@ import { BOLD, drawBox } from "../buffer.ts";
 import type { Canvas } from "../buffer.ts";
 import type { State } from "../app.ts";
 import { items, search } from "../palette.ts";
-import { describeRunning, remaining } from "../pushrun.ts";
+import { describeRunning, remaining } from "../../pushrun.ts";
 import { theme } from "../theme.ts";
 import { stringWidth, truncate, wrap } from "../width.ts";
 import { pad, s, segments } from "./ui.ts";
