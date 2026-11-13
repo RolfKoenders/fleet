@@ -4,34 +4,32 @@
 <meta charset="utf-8">
 <title>fleet</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<link rel="stylesheet" href="/style.css">
+<script type="module" src="/app.js"></script>
 </head>
 <body>
-<h1>fleet</h1>
-<pre id="out">connecting...</pre>
-<script>
-  // The token is in the fragment, so it is never sent to the server by the browser's own requests. It is kept in
-  // memory and sent as a header on every API call. EventSource cannot send headers, so the stream takes it as a query.
-  const token = new URLSearchParams(location.hash.slice(1)).get("t");
-  const out = document.getElementById("out");
-  if (token === null) {
-    out.textContent = "open the URL that 'fleet ui' printed, including the part after #";
-  } else {
-    history.replaceState(null, "", location.pathname);
-    const lines = [];
-    const show = (line) => {
-      lines.push(line);
-      out.textContent = lines.slice(-40).join("\n");
-    };
-    fetch("/api/status", { headers: { "X-Fleet-Token": token } })
-      .then((r) => r.json())
-      .then((doc) => show("status: " + JSON.stringify(doc, null, 2)))
-      .catch((e) => show("status failed: " + e.message));
-    const stream = new EventSource("/api/events?token=" + encodeURIComponent(token));
-    stream.addEventListener("hello", () => show("connected"));
-    stream.addEventListener("push", (e) => show("push: " + e.data));
-    stream.addEventListener("pushend", (e) => show("push ended: " + e.data));
-    stream.onerror = () => show("stream closed");
-  }
-</script>
+<div class="app" id="app">
+  <header class="bar">
+    <div class="logo"><i></i>fleet <span>ui</span></div>
+    <div class="repo" id="repo"></div>
+    <div class="spacer"></div>
+    <span class="tag" id="link" title="The live connection to fleet ui">connecting</span>
+    <span class="local" id="local" title="Bound to 127.0.0.1 only. The URL carries a random token.">only this machine</span>
+    <a class="tray none" id="tray" href="#/review"><span>Held</span><b id="trayn">0</b></a>
+  </header>
+  <nav class="side" id="side">
+    <a href="#/matrix" data-r="matrix"><span class="ic">▦</span>Matrix</a>
+    <a href="#/catalog" data-r="catalog"><span class="ic">⇄</span>Catalog</a>
+    <a href="#/hosts" data-r="hosts"><span class="ic">▤</span>Hosts</a>
+    <a href="#/secrets" data-r="secrets"><span class="ic">⚿</span>Secrets</a>
+    <hr>
+    <a href="#/status" data-r="status"><span class="ic">●</span>Status</a>
+    <a href="#/review" data-r="review"><span class="ic">↑</span>Review &amp; push<span class="count" id="sidecount"></span></a>
+    <div class="foot">Nothing is written to disk until you push. Ctrl-c in the terminal stops fleet ui.</div>
+  </nav>
+  <main id="main"></main>
+</div>
+<noscript>fleet ui needs JavaScript.</noscript>
 </body>
 </html>
