@@ -159,10 +159,11 @@ test("static files are served with their type, and nothing outside the folder", 
   });
 });
 
-test("the committed placeholder page is served from src/ui/static", async () => {
+test("the committed page is served from src/ui/static", async () => {
   await withServer({}, async (s) => {
     const page = await (await fetch(`${base(s)}/`)).text();
-    assert.match(page, /X-Fleet-Token/);
+    assert.match(page, /<script type="module" src="\/app\.js">/);
+    assert.match(await (await fetch(`${base(s)}/api.js`)).text(), /X-Fleet-Token/);
     assert.equal((await fetch(`${base(s)}/index.html`)).status, 200);
     assert.equal((await raw(s, "/../../package.json", { host: `127.0.0.1:${s.port}` })).status, 404);
     assert.ok(repoRoot);

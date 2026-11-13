@@ -10,6 +10,10 @@ fleet ui --no-open        # print the URL and do not open a browser
 
 It stops on ctrl-c, or by itself after 10 minutes with no page open.
 
+## What is on the page
+
+A header with this host, its checkout and whether the live connection is up (it reconnects by itself if the server drops it), a menu (Matrix, Catalog, Hosts and Secrets are empty for now), a status screen, and a review screen: edits the page holds are shown there as a diff, and nothing is written until you push. The push panel shows each host's progress as it happens. The page is plain files under `src/ui/static/` that fleet serves as they are: no build step, no framework and no dependency, and nothing is loaded from another origin, including its font (JetBrains Mono, bundled in `src/ui/static/fonts/` with its licence, a copy of the landing page's).
+
 ## Who can reach it
 
 The page can change your config and push, so nothing but you may reach it.
