@@ -276,7 +276,7 @@ export function fakeTimer(home: string, state: string): void {
 /** A reason to skip a test about Linux's scheduler or its absence of a macOS log, or false on Linux. */
 export const linuxOnly: string | false = process.platform === "linux" ? false : "the tests run on macOS, and this one is about Linux";
 
-export type SshPlan = { home?: string; exit?: number; stdout?: string; stderr?: string };
+export type SshPlan = { home?: string; exit?: number; stdout?: string; stderr?: string; /** Milliseconds to wait before answering, for a host that is slow. */ delay?: number };
 
 const FAKE_SSH = `
 const fs = require("node:fs");
@@ -293,9 +293,13 @@ if (plan.home) {
   const r = cp.spawnSync("sh", ["-c", args[args.length - 1]], { env, stdio: ["ignore", "inherit", "inherit"] });
   process.exit(r.status === null ? 1 : r.status);
 }
-if (plan.stdout) process.stdout.write(plan.stdout);
-if (plan.stderr) process.stderr.write(plan.stderr + "\\n");
-process.exit(plan.exit === undefined ? 0 : plan.exit);
+const answer = () => {
+  if (plan.stdout) process.stdout.write(plan.stdout);
+  if (plan.stderr) process.stderr.write(plan.stderr + "\\n");
+  process.exit(plan.exit === undefined ? 0 : plan.exit);
+};
+if (plan.delay) setTimeout(answer, plan.delay);
+else answer();
 `;
 
 export function installFakeSsh(home: string, plans: Record<string, SshPlan>): void {

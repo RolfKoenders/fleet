@@ -14,6 +14,7 @@ import { bridgeFor, cannedProbe, CONTEXTS, makeConfig, ok } from "../../test/tui
 import type { Canned } from "../../test/tui/fixture.ts";
 import type { Frame, Span } from "./frame.ts";
 import { recordReview } from "./review.ts";
+import { recordWatch } from "./push.ts";
 import { fakePusher, ok as pushOk, pushBridge, tick } from "../../test/tui/pushfixture.ts";
 
 /** Every bridge clip is this size; the page scales it to fit. */
@@ -241,6 +242,7 @@ export async function record(): Promise<{ text: string; summary: string }> {
   const homeFill = await recordHomeFill();
   const context = await recordContext();
   const review = recordReview();
+  const watch = recordWatch();
 
   // Rows repeat a great deal from frame to frame, so each frame keeps only indexes into one table of rows.
   const rows: Span[][] = [];
@@ -263,9 +265,11 @@ export async function record(): Promise<{ text: string; summary: string }> {
     context: context.frames.map(pack),
     contextBars: pack(context.bars),
     review: pack(review),
+    watch: watch.live.map(pack),
+    watchPiped: pack(watch.piped),
     rows,
   };
   const text = `// Frames recorded from the fleet bridge by npm run site:frames. Do not edit.\n// Static data: the site never imports TUI code, so the two can change apart.\nwindow.FLEET_FRAMES = ${JSON.stringify(data)};\n`;
-  const summary = `${boot.length} boot frames, ${Object.keys(screens).length} screens, ${push.length} push frames, ${homeFill.length} home frames, ${context.frames.length} context frames, a review of ${review.rows} lines, ${rows.length} distinct rows`;
+  const summary = `${boot.length} boot frames, ${Object.keys(screens).length} screens, ${push.length} push frames, ${homeFill.length} home frames, ${context.frames.length} context frames, a review of ${review.rows} lines, ${watch.live.length} frames of a push on a terminal, ${watch.piped.rows} lines of one piped, ${rows.length} distinct rows`;
   return { text, summary };
 }

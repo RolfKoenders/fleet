@@ -4,7 +4,7 @@ import { Headless } from "../../src/tui/headless.ts";
 import { loadModel } from "../../src/tui/model.ts";
 import type { FleetEvent } from "../../src/events.ts";
 import type { PreviewResult, Pusher } from "../../src/tui/pusher.ts";
-import type { PushEnd } from "../../src/tui/pushrun.ts";
+import type { PushEnd } from "../../src/pushrun.ts";
 import { cannedProbe, makeConfig, SIZE } from "./fixture.ts";
 
 const repos = (files: { status: string; path: string }[], flagged: string[]) => [

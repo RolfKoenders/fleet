@@ -31,6 +31,7 @@
     </a>
     <nav>
       <a href="#how">How it works</a>
+      <a href="#watch">Watch it land</a>
       <a href="#bridge">The bridge</a>
       <a href="#compare">Compare</a>
       <a href="#whats-new">What's new</a>
@@ -61,7 +62,7 @@
         </div>
         <div class="ctas">
           <a class="btn primary" href="#start">Get started</a>
-          <a class="btn" href="#bridge" data-play="push">Watch a push <span aria-hidden="true">↓</span></a>
+          <a class="btn" href="#watch">Watch a push <span aria-hidden="true">↓</span></a>
         </div>
       </div>
     </section>
@@ -104,6 +105,30 @@
             <div class="chips"></div>
           </div>
         </div>
+      </div>
+    </section>
+
+    <!-- Watch it land: the real fleet push in the demo sandbox, drawn by its own renderer (frames.js). -->
+    <section class="watch" id="watch">
+      <div class="section-head">
+        <p class="kicker">fleet push</p>
+        <h2>Watch it land.</h2>
+        <p>On a terminal, <code>fleet push</code> shows each step as it happens: validate, publish, then one line per host with its stage, a bar for the step it is on, and its time. When it ends, the block turns into a summary that stays in your scrollback. Everything below was recorded from the real command.</p>
+      </div>
+
+      <div class="window">
+        <div class="window-bar">
+          <span class="lights"><i></i><i></i><i></i></span>
+          <span class="window-title">fleet push</span>
+        </div>
+        <div class="term-wrap"><pre class="term" id="watch-term" tabindex="0" role="img" aria-label="Recording of fleet push on a terminal. Validate and publish finish, then laptop and devbox are applied one after another and show ok. Server stops on a conflict, and the summary shows the file in the way and the command that fixes it."></pre></div>
+      </div>
+      <p class="caption">Hosts run one at a time. The conflict on server stops it and tells you the fix; fleet never overwrites what it did not write.</p>
+
+      <div class="watch-plain">
+        <h3>Piped, or in CI</h3>
+        <p>Without a terminal there is no block to redraw. You get one timestamped line when each host starts and when it has a result, plus anything a host says. <code>NO_COLOR</code> turns the color off and keeps the block; piping is how you get plain lines. The result on stdout and in <code>--json</code> is the same either way.</p>
+        <pre class="block term" id="watch-piped" tabindex="0" role="group" aria-label="Output of fleet push when its output is piped, as timestamped lines"></pre>
       </div>
     </section>
 

@@ -4,14 +4,16 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { failure } from "./apply.ts";
 import { eventsOn, readLine, send } from "./events.ts";
+import type { FleetEvent } from "./events.ts";
 import { parseCatalog } from "./catalog.ts";
 import { loadConfig } from "./config.ts";
 import { acquirePushLock, LockedError } from "./lock.ts";
 import { repoState, runGit, UnreachableError } from "./git.ts";
 import { readHostName } from "./host.ts";
-import { paint } from "./output.ts";
 import type { Result } from "./output.ts";
 import type { Conflict } from "./plan.ts";
+import { hostLines } from "./pushview.ts";
+import type { Progress } from "./pushview.ts";
 import { sourceDir } from "./sources.ts";
 import { hostTargets } from "./targets.ts";
 import type { Target } from "./targets.ts";
@@ -19,7 +21,7 @@ import { findTool, probedNode } from "./tools.ts";
 import { isObject, parseFile } from "./yamlfile.ts";
 
 /** One host's outcome. `timer` is a host fleet cannot reach, which applies on its own schedule. */
-type HostRecord = {
+export type HostRecord = {
   host: string;
   result: "ok" | "conflict" | "unreachable" | "timer" | "error";
   /** Links and keys created, updated or removed. */
@@ -178,18 +180,14 @@ const noChanges = { changes: 0, created: [], updated: [], removed: [] };
 
 type Ran = { error?: Error; status: number | null; stdout: string; stderr: string };
 
-/**
- * Runs a program without blocking and hands each line of its stderr to `onLine` as it arrives. With `onLine`
- * unset the stderr is collected instead (and with `inherit`, passed straight through).
- */
-function run(program: string, args: string[], options: { env?: NodeJS.ProcessEnv; inherit?: boolean; onLine?: (line: string) => void }): Promise<Ran> {
+/** Runs a program without blocking and hands each line of its stderr to `onLine` as it arrives; the whole of it is kept too. */
+function run(program: string, args: string[], options: { env?: NodeJS.ProcessEnv; onLine: (line: string) => void }): Promise<Ran> {
   return new Promise((resolve) => {
-    const child = spawn(program, args, { env: options.env, stdio: ["ignore", "pipe", options.inherit ? "inherit" : "pipe"] });
+    const child = spawn(program, args, { env: options.env, stdio: ["ignore", "pipe", "pipe"] });
     let [stdout, stderr, pending] = ["", "", ""];
     child.stdout!.setEncoding("utf8").on("data", (d: string) => (stdout += d));
     child.stderr?.setEncoding("utf8").on("data", (d: string) => {
       stderr += d;
-      if (options.onLine === undefined) return;
       pending += d;
       for (let at = pending.indexOf("\n"); at >= 0; at = pending.indexOf("\n")) {
         const line = pending.slice(0, at);
@@ -199,21 +197,23 @@ function run(program: string, args: string[], options: { env?: NodeJS.ProcessEnv
     });
     child.once("error", (error) => resolve({ error, status: null, stdout, stderr }));
     child.once("close", (status) => {
-      if (pending.trim() !== "") options.onLine?.(pending);
+      if (pending.trim() !== "") options.onLine(pending);
       resolve({ status, stdout, stderr });
     });
   });
 }
 
+/** Where a push's events go: the stream on stderr when events are on, and the progress shown on a terminal or as lines. */
+type Emit = (event: FleetEvent) => void;
+
 /** Forwards a child's stderr line as an event of its lane. */
-const forward = (host: string) => (line: string) => send(readLine(line, host));
+const forward = (host: string, emit: Emit) => (line: string) => emit(readLine(line, host));
 
 /** Applies here, as its own `fleet apply` process, the way the timer and the other hosts run it. */
-async function applyHere(toolDir: string, host: string, home: string, notes: string[], events: boolean): Promise<HostRecord> {
+async function applyHere(toolDir: string, host: string, home: string, notes: string[], events: boolean, emit: Emit): Promise<HostRecord> {
   const r = await run(join(toolDir, "bin/fleet"), ["apply", "--json"], {
-    env: { ...process.env, FLEET_NODE: probedNode(), HOME: home },
-    inherit: !events,
-    ...(events ? { onLine: forward(host) } : {}),
+    env: { ...process.env, FLEET_NODE: probedNode(), HOME: home, ...(events ? { FLEET_EVENTS: "1" } : {}) },
+    onLine: forward(host, emit),
   });
   if (r.error) {
     notes.push(`fleet: ${host}: cannot run ${join(toolDir, "bin/fleet")}: ${r.error.message}`);
@@ -222,10 +222,10 @@ async function applyHere(toolDir: string, host: string, home: string, notes: str
   return recordFrom(host, r.status, r.stdout, notes);
 }
 
-async function applyThere(ssh: string, target: Target & { ssh: string }, notes: string[], events: boolean, home: string): Promise<HostRecord> {
+async function applyThere(ssh: string, target: Target & { ssh: string }, notes: string[], events: boolean, home: string, emit: Emit): Promise<HostRecord> {
   const r = await run(ssh, ["-o", "BatchMode=yes", "-o", "ConnectTimeout=10", target.ssh, remoteCommand(events)], {
     env: { ...process.env, HOME: home },
-    ...(events ? { onLine: forward(target.host) } : {}),
+    onLine: forward(target.host, emit),
   });
   if (r.error || r.status === 255) {
     notes.push(`fleet: ${target.host}: unreachable over ssh (${r.error?.message ?? (firstLine(r.stderr) || "no reason given")})`);
@@ -236,35 +236,17 @@ async function applyThere(ssh: string, target: Target & { ssh: string }, notes: 
 
 const EXIT_ORDER = ["conflict", "unreachable", "error"] as const;
 
-const plural = (n: number, one: string) => `${n} ${one}${n === 1 ? "" : "s"}`;
-
-/** The changes of one host by kind, such as `2 links, 1 key`: an entry with a `file` is a key, any other is a link. */
-function kinds({ created, updated, removed }: HostRecord): string {
-  const all = [...created, ...updated, ...removed];
-  const keys = all.filter((e) => isObject(e) && "file" in e).length;
-  return [[all.length - keys, "link"] as const, [keys, "key"] as const].filter(([n]) => n > 0).map(([n, kind]) => plural(n, kind)).join(", ");
-}
-
 /** `seconds` is each host's wall time of its apply; a host that was not applied (timer, unreachable) has none. */
 function render(records: HostRecord[], seconds: Map<string, number>, color: boolean): string {
-  const lines: string[] = [];
-  for (const record of records) {
-    const { host, result, conflicts } = record;
-    const took = result === "unreachable" ? undefined : seconds.get(host);
-    const shown = result === "ok" ? paint(color, "green", result) : result === "timer" ? result : paint(color, "yellow", result);
-    const what = kinds(record);
-    lines.push(`${host}: ${shown}${what === "" ? "" : ` · ${what}`}${took === undefined ? "" : ` (${took.toFixed(1)}s)`}`);
-    for (const c of conflicts) lines.push(`  ${c.path}: ${c.detail}`, `  fix: ${c.fix}`);
-  }
-  return lines.join("\n");
+  return records.flatMap((record) => hostLines(record, seconds.get(record.host), color)).join("\n");
 }
 
 /**
  * Runs `work` holding the push lock, so that only one push runs at a time, whoever starts it. A second one is
  * refused at once ("locked"), never queued. The lock is let go on every way out, ctrl-c and a terminate included.
- * `fleet push --host` must go through this too.
+ * `fleet push --host` must go through this too. `onSignal` runs first on ctrl-c or a terminate, to say how far the work got.
  */
-export async function whileHoldingPushLock(home: string, work: () => Promise<Result>): Promise<Result> {
+export async function whileHoldingPushLock(home: string, work: () => Promise<Result>, onSignal: () => void = () => {}): Promise<Result> {
   let release: () => void;
   try {
     release = acquirePushLock(home);
@@ -273,6 +255,7 @@ export async function whileHoldingPushLock(home: string, work: () => Promise<Res
     throw error;
   }
   const leave = (code: number) => () => {
+    onSignal();
     release();
     process.exit(code);
   };
@@ -288,51 +271,70 @@ export async function whileHoldingPushLock(home: string, work: () => Promise<Res
   }
 }
 
-export function push(toolDir: string, configDir: string, message: string | undefined, color: boolean, home: string = homedir()): Promise<Result> {
-  return whileHoldingPushLock(home, () => pushLocked(toolDir, configDir, message, color, home));
+/**
+ * `progress` is what shows the push on stderr (none when the events are on stderr instead). With a summary on the
+ * terminal that stdout shares, the same lines are not printed again.
+ */
+export async function push(toolDir: string, configDir: string, message: string | undefined, color: boolean, home: string = homedir(), progress: Progress | null = null): Promise<Result> {
+  progress?.start();
+  try {
+    const result = await whileHoldingPushLock(home, () => pushLocked(toolDir, configDir, message, color, home, progress), () => progress?.interrupt());
+    progress?.finish();
+    return progress?.summarized && process.stdout.isTTY === true ? { ...result, text: undefined } : result;
+  } finally {
+    // A push that threw leaves the terminal as it was.
+    progress?.abort();
+  }
 }
 
-async function pushLocked(toolDir: string, configDir: string, message: string | undefined, color: boolean, home: string): Promise<Result> {
+async function pushLocked(toolDir: string, configDir: string, message: string | undefined, color: boolean, home: string, progress: Progress | null): Promise<Result> {
   const events = eventsOn();
+  // Each host's apply reports its steps when something reads them: the stream on stderr, or the live block.
+  const steps = events || progress?.mode === "live";
+  const emit: Emit = (event) => {
+    send(event);
+    progress?.event(event);
+  };
   try {
-    send({ event: "stage", stage: "validate" });
+    emit({ event: "stage", stage: "validate" });
     const checked = check(configDir, home);
     if ("code" in checked) return checked;
     const { host, targets, repos, ssh } = checked;
-    send({ event: "hosts", hosts: [{ host, via: "local" }, ...targets.map((t) => ({ host: t.host, via: t.ssh === null ? ("timer" as const) : ("ssh" as const) }))] });
+    emit({ event: "hosts", hosts: [{ host, via: "local" }, ...targets.map((t) => ({ host: t.host, via: t.ssh === null ? ("timer" as const) : ("ssh" as const) }))] });
 
     const notes: string[] = [];
-    send({ event: "stage", stage: "publish", of: repos.length });
+    emit({ event: "stage", stage: "publish", of: repos.length });
     for (const [i, repo] of repos.entries()) {
       const conflict = publish(repo, host, message, notes);
       if (conflict !== null) {
         return { code: "conflict", text: `${conflict.path}: ${conflict.detail}\n  fix: ${conflict.fix}`, messages: [...notes, `fleet: ${conflict.path} has diverged; nothing more was pushed or applied`], fields: { hosts: [], conflicts: [conflict] } };
       }
-      send({ event: "step", step: "publish", target: repo.shown, n: i + 1, of: repos.length });
+      emit({ event: "step", step: "publish", target: repo.shown, n: i + 1, of: repos.length });
     }
 
-    send({ event: "stage", stage: "apply", of: targets.length + 1 });
+    emit({ event: "stage", stage: "apply", of: targets.length + 1 });
     const seconds = new Map<string, number>();
     const visit = async (name: string, go: () => Promise<HostRecord>, timed = true): Promise<HostRecord> => {
-      send({ event: "host", host: name, state: "start" });
+      emit({ event: "host", host: name, state: "start" });
       const began = performance.now();
       const record = await go();
       if (timed) seconds.set(name, (performance.now() - began) / 1000);
-      send({ event: "host", host: name, state: "done", result: record.result, changes: record.changes });
+      emit({ event: "host", host: name, state: "done", result: record.result, changes: record.changes });
+      progress?.record(record, seconds.get(name));
       return record;
     };
-    const records = [await visit(host, () => applyHere(toolDir, host, home, notes, events))];
+    const records = [await visit(host, () => applyHere(toolDir, host, home, notes, steps, emit))];
     // A conflict here means the config is not ready for any host, so none of them is touched.
     if (records[0]!.result !== "conflict") {
       for (const target of targets) {
         if (target.ssh === null) {
           records.push(await visit(target.host, async () => ({ host: target.host, result: "timer", ...noChanges, conflicts: [] }), false));
         } else {
-          records.push(await visit(target.host, () => applyThere(ssh!, { ...target, ssh: target.ssh! }, notes, events, home)));
+          records.push(await visit(target.host, () => applyThere(ssh!, { ...target, ssh: target.ssh! }, notes, steps, home, emit)));
         }
       }
     } else {
-      for (const target of targets) send({ event: "host", host: target.host, state: "skip" });
+      for (const target of targets) emit({ event: "host", host: target.host, state: "skip" });
     }
 
     const worst = EXIT_ORDER.find((result) => records.some((r) => r.result === result));

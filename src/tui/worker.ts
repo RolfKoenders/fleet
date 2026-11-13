@@ -3,7 +3,7 @@ import { diff, planConflicts } from "../apply.ts";
 import { repoState, runGit } from "../git.ts";
 import { publishedRepos } from "../push.ts";
 import { status } from "../status.ts";
-import { looksSecret } from "./pushrun.ts";
+import { looksSecret } from "../pushrun.ts";
 
 /** Runs one read-only question off the main thread, so the screen keeps moving while it is asked. */
 export type Job = { op: "status" | "conflicts" | "preview"; toolDir: string; configDir: string; home: string };

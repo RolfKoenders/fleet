@@ -1,4 +1,4 @@
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, readlinkSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
@@ -49,7 +49,7 @@ function setup(opts: Setup = {}) {
   // Always installed, first on the probe path: a test must never reach the real ssh and a real host.
   installFakeSsh(home, opts.ssh ?? {});
 
-  const run = (args: string[] = []) => runFleet(clone, ["push", ...args], { home });
+  const run = (args: string[] = [], env: Record<string, string> = {}) => runFleet(clone, ["push", ...args], { home, env });
   const json = (args: string[] = []) => {
     const r = run([...args, "--json"]);
     return { r, doc: JSON.parse(r.stdout) };
@@ -571,4 +571,56 @@ test("the push lock is gone after a push that fails, and after one whose config 
   s.write("hosts/laptop.yaml", "nonsense: true\n");
   assert.equal(s.run().code, EXIT.invalid);
   assert.equal(existsSync(join(s.home, PUSH_LOCK)), false);
+});
+
+const STAMP = /^\d\d:\d\d:\d\d /;
+
+test("piped, push prints a timestamped line when each host starts and when it has a result, and the host's own text, and no line per step", () => {
+  const s = setup({ hosts: { server: "alice@server", edge: null }, ssh: { "alice@server": { ...OK, stderr: "fleet: a note from the host" } } });
+  const r = s.run();
+  assert.equal(r.code, EXIT.ok, r.stderr);
+  const lines = r.stderr.split("\n").filter((l) => l !== "");
+  const stamped = lines.filter((l) => STAMP.test(l)).map((l) => l.replace(STAMP, "").replace(/\(\d+\.\ds\)/, "(T)"));
+  assert.deepEqual(stamped.filter((l) => !/^laptop: running from /.test(l)), ["laptop: started", "laptop: ok (T)", "edge: started", "edge: timer", "server: started", "server: a note from the host", "server: ok (T)"]);
+  assert.ok(stamped.some((l) => /^laptop: running from /.test(l)), "the local apply's own text gets its host's name too");
+  for (const line of lines) assert.doesNotMatch(line, /write-|sync|plan|\u001b|█/, `a plain line is not a step or a drawing: ${line}`);
+  assert.doesNotMatch(r.stderr, /pushed in/, "no summary block when piped");
+});
+
+test("what a push prints on stdout and in --json does not depend on how stderr is shown", () => {
+  const s = setup({ hosts: { server: "alice@server" }, ssh: { "alice@server": OK } });
+  const normal = (text: string) => text.replace(/\(\d+\.\ds\)/g, "(T)");
+  const plain = s.run();
+  assert.equal(normal(plain.stdout), "laptop: ok (T)\nserver: ok (T)\n");
+  const events = s.run([], { FLEET_EVENTS: "1" });
+  assert.equal(normal(events.stdout), normal(plain.stdout), "the same text with the events on stderr");
+  const a = JSON.parse(s.run(["--json"]).stdout);
+  const b = JSON.parse(s.run(["--json"], { FLEET_EVENTS: "1" }).stdout);
+  assert.deepEqual(a, b);
+  assert.deepEqual(Object.keys(a), ["ok", "code", "host", "messages", "hosts"]);
+});
+
+test("ctrl-c: the summary so far, exit 130, and the push lock is let go", async () => {
+  const s = setup({ hosts: { alpha: "me@alpha", slow: "me@slow", zed: "me@zed" }, ssh: { "me@alpha": OK, "me@slow": { ...OK, delay: 8_000 }, "me@zed": OK } });
+  const child = spawn(join(s.clone, "bin/fleet"), ["push"], {
+    env: { PATH: "/usr/bin:/bin", HOME: s.home, FLEET_NODE: process.execPath, FLEET_CONFIG: s.clone, GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_SYSTEM: "/dev/null", GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@example.com", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@example.com" },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  let [stdout, stderr] = ["", ""];
+  child.stdout.on("data", (d) => (stdout += d));
+  child.stderr.on("data", (d) => (stderr += d));
+  const closed = new Promise<number | null>((resolve) => child.once("close", resolve));
+  const until = Date.now() + 20_000;
+  while (!s.sshHosts().includes("me@slow") && Date.now() < until) await new Promise((r) => setTimeout(r, 50));
+  assert.ok(s.sshHosts().includes("me@slow"), "the push reached the slow host");
+  assert.equal(existsSync(join(s.home, PUSH_LOCK)), true, "the lock is held while it runs");
+  child.kill("SIGINT");
+  assert.equal(await closed, 130);
+  assert.match(stderr, /alpha: ok/);
+  assert.match(stderr, /slow: interrupted \(\d+\.\ds\)/);
+  assert.match(stderr, /zed: not reached/);
+  assert.match(stderr, /interrupted after \d+\.\ds: 2 ok, 1 interrupted, 1 not reached/);
+  assert.equal(stdout, "", "no result document is printed for a push that was cut short");
+  assert.equal(existsSync(join(s.home, PUSH_LOCK)), false, "the lock is gone");
+  assert.deepEqual(s.sshHosts(), ["me@alpha", "me@slow"], "the host after it was never asked");
 });

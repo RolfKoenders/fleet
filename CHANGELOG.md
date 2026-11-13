@@ -12,6 +12,7 @@ What changed in fleet, newest first. Each version lists what you can do now, wha
 ### Changed
 
 - The landing page's feature cards are trimmed to conflicts, skill review and startup context, plus one strip for secrets, pinned skills, the MCP doctor and agent use.
+- `fleet push` shows each host's progress live on a terminal: a block on stderr with validate, publish and apply, then one line per host with its stage, a bar for its step and its time, replaced when the push ends by a summary that stays in the scrollback (on a terminal the same lines are not printed again on stdout). Piped, or in CI, it prints one timestamped line when each host starts and when it has a result, plus the host's own text; stdout and `--json` are unchanged. Ctrl-C prints the summary so far and exits 130, and this corrects the 2.0.0 line that push "reports each machine as it finishes", which it did not.
 - Only one `fleet push` runs at a time. A second one, from a terminal or the bridge, stops at once with `a push is already running (pid N)` and exit 7 (`locked`), instead of racing the first. The lock is `~/.local/state/fleet/push.lock`, held from validate until the last host is done and let go on every way out; one left by a process that is gone is taken over. It is separate from the apply lock, which still covers one host's files.
 
 ## 2.2.0 - 2026-11-12

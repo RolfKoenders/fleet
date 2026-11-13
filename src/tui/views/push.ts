@@ -3,8 +3,8 @@ import type { Canvas, Style } from "../buffer.ts";
 import type { State } from "../app.ts";
 import { spinner, theme } from "../theme.ts";
 import { truncate, wrap } from "../width.ts";
-import { looksSecret } from "../pushrun.ts";
-import type { Lane, Phase, PushRun } from "../pushrun.ts";
+import { looksSecret } from "../../pushrun.ts";
+import type { Lane, Phase, PushRun } from "../../pushrun.ts";
 import { pad, plural, s, segments } from "./ui.ts";
 import type { Seg } from "./ui.ts";
 

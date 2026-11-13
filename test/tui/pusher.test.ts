@@ -6,7 +6,7 @@ import { git, installFakeSsh, linkFleetSkill, makeClone, makeHome, publish, repo
 import type { SshPlan } from "../helpers.ts";
 import { pushArguments, RealPusher } from "../../src/tui/pusher.ts";
 import { loadModel } from "../../src/tui/model.ts";
-import { reduce, startRun, finish } from "../../src/tui/pushrun.ts";
+import { reduce, startRun, finish } from "../../src/pushrun.ts";
 import type { FleetEvent } from "../../src/events.ts";
 
 // Everything a spawned process inherits points into temp directories: nothing here can reach the real home.

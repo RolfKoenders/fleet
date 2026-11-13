@@ -1,5 +1,7 @@
-import type { FleetEvent } from "../events.ts";
-import type { HostInfo } from "./model.ts";
+import type { FleetEvent } from "./events.ts";
+
+/** A host as the bridge's model knows it. */
+export type HostInfo = { name: string; ssh: string | null; self: boolean };
 
 /** One host's lane through a push. */
 export type Lane = {

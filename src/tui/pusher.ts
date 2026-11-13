@@ -4,8 +4,8 @@ import { Worker } from "node:worker_threads";
 import { parseEvent } from "../events.ts";
 import type { FleetEvent } from "../events.ts";
 import { probedNode } from "../tools.ts";
-import { describeRunning, finish, readEnd, reduce, startRun } from "./pushrun.ts";
-import type { PushEnd, PushRun } from "./pushrun.ts";
+import { describeRunning, finish, readEnd, reduce, startRun } from "../pushrun.ts";
+import type { PushEnd, PushRun } from "../pushrun.ts";
 import type { HostInfo } from "./model.ts";
 import type { Job, Preview } from "./worker.ts";
 
