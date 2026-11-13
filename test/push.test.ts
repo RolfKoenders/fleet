@@ -1,11 +1,14 @@
 import { spawn, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, readlinkSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, readlinkSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { git, installFakeSsh, linkFleetSkill, makeClone, makeHome, makeSource, publish, runFleet, tempDir, writeExecutable } from "./helpers.ts";
 import type { SshPlan } from "./helpers.ts";
+import { EVENT_VERSION } from "../src/events.ts";
 import { EXIT } from "../src/exit.ts";
+import { advanceReplay, listJournals, readJournal, startReplay } from "../src/journal.ts";
+import { finish, readEnd, reduce, startRun } from "../src/pushrun.ts";
 import { findTool } from "../src/tools.ts";
 
 const applyDoc = (code: string, extra: Record<string, unknown> = {}) =>
@@ -691,4 +694,138 @@ test("--host is for bridge and push alone", () => {
   const r = runFleet(s.clone, ["apply", "--host", "laptop"], { home: s.home });
   assert.equal(r.code, EXIT.invalid);
   assert.match(r.stderr, /--host is only for 'bridge' and 'push'/);
+});
+
+const JOURNAL = ".local/state/fleet/pushes";
+const journalFiles = (home: string): string[] => {
+  try {
+    return readdirSync(join(home, JOURNAL)).sort();
+  } catch {
+    return [];
+  }
+};
+
+test("a push writes its journal: a header, then its events with their times, private to the user", () => {
+  const s = setup({ hosts: { server: "alice@server" }, ssh: { "alice@server": OK } });
+  s.write("notes.md", "one");
+  assert.equal(s.run().code, EXIT.ok);
+  const files = journalFiles(s.home);
+  assert.equal(files.length, 1);
+  assert.match(files[0]!, /^\d{8}T\d{6}\.\d{3}Z-\d+\.jsonl$/, "a sortable UTC time without colons, and the pid");
+  assert.equal(statSync(join(s.home, JOURNAL)).mode & 0o777, 0o700);
+  assert.equal(statSync(join(s.home, JOURNAL, files[0]!)).mode & 0o777, 0o600);
+  const lines = readFileSync(join(s.home, JOURNAL, files[0]!), "utf8").trim().split("\n").map((l) => JSON.parse(l));
+  const [header, ...events] = lines;
+  assert.equal(header.journal, 1);
+  assert.equal(header.v, EVENT_VERSION);
+  assert.equal(header.commit, git(s.clone, "rev-parse", "HEAD"), "the commit pushed");
+  assert.equal(header.only, null);
+  assert.deepEqual(header.hosts, ["laptop", "server"]);
+  assert.equal(header.result, "ok");
+  assert.equal(header.interrupted, false);
+  assert.ok(header.ms >= 0 && Date.parse(header.time) > 0);
+  assert.equal(header.end.code, "ok");
+  assert.deepEqual(events.slice(0, 2).map((e) => [e.event, e.stage]), [["stage", "validate"], ["hosts", undefined]]);
+  assert.ok(events.some((e) => e.event === "host" && e.host === "server" && e.state === "done"));
+  for (const e of events) {
+    assert.equal(e.v, EVENT_VERSION);
+    assert.equal(typeof e.t, "number");
+  }
+  assert.deepEqual(events.map((e) => e.t), [...events.map((e) => e.t)].sort((a, b) => a - b), "in the order they arrived");
+});
+
+test("the journal is written whether or not the events are on stderr, and a --host push says which host it was for", () => {
+  const s = setup({ hosts: { box: "alice@box", server: "alice@server" }, ssh: { "alice@box": OK, "alice@server": OK } });
+  assert.equal(s.run([], { FLEET_EVENTS: "1" }).code, EXIT.ok);
+  assert.equal(s.run(["--host", "box"]).code, EXIT.ok);
+  const entries = listJournals(s.home);
+  assert.deepEqual(entries.map((e) => [e.header.only, e.header.hosts]), [["box", ["box"]], [null, ["laptop", "box", "server"]]], "newest first");
+});
+
+test("only the last 20 journals are kept; older ones are deleted when a new one is written", () => {
+  const s = setup({ ssh: {} });
+  mkdirSync(join(s.home, JOURNAL), { recursive: true });
+  const old = (i: number) => `2020010${i % 10}T0${Math.floor(i / 10)}0000.000Z-1.jsonl`;
+  for (let i = 0; i < 24; i++) writeFileSync(join(s.home, JOURNAL, old(i)), `${JSON.stringify({ journal: 1, v: 1, time: "2020-01-01T00:00:00Z", commit: null, only: null, hosts: ["laptop"], ms: 1, interrupted: false, result: "ok", end: null })}\n`);
+  writeFileSync(join(s.home, JOURNAL, "notes.txt"), "not a journal");
+  assert.equal(s.run().code, EXIT.ok);
+  const files = journalFiles(s.home).filter((f) => f.endsWith(".jsonl"));
+  assert.equal(files.length, 20);
+  assert.ok(files.at(-1)!.startsWith(String(new Date().getUTCFullYear())), "the new one is kept");
+  assert.equal(files.filter((f) => f.startsWith("2020")).length, 19);
+  assert.ok(existsSync(join(s.home, JOURNAL, "notes.txt")), "what is not a journal is left alone");
+});
+
+test("a push that is refused before it starts writes no journal", () => {
+  const s = setup({ hosts: { box: "alice@box", edge: null }, ssh: { "alice@box": OK } });
+  assert.equal(s.run(["--host", "nope"]).code, EXIT.invalid);
+  assert.equal(s.run(["--host", "edge"]).code, EXIT.invalid);
+  s.write("hosts/laptop.yaml", "nonsense: true\n");
+  assert.equal(s.run().code, EXIT.invalid);
+  mkdirSync(join(s.home, PUSH_LOCK), { recursive: true });
+  writeFileSync(join(s.home, PUSH_LOCK, "pid"), `${process.pid}\n`);
+  assert.equal(s.run().code, EXIT.locked);
+  assert.deepEqual(journalFiles(s.home), []);
+});
+
+test("a push that stopped on a conflict still has a journal, with the result", () => {
+  const s = setup({ ...HERE_NOTE });
+  s.write("notes.md", "one");
+  mkdirSync(join(s.home, ".claude"), { recursive: true });
+  writeFileSync(join(s.home, ".claude/notes.md"), "a real file");
+  assert.equal(s.run().code, EXIT.conflict);
+  const [entry] = listJournals(s.home);
+  assert.equal(entry!.header.result, "conflict");
+  assert.equal(entry!.header.interrupted, false);
+});
+
+test("ctrl-c keeps a partial journal, marked as interrupted", async () => {
+  const s = setup({ hosts: { alpha: "me@alpha", slow: "me@slow" }, ssh: { "me@alpha": OK, "me@slow": { ...OK, delay: 8_000 } } });
+  const child = spawn(join(s.clone, "bin/fleet"), ["push"], {
+    env: { PATH: "/usr/bin:/bin", HOME: s.home, FLEET_NODE: process.execPath, FLEET_CONFIG: s.clone, GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_SYSTEM: "/dev/null", GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@example.com", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@example.com" },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  const closed = new Promise<number | null>((resolve) => child.once("close", resolve));
+  const until = Date.now() + 20_000;
+  while (!s.sshHosts().includes("me@slow") && Date.now() < until) await new Promise((r) => setTimeout(r, 50));
+  child.kill("SIGINT");
+  assert.equal(await closed, 130);
+  const stored = readJournal(journalFiles(s.home)[0]!, s.home)!;
+  assert.equal(stored.header.interrupted, true);
+  assert.equal(stored.header.result, null);
+  assert.equal(stored.header.commit, git(s.clone, "rev-parse", "HEAD"));
+  assert.deepEqual(stored.header.hosts, ["laptop", "alpha", "slow"]);
+  assert.ok(stored.events.some((e) => e.event.event === "host" && e.event.host === "alpha" && e.event.state === "done"), "what happened before is kept");
+  assert.ok(!stored.events.some((e) => e.event.event === "host" && e.event.host === "slow" && e.event.state === "done"));
+});
+
+test("a journal that cannot be written is a message, and the push still succeeds", () => {
+  const s = setup({ hosts: { server: "alice@server" }, ssh: { "alice@server": OK } });
+  mkdirSync(join(s.home, ".local/state/fleet"), { recursive: true });
+  writeFileSync(join(s.home, JOURNAL), "a file where the directory should be");
+  const { r, doc } = s.json();
+  assert.equal(r.code, EXIT.ok, r.stderr);
+  assert.equal(doc.code, "ok");
+  assert.match(r.stderr, /fleet: could not write the push journal/);
+  assert.equal(doc.messages.some((m: string) => /push journal/.test(m)), true);
+});
+
+test("a replay of a real push, run through the reducer, ends where the push did", () => {
+  const s = setup({ hosts: { server: "alice@server" }, ssh: { "alice@server": { ...OK, stdout: applyDoc("ok", { created: [{ target: "~/.claude/a.md" }] }) } } });
+  s.write("notes.md", "one");
+  assert.equal(s.run().code, EXIT.ok);
+  const stored = readJournal(journalFiles(s.home)[0]!, s.home)!;
+  // The original run: the same events at their own times, then the end.
+  let run = startRun(stored.header.hosts.map((name) => ({ name, ssh: null, self: false })), 1000);
+  for (const { t, event } of stored.events) run = reduce(run, event, 1000 + t);
+  const end = readEnd(0, JSON.stringify(stored.header.end));
+  const original = finish(run, end, 1000 + stored.header.ms);
+  let replay = startReplay(stored, 1000);
+  replay = advanceReplay(replay, 1000 + stored.header.ms - 1);
+  assert.equal(replay.over, false, "not over before its time");
+  replay = advanceReplay(replay, 1000 + stored.header.ms + 5000);
+  assert.equal(replay.over, true);
+  assert.deepEqual(replay.run, original);
+  assert.equal(replay.run.end?.code, "ok");
+  assert.equal(replay.run.lanes.find((l) => l.host === "server")?.state, "done");
 });
