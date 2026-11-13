@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { build, releases } from "../scripts/site-changelog.ts";
+import { build, releases, sentenceEnd } from "../scripts/site-changelog.ts";
 import { repoRoot } from "./helpers.ts";
 
 const read = (path: string) => readFileSync(join(repoRoot, path), "utf8");
@@ -80,4 +80,11 @@ test("site changelog: the landing page links Compare and What's new, and has no 
   assert.doesNotMatch(index, /id="push-live"/);
   assert.doesNotMatch(index, /never does/i);
   for (const text of [index, read("site/changelog/index.html"), read("site/style.css")]) assert.doesNotMatch(text, /—/);
+});
+
+test("site: a headline ends at the first full stop outside code and quotes", () => {
+  const head = (s: string) => s.slice(0, sentenceEnd(s) + 1);
+  assert.equal(head('The title is now "fleet · One config. Every machine.", the same line. Detail.'), 'The title is now "fleet · One config. Every machine.", the same line.');
+  assert.equal(head("Run `a. b` here. Then more."), "Run `a. b` here.");
+  assert.equal(sentenceEnd("No full stop at all"), -1);
 });

@@ -49,9 +49,22 @@ const inline = (s: string) =>
     .replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, text: string, url: string) => `<a href="${url.startsWith("http") ? url : `${REPO}/blob/main/${url}`}">${text}</a>`)
     .replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>");
 
+/** Where the first sentence ends: a full stop and a space, not inside `code` or a "quote". -1 when it never does. */
+export const sentenceEnd = (text: string) => {
+  let code = false;
+  let quote = false;
+  for (let i = 0; i < text.length - 1; i++) {
+    const c = text[i];
+    if (c === "`") code = !code;
+    else if (c === '"' && !code) quote = !quote;
+    else if (c === "." && !code && !quote && /\s/.test(text[i + 1]!)) return i;
+  }
+  return -1;
+};
+
 /** The first sentence is the headline, the rest is detail. */
 const item = (text: string) => {
-  const i = text.search(/\.\s/);
+  const i = sentenceEnd(text);
   const [head, detail] = i < 0 ? [text, ""] : [text.slice(0, i + 1), text.slice(i + 2)];
   return `<li><span class="cl-h">${inline(head)}</span>${detail === "" ? "" : ` <span class="cl-d">${inline(detail)}</span>`}</li>`;
 };

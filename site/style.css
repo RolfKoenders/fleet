@@ -334,6 +334,7 @@ footer a:hover { color: var(--text); }
 .rail b { display: block; font: 600 15px var(--mono); color: var(--text); }
 .rail span { color: var(--muted); font: 13px var(--mono); }
 .rail .pace { margin-top: 6px; padding: 12px 14px; border: 1px dashed var(--border); border-radius: 10px; color: var(--sub); font-size: 13.5px; }
+.rail .pace a { display: inline; color: var(--brand); text-decoration: underline; text-underline-offset: 2px; }
 .cl-rel { border: 1px solid var(--border-soft); border-radius: var(--radius); background: rgba(13,17,23,.75); padding: 26px 28px; margin-bottom: 18px; }
 .cl-rel header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 14px; margin-bottom: 14px; }
 .cl-rel h3 { margin: 0; font: 700 26px var(--mono); letter-spacing: -.02em; }
@@ -395,4 +396,4 @@ footer a:hover { color: var(--text); }
 .filters { grid-column: 1 / -1; display: flex; gap: 8px; flex-wrap: wrap; }
 .filters button { font: 500 13px var(--mono); padding: 6px 12px; border-radius: 999px; border: 1px solid var(--border); background: var(--surface); color: var(--sub); cursor: pointer; }
 .filters button.on { background: var(--brand); color: #04120a; border-color: var(--brand); }
-@media (max-width: 900px) { .clpage { grid-template-columns: 1fr; } }
+@media (max-width: 900px) { .clpage { grid-template-columns: minmax(0, 1fr); } }
