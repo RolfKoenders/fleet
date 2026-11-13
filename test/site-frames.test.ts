@@ -152,6 +152,7 @@ test("site: Watch it land is the real push drawn by its own renderer, and the he
   assert.equal(piped[0], '$ fleet push -m "Add the triage skill" 2>&1 | tee push.log');
   assert.deepEqual(piped.slice(1, 4).map((l) => l.replace(/\(\d+\.\ds\)/, "(T)")), ["09:41:03 laptop: started", "09:41:06 laptop: ok · 1 link (T)", "09:41:07 devbox: started"]);
   assert.ok(!piped.some((l) => /write-|█/.test(l)), "no line per step when piped");
+  assert.ok(piped.some((l) => /^\d\d:\d\d:\d\d server: conflict · 1 link \(\d+\.\ds\)$/.test(l)) && !piped.some((l) => /fix:/.test(l)), "the conflict is one line, its fix is left to stdout");
 
   const html = readFileSync(join(repoRoot, "site/index.html"), "utf8");
   assert.ok(html.indexOf('id="how"') < html.indexOf('id="watch"') && html.indexOf('id="watch"') < html.indexOf('id="bridge"'), "the section follows How it works");

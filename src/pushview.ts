@@ -125,7 +125,7 @@ const lane = (l: Lane, view: View, now: number, hostWidth: number): { segs: Seg[
     const record = view.records.get(l.host);
     const ended = time?.to != null ? time.to - time.from : undefined;
     if (l.result === "timer") return { segs: [...mark("◌", "dim"), ...lead, ["timer: applies on its own schedule", "dim"]], shrink: -1 };
-    const what = record === undefined ? (l.changes > 0 ? plural(l.changes, "change") : "") : kinds(record);
+    const what = record === undefined ? "" : kinds(record);
     const bad = l.result !== "ok";
     return { segs: [...mark(bad ? "✕" : "✓", bad ? "yellow" : "green"), ...lead, [l.result ?? "done", bad ? "yellow" : "green"], [what === "" ? "" : ` · ${what}`], ...(l.result === "unreachable" ? [] : trail(ended))], shrink: -1 };
   }
@@ -226,7 +226,7 @@ export class Progress {
     if (this.over) return;
     this.view.records.set(record.host, record);
     if (seconds !== undefined) this.seconds.set(record.host, seconds);
-    if (this.mode === "plain") for (const text of hostLines(record, seconds, this.options.color)) this.line(text, text.startsWith(" "));
+    if (this.mode === "plain") this.line(hostLines(record, seconds, this.options.color)[0]!);
     else this.redraw();
   }
 

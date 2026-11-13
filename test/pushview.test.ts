@@ -146,7 +146,15 @@ test("plain mode: a timestamped line for each host start and result, the host's 
   for (const e of EVENTS) progress.event(e);
   progress.event({ event: "message", host: "server", text: "fleet: heads up" });
   progress.record(record("laptop", "ok", { created: [{ target: "a" }] }), 1.8);
+  progress.record(record("server", "conflict", { conflicts: [{ kind: "link", path: "~/.claude/x.md", detail: "is a real file", fix: "move it" }] }), 0.4);
   progress.finish();
-  assert.deepEqual(written.join("").split("\n"), ["09:05:07 laptop: started", "09:05:07 server: started", "09:05:07 server: heads up", "09:05:07 laptop: ok · 1 link (1.8s)", ""]);
+  assert.deepEqual(written.join("").split("\n"), ["09:05:07 laptop: started", "09:05:07 server: started", "09:05:07 server: heads up", "09:05:07 laptop: ok · 1 link (1.8s)", "09:05:07 server: conflict (0.4s)", ""]);
   assert.equal(progress.summarized, false);
+});
+
+test("a lane that is done before its record arrives shows the result alone, so its count never changes wording", () => {
+  const v = view();
+  v.run = reduce(v.run, { event: "host", host: "server", state: "done", result: "conflict", changes: 1 });
+  v.times.set("server", { from: 1800, to: 2100 });
+  assert.match(plain(liveBlock(v, 200, 2500, false)[3]!), /^ ✕ server {2}ssh {3}conflict {2}0\.3s$/);
 });
