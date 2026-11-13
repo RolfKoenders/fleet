@@ -2,6 +2,7 @@ import { addEntry, entryNames } from "./entries.ts";
 import type { Section, Value } from "./entries.ts";
 import { addToList, readList, removeFromList } from "./lists.ts";
 import type { ListPath } from "./lists.ts";
+import { newHostFile } from "./hostfile.ts";
 import { CannotEdit } from "./yamltext.ts";
 
 /** What a host picks from: skill bundles, or MCP servers. */
@@ -25,7 +26,9 @@ export type EditOp =
   /** A new skill source in `catalog/skills.yaml`. */
   | { op: "addSource"; name: string; entry: Record<string, Value> }
   /** A new bundle in `catalog/skills.yaml`. */
-  | { op: "addBundle"; name: string; skills: string[] };
+  | { op: "addBundle"; name: string; skills: string[] }
+  /** A new host file, reached over `ssh`, with nothing picked yet or a copy of what `from` picks and sets. */
+  | { op: "addHost"; host: string; ssh: string; from: string | null };
 
 /** Config files by repo-relative path (`hosts/laptop.yaml`) to their text. */
 export type Files = Record<string, string>;
@@ -98,6 +101,14 @@ function run(files: Files, op: EditOp): void {
       return addCatalog(files, "sources", op.name, op.entry);
     case "addBundle":
       return addCatalog(files, "bundles", op.name, op.skills);
+    case "addHost": {
+      if (!HOST_NAME.test(op.host)) throw new Stale(`'${op.host}' is not a host name`);
+      if (hostFile(op.host) in files) throw new Stale(`${hostFile(op.host)} already exists`);
+      const source = op.from === null ? null : files[hostFile(op.from)];
+      if (op.from !== null && source === undefined) throw new Stale(`${hostFile(op.from)} does not exist`);
+      files[hostFile(op.host)] = newHostFile(op.ssh, source ?? null);
+      return;
+    }
   }
 }
 

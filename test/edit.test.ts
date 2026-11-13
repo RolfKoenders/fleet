@@ -1,5 +1,5 @@
-import { cpSync, readFileSync, readdirSync } from "node:fs";
-import { join, relative } from "node:path";
+import { cpSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { dirname, join, relative } from "node:path";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { repoRoot, tempDir } from "./helpers.ts";
@@ -31,6 +31,17 @@ function diff(before: string, after: string): { removed: string[]; added: string
   let tail = 0;
   while (tail < a.length - head && tail < b.length - head && a[a.length - 1 - tail] === b[b.length - 1 - tail]) tail++;
   return { removed: a.slice(head, a.length - tail), added: b.slice(head, b.length - tail) };
+}
+
+/** A config directory on disk holding the examples and then `files`, so a host that is only in `files` is a host. */
+function tempDirWith(files: Files): string {
+  const dir = tempDir("fleet-edit-cfg-");
+  cpSync(examples, dir, { recursive: true });
+  for (const [path, text] of Object.entries(files)) {
+    mkdirSync(dirname(join(dir, path)), { recursive: true });
+    writeFileSync(join(dir, path), text);
+  }
+  return dir;
 }
 
 const one = (files: Files, op: EditOp) => {
@@ -325,4 +336,52 @@ test("adding an item and taking it out again gives back the text, for flow and b
     if (text !== "z: 1\n") assert.equal(back.files["hosts/box.yaml"], text);
     else assert.equal(back.files["hosts/box.yaml"], "z: 1\nbundles: []\n");
   }
+});
+
+test("addHost writes a host from the defaults: how to reach it and an empty age, nothing else", () => {
+  const files = exampleFiles();
+  const r = applyOps(files, [{ op: "addHost", host: "mini", ssh: "me@mini.local", from: null }]);
+  assert.deepEqual(r.dropped, []);
+  assert.deepEqual(r.changed, ["hosts/mini.yaml"]);
+  assert.equal(r.files["hosts/mini.yaml"], 'ssh: me@mini.local\nage: ""\n');
+  assert.deepEqual(validate(tempDirWith(r.files), {}), []);
+});
+
+test("addHost copies bundles, exclude, mcp, settings and vars from another host, comments in them kept, and not ssh, age, admin or files", () => {
+  const files: Files = {
+    ...exampleFiles(),
+    "hosts/box.yaml": "# The build box.\nadmin: false\nssh: me@box\nage: age1abc\n\n# Skills.\nbundles: [extra, more]\nexclude: [core]\nmcp:\n  include: [tracker]  # for builds\n  exclude: [docs]\nsettings:\n  claude:\n    model: opus\nvars:\n  DOCS_URL: 'https://box.example.com'\nfiles:\n  - { source: config/rules/host/server.md, target: ~/.claude/rules/host.md }\n",
+  };
+  const r = applyOps(files, [{ op: "addHost", host: "mini", ssh: "me@mini", from: "box" }]);
+  assert.deepEqual(r.dropped, []);
+  const text = r.files["hosts/mini.yaml"]!;
+  assert.equal(
+    text,
+    'ssh: me@mini\nage: ""\n\nbundles: [extra, more]\n\nexclude: [core]\n\nmcp:\n  include: [tracker]  # for builds\n  exclude: [docs]\n\nsettings:\n  claude:\n    model: opus\n\nvars:\n  DOCS_URL: \'https://box.example.com\'\n',
+  );
+  assert.equal(r.files["hosts/box.yaml"], files["hosts/box.yaml"], "the source is not touched");
+  const doc = load(text) as Record<string, unknown>;
+  assert.equal(doc.admin, undefined);
+  assert.equal(doc.files, undefined);
+  assert.deepEqual(doc.mcp, { include: ["tracker"], exclude: ["docs"] });
+});
+
+test("addHost copies from a host with only comments, and refuses a host that exists, a name that is not one and a source that is not there", () => {
+  const files: Files = { ...exampleFiles(), "hosts/quiet.yaml": "# nothing yet\n" };
+  const ok = applyOps(files, [{ op: "addHost", host: "mini", ssh: "mini", from: "quiet" }]);
+  assert.equal(ok.files["hosts/mini.yaml"], 'ssh: mini\nage: ""\n');
+  for (const op of [
+    { op: "addHost", host: "laptop", ssh: "x", from: null },
+    { op: "addHost", host: "../x", ssh: "x", from: null },
+    { op: "addHost", host: "mini", ssh: "x", from: "nowhere" },
+  ] as EditOp[]) {
+    const r = applyOps(files, [op]);
+    assert.equal(r.dropped.length, 1, JSON.stringify(op));
+    assert.deepEqual(r.changed, []);
+  }
+});
+
+test("a host file with only comments is an empty host, not a file that fails to load", () => {
+  const files: Files = { ...exampleFiles(), "hosts/quiet.yaml": "# nothing yet\n\n" };
+  assert.deepEqual(validate(tempDirWith(files), {}), []);
 });

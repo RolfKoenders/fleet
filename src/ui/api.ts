@@ -13,6 +13,7 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { findSkills, sourceDir } from "../sources.ts";
 import { RealPusher } from "../tui/pusher.ts";
+import { addHost, hostRequest } from "./hostinit.ts";
 import type { FleetEvent } from "../events.ts";
 import type { PushEnd } from "../pushrun.ts";
 
@@ -50,6 +51,14 @@ import type { PushEnd } from "../pushrun.ts";
  *   POST /api/catalog/probe    Body `{"name": "...", "entry": {...}, "confirm": true}`. Doctor's probe on one catalog entry that is not on
  *                      disk, on this machine, with the secrets it can read: `result`, `tools`, `size`, `tokens`, `unset` (secret names with
  *                      no value here, left out). Refused unless `confirm` is true. No value is ever in the answer.
+ *
+ *   POST /api/hosts/init  Body `{"name": "...", "ssh": "user@host", "from": null | "<host>", "confirm": true}`. Not a held edit: writes
+ *                      `hosts/<name>.yaml` and runs the real `fleet init <name>` as a child process, relaying its output lines as `init`
+ *                      events and its end as `initend`, and answers when it has ended (`ok`, `code`, `exit`, `messages`, `removed`,
+ *                      `kept`). `from` copies bundles, exclude, mcp, settings and vars of that host, never ssh, age or files. Refused,
+ *                      writing nothing, without `confirm`, for a host that exists (409 `exists`), while a push or an init runs (409
+ *                      `locked`), when the config repo has changes of its own (409 `outside-changes`) or when a host would not load
+ *                      (422 `invalid`). When init fails before it committed anything, the host file is removed again.
  *
  * Edits are operations (`EditOp`) held by the page and replayed here: `add` and `remove` of a bundle or server for a host, and the
  * catalog additions `addServer`, `addSource` and `addBundle`. Each is checked by `opsOf`, with the loader's own rules.
@@ -199,6 +208,34 @@ export function routes(deps: ApiDeps): Route[] {
       method: "POST",
       path: "/api/plan",
       handle: async (req) => ({ status: 200, body: { ok: true, ...plan(deps.configDir, deps.home, opsOf(await req.json())) } }),
+    },
+    {
+      method: "POST",
+      path: "/api/hosts/init",
+      handle: async (req) => {
+        const request = hostRequest(await req.json());
+        const done = deps.busy();
+        try {
+          // The lock is held for the whole init: it does not take the push lock itself, and a push must not run under it.
+          let release: () => void;
+          try {
+            release = acquirePushLock(deps.home);
+          } catch (error) {
+            if (error instanceof LockedError) return refused(409, "locked", error.message);
+            throw error;
+          }
+          try {
+            const out = await addHost(deps.configDir, deps.toolDir, deps.home, request, (text) => deps.broadcast("init", { text }));
+            if ("refused" in out) return refused(out.refused.status, out.refused.code, out.refused.message, out.refused.extra);
+            deps.broadcast("initend", out.doc);
+            return { status: out.doc.exit === null ? 500 : 200, body: out.doc };
+          } finally {
+            release();
+          }
+        } finally {
+          done();
+        }
+      },
     },
     {
       method: "POST",

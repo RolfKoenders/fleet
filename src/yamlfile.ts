@@ -23,7 +23,8 @@ export function parseFile(path: string, optional: boolean, problems: string[], o
   }
   let doc: unknown;
   try {
-    doc = load(text, { filename: path });
+    // Comments and blank lines alone are an empty file, not a missing document.
+    doc = text.split("\n").every((line) => /^\s*(#.*)?$/.test(line)) ? null : load(text, { filename: path });
   } catch (error) {
     problems.push(`${path}: ${(error as Error).message.split("\n")[0]}`);
     return null;
