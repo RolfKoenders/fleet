@@ -25,7 +25,7 @@ The first screen, named like the bridge's Matrix screen and read the same way. O
 | `✕ excluded` | the host (or the defaults) excludes it |
 | `· off` | nothing picks it |
 
-Clicking a cell holds the smallest edit to that host's file: an item the defaults give is taken away with `exclude` in the host's file (the defaults are not edited), an item the host added is taken out of its list, an exclude is taken back. Clicking the same cell again takes the held edit back. A pane beside the table shows the host's file as it will be written, with comments, blank lines and list style kept; nothing is on disk yet. Secrets lists what the config has, read-only. A server, skill source or bundle you add in the Catalog is a row of the Matrix at once, off for every host, held like any edit.
+Clicking a cell holds the smallest edit to that host's file: an item the defaults give is taken away with `exclude` in the host's file (the defaults are not edited), an item the host added is taken out of its list, an exclude is taken back. Clicking the same cell again takes the held edit back. A pane beside the table shows the host's file as it will be written, with comments, blank lines and list style kept; nothing is on disk yet. A server, skill source or bundle you add in the Catalog is a row of the Matrix at once, off for every host, held like any edit.
 
 ### Catalog
 
@@ -46,6 +46,17 @@ One card per host: how it is reached, and what it gets. Below them, **Add a host
 - It refuses while edits are held (the page asks you to push or discard them first, so init's commit does not sweep them in), while a push runs, while the config repo has changes the page did not make, and for a host that already exists.
 - When init fails before it committed anything, the host file is deleted and the files init rewrote are restored, so the repo is as it was. When init had already committed and pushed (for example the timer step failed on the host), the host file stays, because that commit is published; the page says so, and `fleet init <name>` finishes the rest when run again.
 - Retiring a host is not here.
+
+### Secrets
+
+A table of every secret name against every host, by name only. A cell is **set** (the host's own secrets file has the name, or `shared` has it and the host can read `shared`), **missing** (a server the host picks, or its settings, use the name and neither file has it) or **not used**. A held value shows as `set` with `held`, and the tab counts the missing cells. Set value (Replace value when it is set everywhere it is needed) opens a password field:
+
+- Typing a value here is allowed. It is sent to the server once, over the page's own connection, and is never logged, echoed, kept or sent back. The field is not named (a password manager does not offer to save it), asks for no autofill, and is emptied before the request goes; the page holds no copy of it in its state, storage or address.
+- The value is encrypted at once: the server copies the host's secrets file into a private temp directory (mode 0700), runs `sops set --value-stdin` there (the value goes on sops' stdin, never in argv or the environment) and reads the new file back. The directory is removed whatever happens, and the repo is not touched.
+- The result is a held edit that carries the encrypted file, shown in Review & push by its names with a short mark of each ciphertext. It is checked as strictly as a pick: the path must be a secrets file of `shared` or of a host with an age recipient, the text must hold nothing but ciphertext, it must be encrypted for exactly the recipients `.sops.yaml` names for that file, and it may add or replace only the names it says (no delete, no rename). It is written over the file it was made from only: when that file changed on disk since, the edit is dropped as `stale` and nothing is overwritten, and you set the value again.
+- It goes to the hosts that pick a server using the secret and do not have it yet, unticked others can be added, and `shared` is a choice of its own. A host with no age key cannot be chosen.
+- A failure is one of a few fixed sentences. What sops said is never passed on, because it can quote what it was given.
+- This sets and replaces. It does not delete or rename a secret: use `fleet secrets` for that.
 
 ### Review & push
 
@@ -68,7 +79,8 @@ Every route is JSON under `/api/` and sits behind the checks below. Request bodi
 | --- | --- |
 | `GET /api/status` | what `fleet status --json` knows about this host |
 | `GET /api/matrix` | hosts, bundles with their skills, servers, and each host's cell; plus `outside`, the uncommitted changes in the config repo |
-| `GET /api/secrets` | secret names and who can read them, never a value |
+| `GET /api/secrets` | secret names and who can read them, and `table`: each name against each host as set, missing or unused, never a value |
+| `POST /api/secrets/set` | `{name, value, files, ops}`: encrypts one value into the secrets file of each of `files` (`shared` or a host) with sops in a private temp dir, and answers the held `setSecret` edits that carry those files. Nothing is written to the repo, and the value is in no answer, error, log or event; 400 `invalid`, 409 `stale`, 422 `no-recipient`, `needs-secret`, `sops-failed`, `recipients` or `invalid` |
 | `GET /api/skills` | the skills in the source clones fleet already has, and the bundle that holds each; nothing is cloned or fetched |
 | `POST /api/catalog/clone` | `{repo, path?, branch?}`: a shallow clone in a temp directory; answers its `id`, head `commit`, `branch` and `skills`. The repo must be a URL, an scp-style address or an absolute path, never something git reads as an option, and goes after `--` |
 | `POST /api/catalog/discard` | `{id}`: deletes that temp clone |
@@ -89,7 +101,7 @@ The page can change your config and push, so nothing but you may reach it.
 - A request whose `Host` is not `127.0.0.1:<port>` is refused, so a web page on another site cannot reach the server by pointing its own name at your machine (DNS rebinding). A write whose `Origin` is not the page itself is refused too.
 - The server sends no CORS header, so no other page can read an answer.
 - The one call that cannot carry a header is the stream of live updates (a browser's `EventSource` cannot), so that call takes the token in its query instead. Nothing logs a URL.
-- A secret's value is never sent to the browser. Nothing the page sends is logged.
+- A secret's value is never sent to the browser. Nothing the page sends is logged, and the one route that takes a value (`/api/secrets/set`) answers with the encrypted file and fixed messages only.
 
 ## Pushing
 

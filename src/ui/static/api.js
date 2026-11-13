@@ -1,5 +1,6 @@
 // The page's API client: every call carries the token as a header, and nothing else is ever sent.
 
+import { setBody } from "./secrets.js";
 import { backoff } from "./state.js";
 
 /** A refused or failed call. `code` is fleet's (`unauthorized`, `forbidden`, `locked`, ...), or `network`. */
@@ -51,6 +52,12 @@ export function createClient(token, fetcher = (...args) => fetch(...args)) {
     discardClone: (id) => call("/api/catalog/discard", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id }), keepalive: true }),
     /** Runs the server on this machine, with real credentials: only after the person has confirmed. @param {string} name @param {unknown} entry */
     probe: (name, entry) => send("/api/catalog/probe", { name, entry, confirm: true }),
+    /**
+     * Encrypts one value into the secrets file of each of `files` (`shared` or a host). The value is in this request and nowhere
+     * else: the answer is the held edits that carry the encrypted files.
+     * @param {string} name @param {string} value @param {string[]} files @param {unknown[]} ops
+     */
+    setSecret: (name, value, files, ops) => send("/api/secrets/set", setBody(name, value, files, ops)),
     /** @param {unknown[]} ops @param {string} [show] a host file to show whether or not the edits change it */
     preview: (ops, show) => send("/api/preview", show ? { ops, show } : { ops }),
     /** @param {unknown[]} ops */

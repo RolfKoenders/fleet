@@ -1,12 +1,15 @@
 // What the matrix and the review need that is not drawing: a cell's state, the smallest edit for a click, the
 // summary of a host's pick changes and the suggested commit message. Pure: `node --test` runs it.
 
+import { heldNames } from "./secrets.js";
+
 /**
  * @typedef {{ on: boolean, picked: "defaults" | "host" | "both" | null, excluded: "defaults" | "host" | "both" | null }} Cell
  * @typedef {{ op: "add" | "remove", host: string, kind: "bundles" | "mcp", name: string }} PickOp
  * @typedef {{ op: "addServer" | "addSource", name: string, entry: Record<string, any> }} EntryOp
  * @typedef {{ op: "addBundle", name: string, skills: string[] }} BundleOp
- * @typedef {PickOp | EntryOp | BundleOp} Op
+ * @typedef {{ op: "setSecret", file: string, names: string[], base: string, content: string }} SecretOp
+ * @typedef {PickOp | EntryOp | BundleOp | SecretOp} Op
  * @typedef {{ skills: { added: string[], removed: string[] }, servers: { added: string[], removed: string[] } }} PickChange
  */
 
@@ -71,6 +74,7 @@ export function opLabel(op) {
   if (isPick(op)) return `${op.op === "add" ? "give" : "take"} ${op.kind === "bundles" ? "bundle" : "server"} ${op.name} ${op.op === "add" ? "to" : "from"} ${op.host}`;
   if (op.op === "addServer") return `add server ${op.name} to the catalog`;
   if (op.op === "addSource") return `add skill source ${op.name} to the catalog`;
+  if (op.op === "setSecret") return `set ${op.names.join(", ")} in ${op.file}`;
   return `add bundle ${op.name} to the catalog`;
 }
 
@@ -86,9 +90,11 @@ export function suggestMessage(ops) {
   /** @type {string[]} */
   const parts = [];
   for (const [op, word] of /** @type {const} */ ([["addServer", "server"], ["addSource", "skill source"], ["addBundle", "bundle"]])) {
-    const names = ops.filter((o) => o.op === op).map((o) => o.name);
+    const names = ops.flatMap((o) => (o.op === op && "name" in o ? [o.name] : []));
     if (names.length > 0) parts.push(`add ${word}${names.length === 1 ? "" : "s"} ${list(names)}`);
   }
+  const secrets = ops.filter((o) => o.op === "setSecret");
+  for (const { name, files } of heldNames(ops)) parts.push(`set ${name} for ${list(files.map((f) => (f === "shared" ? "every host" : f)))}`);
   const picks = ops.filter(isPick);
   const hosts = [...new Set(picks.map((o) => o.host))];
   for (const host of hosts) {
@@ -101,7 +107,7 @@ export function suggestMessage(ops) {
   const text = parts.join("; ");
   const message = text.charAt(0).toUpperCase() + text.slice(1);
   if (message.length <= 72) return message;
-  const added = ops.length - picks.length;
+  const added = ops.length - picks.length - secrets.length;
   const catalog = added === 0 ? "" : `Add ${added} catalog entr${added === 1 ? "y" : "ies"}`;
   const changed = hosts.length === 0 ? "" : `change what ${hosts.length} host${hosts.length === 1 ? "" : "s"} get${hosts.length === 1 ? "s" : ""}`;
   return catalog === "" ? `Change${changed.slice("change".length)}` : changed === "" ? catalog : `${catalog}; ${changed}`;

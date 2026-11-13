@@ -309,5 +309,5 @@ export function confirmText(op) {
  */
 export function takeBack(ops, op) {
   const kind = op.op === "addServer" ? "mcp" : op.op === "addBundle" ? "bundles" : null;
-  return ops.filter((o) => o !== op && !(kind !== null && (o.op === "add" || o.op === "remove") && o.kind === kind && o.name === op.name));
+  return ops.filter((o) => o !== op && !(kind !== null && (o.op === "add" || o.op === "remove") && o.kind === kind && "name" in op && o.name === op.name));
 }

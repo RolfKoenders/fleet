@@ -128,9 +128,9 @@ test("taking back an addition takes back the picks of it too, and nothing else",
   const add = { op: "addServer", name: "fresh", entry: {} } as any;
   const bundle = { op: "addBundle", name: "fresh", skills: ["a"] } as any;
   const ops: any[] = [add, bundle, { op: "add", host: "box", kind: "mcp", name: "fresh" }, { op: "add", host: "box", kind: "bundles", name: "fresh" }, { op: "remove", host: "box", kind: "mcp", name: "docs" }];
-  assert.deepEqual(takeBack(ops, add).map((o) => o.op + ":" + o.name), ["addBundle:fresh", "add:fresh", "remove:docs"]);
+  assert.deepEqual(takeBack(ops, add).map((o: any) => o.op + ":" + o.name), ["addBundle:fresh", "add:fresh", "remove:docs"]);
   assert.equal(takeBack(ops, add).some((o: any) => o.kind === "mcp" && o.name === "fresh"), false);
-  assert.deepEqual(takeBack(ops, bundle).map((o) => o.op + ":" + o.name), ["addServer:fresh", "add:fresh", "remove:docs"]);
+  assert.deepEqual(takeBack(ops, bundle).map((o: any) => o.op + ":" + o.name), ["addServer:fresh", "add:fresh", "remove:docs"]);
 });
 
 test("catalog additions have words, a commit message, and never get in the way of a click on a cell", () => {

@@ -141,7 +141,23 @@ dl.facts.small { padding: 4px 0 0; grid-template-columns: 70px minmax(0, 1fr); f
 .sec { width: 100%; border-collapse: collapse; font-size: 13px; }
 .sec th, .sec td { padding: 10px 14px; border-bottom: 1px solid var(--soft); text-align: left; white-space: nowrap; }
 .sec thead th { color: var(--muted); font-weight: 400; }
-.sec .have { color: var(--bright); } .sec .na { color: var(--faint); } .sec .muted { color: var(--muted); }
+.sec .have { color: var(--bright); } .sec .na { color: var(--faint); } .sec .muted { color: var(--muted); } .sec .miss { color: var(--warn); }
+.sec th small { display: block; color: var(--faint); font-size: 11px; }
+.sec td.act { text-align: right; }
+.sec .held { font-size: 11px; color: var(--bright); margin-left: 4px; }
+.side .count.warn { color: var(--warn); }
+.sdlg { width: min(460px, calc(100vw - 24px)); background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: 12px; padding: 20px 22px; }
+.sdlg::backdrop { background: rgba(1,4,9,.7); }
+.sdlg h3 { margin: 0 0 6px; overflow-wrap: anywhere; }
+.sdlg p { color: var(--muted); margin: 0 0 14px; font-size: 13.5px; }
+.sdlg .targets { display: grid; gap: 6px; margin: 4px 0 0; }
+.sdlg .targets label { display: flex; gap: 8px; align-items: baseline; font: 13px var(--mono); color: var(--sub); }
+.sdlg .targets label small { color: var(--muted); font: 12px var(--mono); }
+.sdlg .targets label.off { color: var(--faint); }
+.sdlg .actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; flex-wrap: wrap; }
+.sdlg input[type=password] { width: 100%; background: var(--ink); border: 1px solid var(--border); color: var(--text); border-radius: 8px; padding: 8px 10px; font: 13px var(--mono); min-width: 0; }
+.sdlg input[type=password]:focus { outline: none; border-color: var(--brand); box-shadow: 0 0 0 3px rgba(63,185,80,.18); }
+.sdlg .err { color: var(--bad); font-size: 13px; margin-top: 10px; overflow-wrap: anywhere; }
 
 /* Review */
 .checks { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 10px; }

@@ -5,6 +5,7 @@ import { fill, h } from "./dom.js";
 import { bundleDraft, checkLines, cloneKey, confirmText, opWarnings, secretOf, secretsOf, serverDraft, skillChoices, sourceDraft, takeBack } from "./catalog.js";
 import { blockers, cellState, clickCell, opLabel, suggestMessage, summaryLine, WORDS } from "./matrix.js";
 import { blankHost, confirmInit, fileLines, heldProblem, hostDraft, idleInit, initEnd, initLine, SETUP_DOC, startInit } from "./hosts.js";
+import { actionOf, afterSet, cellView, dialogTargets, heldNames, missingCount, valueProblem } from "./secrets.js";
 import { heldFiles, idlePush, pushEnd, pushEvent, routeOf, statusView, tokenOf } from "./state.js";
 
 /** @typedef {import("./state.js").Held} Held */
@@ -49,7 +50,7 @@ const SCREENS = {
   matrix: ["Matrix", "What each host gets: every skill bundle and MCP server against every host. Click a cell to give it to a host or take it away. Fleet writes the smallest change: an item the defaults give is taken away with exclude, not by editing the defaults."],
   catalog: ["Catalog", "The MCP servers, skill sources and skill bundles your hosts can pick from. Adding one here gives it to no host yet: pick it in the Matrix. An addition is held like any edit, and written when you push."],
   hosts: ["Hosts", "The hosts in this config, and how each is reached. Add a host here and fleet sets it up over ssh: it writes its host file, then runs the real fleet init."],
-  secrets: ["Secrets", "Which secrets exist and which hosts can read them. Names only: a value is never read or shown."],
+  secrets: ["Secrets", "Names only. fleet ui never reads a value back, never shows one, and never writes one to disk unencrypted: a value you type goes straight to sops. Set a value and the encrypted file is held like any edit, and written when you push."],
 };
 
 /** The screen drawn last: drawing the same one again keeps its scroll. */
@@ -63,6 +64,8 @@ function render() {
   $("tray").className = "tray " + (n > 0 ? "has" : "none");
   $("trayn").textContent = String(n);
   $("sidecount").textContent = n > 0 ? String(n) : "";
+  const missing = missingCount(shownSecrets());
+  $("secretcount").textContent = missing > 0 ? `${missing} missing` : "";
   const link = $("link");
   link.textContent = model.link;
   link.className = "tag " + (model.link === "live" ? "ok" : model.link === "reconnecting" ? "warn" : "");
@@ -599,7 +602,7 @@ const heldTag = (op) => (op ? h("span", { class: "tag ok" }, "held") : null);
 const takeBackBtn = (/** @type {Op | undefined} */ op) => (op ? h("button", { type: "button", class: "btn ghost small", onclick: () => unstage(op) }, "Take back") : null);
 
 /** @param {string} kind @param {string} name @returns {Op | undefined} */
-const heldOp = (kind, name) => model.ops.find((o) => o.op === kind && o.name === name);
+const heldOp = (kind, name) => model.ops.find((o) => o.op === kind && "name" in o && o.name === name);
 
 function catalogScreen() {
   const [title, about] = SCREENS.catalog;
@@ -749,31 +752,126 @@ async function runInit() {
   loadSecrets();
 }
 
+/** The secrets table as it will be after the held edits (the server's answer for them), else as the files on disk say. */
+const shownSecrets = () => model.preview?.secrets ?? model.secrets?.table ?? null;
+
 function secretsScreen() {
   const [title, about] = SCREENS.secrets;
-  if (model.secrets === null) return loadingOrError(title, model.secretsError);
-  const { entries, hosts } = model.secrets;
+  /** @type {import("./secrets.js").SecretsTable | null} */
+  const table = shownSecrets();
+  if (model.secrets === null || table === null) return loadingOrError(title, model.secretsError);
+  const held = heldNames(model.ops);
   return h(
     "div",
     {},
     h("h1", {}, title),
     h("p", { class: "sub" }, about),
-    model.secrets.problems.slice(0, 2).map((/** @type {string} */ p) => h("div", { class: "notice" }, p)),
-    entries.length === 0
-      ? h("div", { class: "panel empty" }, "No secrets yet.")
+    ...[...model.secrets.problems, ...table.problems].slice(0, 2).map((/** @type {string} */ p) => h("div", { class: "notice" }, p)),
+    table.names.length === 0
+      ? h("div", { class: "panel empty" }, "No secrets yet. A secret appears here once a catalog server refers to it as secret:NAME.")
       : h(
           "div",
           { class: "panel scroll" },
           h(
             "table",
             { class: "sec" },
-            h("thead", {}, h("tr", {}, h("th", {}, "Name"), h("th", {}, "Used by"), ...hosts.map((/** @type {string} */ x) => h("th", {}, x)))),
-            h("tbody", {}, ...entries.map((/** @type {any} */ e) =>
-              h("tr", {}, h("td", {}, e.name), h("td", { class: "muted" }, e.servers.join(", ") || "-"), ...hosts.map((/** @type {string} */ x) => h("td", { class: e.readers.includes(x) ? "have" : "na" }, e.readers.includes(x) ? "✓ can read" : "·"))),
-            )),
+            h("thead", {}, h("tr", {}, h("th", {}, "Name"), h("th", {}, "Used by"), ...table.hosts.map((x) => h("th", {}, x.name, x.age ? null : h("small", {}, "no age key"))), h("th", {}, ""))),
+            h("tbody", {}, ...table.names.map((/** @type {import("./secrets.js").SecretRow} */ row) => {
+              const action = actionOf(row);
+              return h(
+                "tr",
+                {},
+                h("td", {}, row.name),
+                h("td", { class: "muted" }, row.usedBy.join(", ") || "-"),
+                ...table.hosts.map((x) => {
+                  const v = cellView(row.cells[x.name], row.name, x.name, model.ops);
+                  return h("td", { class: v.tone, title: `${row.name} on ${x.name}: ${v.word}${v.held ? " (held)" : ""}` }, v.mark === "" ? v.word : `${v.mark} ${v.word}`, v.held ? h("span", { class: "held" }, "held") : null);
+                }),
+                h("td", { class: "act" }, h("button", { type: "button", class: "btn" + (action.missing.length > 0 ? "" : " ghost") + " small", onclick: () => openSecretDialog(row, table) }, action.label)),
+              );
+            })),
           ),
         ),
+    held.length > 0
+      ? h("div", { class: "row heldbar" }, h("span", { class: "tag ok" }, `${held.length} secret${held.length === 1 ? "" : "s"} held, encrypted`), h("a", { class: "btn primary", href: "#/review" }, "Review & push"), h("button", { class: "btn ghost", onclick: discardAll }, "Discard all"))
+      : null,
   );
+}
+
+/**
+ * The dialog that takes a value. It is built here and removed on close, outside the page that `render` draws again, so a
+ * redraw cannot lose what is being typed, and so no state of the page ever holds the value: it is read from the field when the
+ * button is pressed, the field is emptied before the request goes, and what is left is a local that ends with the call.
+ * @param {import("./secrets.js").SecretRow} row @param {import("./secrets.js").SecretsTable} table
+ */
+function openSecretDialog(row, table) {
+  if (client === null || document.querySelector("dialog.sdlg") !== null) return;
+  const targets = dialogTargets(table, row);
+  const input = h("input", {
+    type: "password", id: "secret-value", "aria-label": `value of ${row.name}`,
+    autocomplete: "new-password", autocapitalize: "off", autocorrect: "off", spellcheck: "false", maxlength: "8192",
+    "data-lpignore": "true", "data-1p-ignore": "true", "data-form-type": "other",
+  });
+  const boxes = targets.map((t) => h("input", { type: "checkbox", id: `st-${t.file}`, checked: t.checked, disabled: t.disabled }));
+  const err = h("div", { class: "err", role: "alert" });
+  const encrypt = h("button", { type: "submit", class: "btn primary" }, "Encrypt and hold");
+  const cancel = h("button", { type: "button", class: "btn ghost" }, "Cancel");
+  const dialog = h(
+    "dialog",
+    { class: "sdlg", "aria-labelledby": "sdlg-title" },
+    h(
+      "form",
+      { autocomplete: "off", novalidate: true },
+      h("h3", { id: "sdlg-title" }, `Set ${row.name}`),
+      h("p", {}, "Encrypted with sops for the hosts that read the file, then forgotten: the page keeps no copy and the value is never sent back. Same as ", h("code", {}, "fleet secrets set"), "."),
+      h("div", { class: "field" }, h("label", { for: "secret-value" }, "Value"), input),
+      h("div", { class: "field", style: "margin-top:14px" }, h("label", {}, "Set it for"), h("div", { class: "targets" }, ...targets.map((t, i) => h("label", { class: t.disabled ? "off" : "" }, /** @type {Node} */ (boxes[i]), t.label, h("small", {}, t.note))))),
+      err,
+      h("div", { class: "actions" }, cancel, encrypt),
+    ),
+  );
+  const close = () => {
+    input.value = "";
+    dialog.close();
+    dialog.remove();
+  };
+  cancel.addEventListener("click", close);
+  dialog.addEventListener("cancel", () => {
+    input.value = "";
+  });
+  dialog.addEventListener("close", () => {
+    input.value = "";
+    dialog.remove();
+  });
+  dialog.querySelector("form")?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const files = targets.filter((_, i) => /** @type {HTMLInputElement} */ (boxes[i]).checked).map((t) => t.file);
+    const problem = files.length === 0 ? "Tick at least one file to set it in." : valueProblem(input.value);
+    if (problem !== null) return void (err.textContent = problem);
+    // The field is emptied before the request goes: from here the value is only the argument of the call.
+    let value = input.value;
+    input.value = "";
+    err.textContent = "";
+    for (const el of [encrypt, cancel, input, ...boxes]) /** @type {HTMLButtonElement | HTMLInputElement} */ (el).disabled = true;
+    encrypt.textContent = "Encrypting...";
+    try {
+      const doc = await /** @type {NonNullable<typeof client>} */ (client).setSecret(row.name, value, files, model.ops);
+      value = "";
+      model.ops = afterSet(model.ops, doc);
+      model.messageEdited = false;
+      close();
+      refreshPreview();
+    } catch (error) {
+      value = "";
+      for (const el of [encrypt, cancel, input, ...boxes]) /** @type {HTMLButtonElement | HTMLInputElement} */ (el).disabled = false;
+      encrypt.textContent = "Encrypt and hold";
+      err.textContent = `${said(error, "the value could not be encrypted")} Type the value again.`;
+      input.focus();
+    }
+  });
+  document.body.append(dialog);
+  dialog.showModal();
+  input.focus();
 }
 
 function reviewScreen() {
@@ -856,7 +954,7 @@ export function diffPanel(file, before, after) {
   return h(
     "div",
     { class: "panel" },
-    h("div", { class: "ph" }, file, h("span", { class: "spacer" }), h("span", { class: "tag " + (changed(d) ? "ok" : "") }, changed(d) ? `+${added} -${removed}` : "unchanged")),
+    h("div", { class: "ph" }, file, h("span", { class: "spacer" }), file.startsWith("secrets/") ? h("span", { class: "tag warn" }, "encrypted, value not shown") : null, h("span", { class: "tag " + (changed(d) ? "ok" : "") }, changed(d) ? `+${added} -${removed}` : "unchanged")),
     diffBody(d),
   );
 }
@@ -992,6 +1090,7 @@ async function writeAndPush() {
   }
   loadStatus();
   loadMatrix();
+  loadSecrets();
 }
 
 async function loadStatus() {
