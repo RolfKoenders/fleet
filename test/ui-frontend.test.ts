@@ -17,8 +17,8 @@ test("the token comes from the fragment, and a screen from the fragment after it
   assert.equal(tokenOf("#/matrix"), null);
   assert.equal(routeOf("#/hosts"), "hosts");
   assert.equal(routeOf("#hosts"), "hosts");
-  assert.equal(routeOf("#t=abc"), "status", "the token fragment is no screen");
-  assert.equal(routeOf("#/nope"), "status");
+  assert.equal(routeOf("#t=abc"), "matrix", "the token fragment is no screen");
+  assert.equal(routeOf("#/nope"), "matrix");
 });
 
 test("the reconnect delay doubles from half a second and stops at ten", () => {

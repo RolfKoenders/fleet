@@ -253,3 +253,12 @@ test("discard: edits are only held by the page, so a preview of no edits leaves 
     assert.equal(git(w.clone, "status", "--porcelain"), "");
   });
 });
+
+test("secrets: names only, with who can read them", async () => {
+  await withServer({}, async (s) => {
+    const doc = await get(s, "/api/secrets");
+    assert.equal(doc.ok, true);
+    assert.deepEqual(doc.hosts, ["laptop", "remote"]);
+    assert.deepEqual(doc.entries, []);
+  });
+});

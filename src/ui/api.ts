@@ -1,6 +1,7 @@
 import { readHostName } from "../host.ts";
 import { LockedError, acquirePushLock } from "../lock.ts";
 import { loadModel } from "../tui/model.ts";
+import { readSecrets } from "../tui/reads.ts";
 import type { EditOp } from "../edit/index.ts";
 import { outsideChanges, plan, preview, WriteRefused, writeAndCommit } from "./edits.ts";
 import { status } from "../status.ts";
@@ -20,6 +21,7 @@ import type { PushEnd } from "../pushrun.ts";
  *                      When another push is running it answers 409 with code `locked` and "a push is already running (pid N)".
  *   GET  /api/matrix   What each host gets, from the files on disk: hosts, bundles (with their skills), servers, and the
  *                      cell of each host (`on`, `picked`, `excluded`), plus `outside`: uncommitted changes in the config repo.
+ *   GET  /api/secrets  The secret names, which hosts can read each and which servers use it. Never a value.
  *   POST /api/preview  Body `{"ops": [...], "show": "hosts/box.yaml"}`. The edits are replayed on the files as they are now:
  *                      `files` (every changed file, before and after), `shown` (the file asked for), `dropped` (edits that no
  *                      longer apply, with the reason), `matrix` (the config after the edits), `checks` (per host: does the
@@ -91,6 +93,14 @@ export function routes(deps: ApiDeps): Route[] {
       handle: () => {
         const model = loadModel(deps.configDir, readHostName(deps.home));
         return { status: 200, body: { ok: true, ...matrixDoc(model), outside: outside() } };
+      },
+    },
+    {
+      method: "GET",
+      path: "/api/secrets",
+      handle: () => {
+        const view = readSecrets(deps.configDir, deps.home);
+        return { status: 200, body: { ok: true, hosts: view.hosts, problems: view.problems, entries: view.entries.map((e) => ({ name: e.name, file: e.file, readers: e.readers, servers: e.servers })) } };
       },
     },
     {

@@ -1,13 +1,13 @@
 // The page's state and the rules that move it. Pure: nothing here touches the DOM, the network or the clock, so
 // `node --test` runs it. `app.js` draws it.
 
-/** The screens. The first four are filled in by later work; `status` and `review` work now. */
-export const ROUTES = ["status", "matrix", "catalog", "hosts", "secrets", "review"];
+/** The screens. Matrix is the first; Catalog, Hosts and Secrets are read-only lists for now. */
+export const ROUTES = ["matrix", "catalog", "hosts", "secrets", "status", "review"];
 
-/** The screen a location hash names (`#/hosts`), `status` for none or an unknown one. @param {string} hash */
+/** The screen a location hash names (`#/hosts`), `matrix` for none or an unknown one. @param {string} hash */
 export function routeOf(hash) {
   const name = hash.replace(/^#\/?/, "");
-  return ROUTES.find((r) => r === name) ?? "status";
+  return ROUTES.find((r) => r === name) ?? "matrix";
 }
 
 /**

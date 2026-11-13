@@ -37,8 +37,18 @@ export function createClient(token, fetcher = (...args) => fetch(...args)) {
     if (!res.ok) throw new ApiError(doc?.code ?? "error", doc?.messages ?? [`the server answered ${res.status}`], res.status);
     return doc;
   }
+  /** @param {string} path @param {unknown} body */
+  const send = (path, body) => call(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
   return {
     status: () => call("/api/status"),
+    matrix: () => call("/api/matrix"),
+    secrets: () => call("/api/secrets"),
+    /** @param {unknown[]} ops @param {string} [show] a host file to show whether or not the edits change it */
+    preview: (ops, show) => send("/api/preview", show ? { ops, show } : { ops }),
+    /** @param {unknown[]} ops */
+    plan: (ops) => send("/api/plan", { ops }),
+    /** Writes the edited files, commits them and runs the push. @param {unknown[]} ops @param {string} message */
+    write: (ops, message) => send("/api/write", { ops, message }),
     /** @param {string} [message] */
     push: (message) =>
       call("/api/push", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(message ? { message } : {}) }),
