@@ -67,7 +67,7 @@ fleet push -m "Add a skill"
 | `fleet context` | Show how much each agent on this machine loads before the first prompt (instructions, skill descriptions, MCP tool definitions) as coloured bars and an estimate in tokens, with the largest items; `--all` asks every machine over ssh and draws all the bars on one scale, so you can see which machine carries the most. MCP sizes come from the last `fleet doctor`; reads only, starts no server |
 | `fleet diff` | Show what an apply would change |
 | `fleet apply` | Make this machine match its config |
-| `fleet push` | Publish the config and apply it |
+| `fleet push` | Publish the config and apply it; `--host <name>` applies only on that host |
 | `fleet adopt` | Take ownership of an MCP server or skill that already matches |
 | `fleet secrets` | Edit, set or rekey encrypted secrets |
 | `fleet skills update` | Move pinned skill sources to their latest commit; `--review` shows what changed first and asks per source |

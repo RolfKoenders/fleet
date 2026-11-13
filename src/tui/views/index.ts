@@ -11,7 +11,7 @@ import { drawConflicts } from "./conflicts.ts";
 import { drawContext } from "./context.ts";
 import { drawHome } from "./home.ts";
 import { drawMatrix } from "./matrix.ts";
-import { drawPush } from "./push.ts";
+import { drawPush, pickedLane } from "./push.ts";
 import { drawSecrets } from "./secrets.ts";
 import { drawTimeline } from "./timeline.ts";
 import { drawDoctor, drawHelp, drawLeave, drawPalette } from "./overlays.ts";
@@ -36,7 +36,7 @@ function baseHints(state: State): Hint[] {
     case "home":
       return [[homeLayout(state.size).mode === "cards" ? "←↑↓→" : "↑↓", "select"], ["enter", "matrix"], ["r", "refresh"], ["d", "doctor"], ["P", "push"], ...COMMON];
     case "push":
-      return [["P", state.push.phase === "running" ? "watch" : "review a push"], ["esc", "home"], ...COMMON];
+      return [...pushHints(state), ["P", state.push.phase === "running" ? "watch" : "review a push"], ["esc", "home"], ...COMMON];
     case "matrix":
       return [["←↑↓→", "move"], ["enter", "skills"], ["d", "doctor"], ["r", "refresh"], ...COMMON];
     case "conflicts":
@@ -50,6 +50,14 @@ function baseHints(state: State): Hint[] {
     case "catalog":
       return state.catalog.typing ? [["type", "filter"], ["enter", "keep"], ["esc", "clear"]] : [["↑↓", "select"], ["f", "filter"], ["pgup/dn", "scroll"], ["r", "refresh"], ...COMMON];
   }
+}
+
+/** The keys of a push that is running or over: pick a host, run the push on it alone, open its conflicts. */
+function pushHints(state: State): Hint[] {
+  const p = state.push;
+  if (p.phase !== "running" && p.phase !== "finished") return [];
+  const lane = p.run.lanes[pickedLane(p)];
+  return [["↑↓", "host"], ...(p.phase === "finished" ? ([["r", "push to it alone"]] as Hint[]) : []), ...(lane?.result === "conflict" ? ([["f", "its conflicts"]] as Hint[]) : [])];
 }
 
 function tooSmallMessage(c: Canvas, state: State): void {

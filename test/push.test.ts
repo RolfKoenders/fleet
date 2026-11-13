@@ -624,3 +624,71 @@ test("ctrl-c: the summary so far, exit 130, and the push lock is let go", async 
   assert.equal(existsSync(join(s.home, PUSH_LOCK)), false, "the lock is gone");
   assert.deepEqual(s.sshHosts(), ["me@alpha", "me@slow"], "the host after it was never asked");
 });
+
+const HERE_NOTE = { defaults: "files:\n  - { source: notes.md, target: ~/.claude/notes.md }\n" };
+
+test("--host box applies only on box: over ssh, and not on this host", () => {
+  const s = setup({ ...HERE_NOTE, hosts: { box: "alice@box", server: "alice@server", edge: null }, ssh: { "alice@box": OK, "alice@server": OK } });
+  s.write("notes.md", "one");
+  const { r, doc } = s.json(["--host", "box"]);
+  assert.equal(r.code, EXIT.ok, r.stderr);
+  assert.deepEqual(s.sshHosts(), ["alice@box"]);
+  assert.deepEqual(doc.hosts.map((h: { host: string }) => h.host), ["box"]);
+  assert.equal(existsSync(join(s.home, ".claude/notes.md")), false, "this host was not applied");
+  assert.equal(s.remoteSubject(), "fleet push from laptop: 1 files", "it was published as usual");
+});
+
+test("--host box does not let a conflict on this host stop it", () => {
+  const s = setup({ ...HERE_NOTE, hosts: { box: "alice@box" }, ssh: { "alice@box": OK } });
+  s.write("notes.md", "one");
+  mkdirSync(join(s.home, ".claude"), { recursive: true });
+  writeFileSync(join(s.home, ".claude/notes.md"), "a real file");
+  const { r, doc } = s.json(["--host", "box"]);
+  assert.equal(r.code, EXIT.ok, r.stderr);
+  assert.deepEqual(doc.hosts.map((h: { host: string; result: string }) => [h.host, h.result]), [["box", "ok"]]);
+});
+
+test("--host <this host> publishes and applies here only", () => {
+  const s = setup({ ...HERE_NOTE, hosts: { box: "alice@box" }, ssh: { "alice@box": OK } });
+  s.write("notes.md", "one");
+  const { r, doc } = s.json(["--host", "laptop"]);
+  assert.equal(r.code, EXIT.ok, r.stderr);
+  assert.deepEqual(s.sshCalls(), []);
+  assert.deepEqual(doc.hosts.map((h: { host: string }) => h.host), ["laptop"]);
+  assert.equal(readFileSync(join(s.home, ".claude/notes.md"), "utf8"), "one");
+  assert.equal(s.remoteSubject(), "fleet push from laptop: 1 files");
+});
+
+test("--host with a timer host or an unknown name exits 2 with the reason, before anything is published", () => {
+  const s = setup({ hosts: { box: "alice@box", edge: null }, ssh: { "alice@box": OK } });
+  s.write("notes.md", "one");
+  const before = s.remoteHead();
+  const timer = s.json(["--host", "edge"]);
+  assert.equal(timer.r.code, EXIT.invalid);
+  assert.deepEqual(timer.doc.messages, ["fleet: edge has no ssh destination; it applies on its own timer"]);
+  const unknown = s.json(["--host", "nope"]);
+  assert.equal(unknown.r.code, EXIT.invalid);
+  assert.deepEqual(unknown.doc.messages, ["fleet: unknown host 'nope'; the hosts are box, edge, laptop"]);
+  assert.equal(s.remoteHead(), before, "nothing was published");
+  assert.equal(git(s.clone, "status", "--porcelain").includes("notes.md"), true, "nothing was committed");
+  assert.deepEqual(s.sshCalls(), []);
+});
+
+test("--host takes the push lock like a push does", () => {
+  const s = setup({ hosts: { box: "alice@box" }, ssh: { "alice@box": OK } });
+  s.write("notes.md", "one\n");
+  const before = s.remoteHead();
+  holdPushLock(s.home, process.pid);
+  const { r, doc } = s.json(["--host", "box"]);
+  assert.equal(r.code, EXIT.locked, r.stderr);
+  assert.equal(doc.code, "locked");
+  assert.equal(s.remoteHead(), before);
+  assert.deepEqual(s.sshCalls(), []);
+});
+
+test("--host is for bridge and push alone", () => {
+  const s = setup();
+  const r = runFleet(s.clone, ["apply", "--host", "laptop"], { home: s.home });
+  assert.equal(r.code, EXIT.invalid);
+  assert.match(r.stderr, /--host is only for 'bridge' and 'push'/);
+});

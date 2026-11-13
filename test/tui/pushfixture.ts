@@ -20,12 +20,13 @@ export const PREVIEW: PreviewResult = { ok: true, preview: { code: "ok", plan, r
 export const PREVIEW_SECRET: PreviewResult = { ok: true, preview: { code: "ok", plan, repos: repos([...CLEAN_FILES, { status: "??", path: ".env.local" }], [".env.local"]) } };
 
 /** A pusher the test drives: `emit` sends an event as the child would, `end` finishes the push. */
-export type FakePusher = { runs: number; messages: (string | undefined)[]; previews: number; emit: (e: FleetEvent) => void; end: (e: PushEnd) => void; pusher: Pusher };
+export type FakePusher = { runs: number; messages: (string | undefined)[]; hosts: (string | undefined)[]; previews: number; emit: (e: FleetEvent) => void; end: (e: PushEnd) => void; pusher: Pusher };
 
 export function fakePusher(preview: PreviewResult = PREVIEW): FakePusher {
   const f: FakePusher = {
     runs: 0,
     messages: [],
+    hosts: [],
     previews: 0,
     emit: (_: FleetEvent): void => {},
     end: (_: PushEnd): void => {},
@@ -34,9 +35,10 @@ export function fakePusher(preview: PreviewResult = PREVIEW): FakePusher {
         f.previews++;
         return preview;
       },
-      run(onEvent: (e: FleetEvent) => void, message?: string) {
+      run(onEvent: (e: FleetEvent) => void, message?: string, host?: string) {
         f.runs++;
         f.messages.push(message);
+        f.hosts.push(host);
         f.emit = onEvent;
         return new Promise<PushEnd>((resolve) => (f.end = resolve));
       },

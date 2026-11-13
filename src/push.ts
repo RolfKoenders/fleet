@@ -175,6 +175,15 @@ function recordFrom(host: string, status: number | null, stdout: string, notes: 
   return { host, result: "error", ...seen, conflicts: [] };
 }
 
+/** Why `only` cannot be applied on, or null when it can. Reads nothing: the hosts are already known. */
+function refuseHost(only: string, host: string, targets: Target[]): Result | null {
+  if (only === host) return null;
+  const target = targets.find((t) => t.host === only);
+  if (target === undefined) return invalid(`unknown host '${only}'; the hosts are ${[host, ...targets.map((t) => t.host)].sort().join(", ")}`);
+  if (target.ssh === null) return invalid(`${only} has no ssh destination; it applies on its own timer`);
+  return null;
+}
+
 /** A host that has no document to read: nothing is known to have changed. */
 const noChanges = { changes: 0, created: [], updated: [], removed: [] };
 
@@ -273,12 +282,13 @@ export async function whileHoldingPushLock(home: string, work: () => Promise<Res
 
 /**
  * `progress` is what shows the push on stderr (none when the events are on stderr instead). With a summary on the
- * terminal that stdout shares, the same lines are not printed again.
+ * terminal that stdout shares, the same lines are not printed again. `only` names the one host to apply on, after
+ * publishing as usual: this host or one with an ssh destination (`fleet push --host`).
  */
-export async function push(toolDir: string, configDir: string, message: string | undefined, color: boolean, home: string = homedir(), progress: Progress | null = null): Promise<Result> {
+export async function push(toolDir: string, configDir: string, message: string | undefined, color: boolean, home: string = homedir(), progress: Progress | null = null, only: string | undefined = undefined): Promise<Result> {
   progress?.start();
   try {
-    const result = await whileHoldingPushLock(home, () => pushLocked(toolDir, configDir, message, color, home, progress), () => progress?.interrupt());
+    const result = await whileHoldingPushLock(home, () => pushLocked(toolDir, configDir, message, color, home, progress, only), () => progress?.interrupt());
     progress?.finish();
     return progress?.summarized && process.stdout.isTTY === true ? { ...result, text: undefined } : result;
   } finally {
@@ -287,7 +297,7 @@ export async function push(toolDir: string, configDir: string, message: string |
   }
 }
 
-async function pushLocked(toolDir: string, configDir: string, message: string | undefined, color: boolean, home: string, progress: Progress | null): Promise<Result> {
+async function pushLocked(toolDir: string, configDir: string, message: string | undefined, color: boolean, home: string, progress: Progress | null, only: string | undefined): Promise<Result> {
   const events = eventsOn();
   // Each host's apply reports its steps when something reads them: the stream on stderr, or the live block.
   const steps = events || progress?.mode === "live";
@@ -299,8 +309,13 @@ async function pushLocked(toolDir: string, configDir: string, message: string | 
     emit({ event: "stage", stage: "validate" });
     const checked = check(configDir, home);
     if ("code" in checked) return checked;
-    const { host, targets, repos, ssh } = checked;
-    emit({ event: "hosts", hosts: [{ host, via: "local" }, ...targets.map((t) => ({ host: t.host, via: t.ssh === null ? ("timer" as const) : ("ssh" as const) }))] });
+    const { host, repos, ssh } = checked;
+    // Refused before anything is published.
+    const refused = only === undefined ? null : refuseHost(only, host, checked.targets);
+    if (refused !== null) return refused;
+    const targets = only === undefined ? checked.targets : checked.targets.filter((t) => t.host === only);
+    const applyOnThisHost = only === undefined || only === host;
+    emit({ event: "hosts", hosts: [...(applyOnThisHost ? [{ host, via: "local" as const }] : []), ...targets.map((t) => ({ host: t.host, via: t.ssh === null ? ("timer" as const) : ("ssh" as const) }))] });
 
     const notes: string[] = [];
     emit({ event: "stage", stage: "publish", of: repos.length });
@@ -312,7 +327,7 @@ async function pushLocked(toolDir: string, configDir: string, message: string | 
       emit({ event: "step", step: "publish", target: repo.shown, n: i + 1, of: repos.length });
     }
 
-    emit({ event: "stage", stage: "apply", of: targets.length + 1 });
+    emit({ event: "stage", stage: "apply", of: targets.length + (applyOnThisHost ? 1 : 0) });
     const seconds = new Map<string, number>();
     const visit = async (name: string, go: () => Promise<HostRecord>, timed = true): Promise<HostRecord> => {
       emit({ event: "host", host: name, state: "start" });
@@ -323,9 +338,9 @@ async function pushLocked(toolDir: string, configDir: string, message: string | 
       progress?.record(record, seconds.get(name));
       return record;
     };
-    const records = [await visit(host, () => applyHere(toolDir, host, home, notes, steps, emit))];
+    const records = applyOnThisHost ? [await visit(host, () => applyHere(toolDir, host, home, notes, steps, emit))] : [];
     // A conflict here means the config is not ready for any host, so none of them is touched.
-    if (records[0]!.result !== "conflict") {
+    if (records[0]?.result !== "conflict") {
       for (const target of targets) {
         if (target.ssh === null) {
           records.push(await visit(target.host, async () => ({ host: target.host, result: "timer", ...noChanges, conflicts: [] }), false));

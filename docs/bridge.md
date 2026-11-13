@@ -32,6 +32,14 @@ The bridge asks each host for it by itself, together with the status: when it op
 
 A file that looks like a plaintext secret (`.env`, `*.pem`, `*.key`, names with `secret` or `token`) blocks a push from the bridge until you remove it or add it to `.gitignore`. `fleet push` itself does not check.
 
+## The push screen
+
+While a push runs the pipeline row ends with the total time, and each lane ends with its own, running until its host is done. A host that is connecting over ssh says so from the start, with its time counting, instead of showing nothing. Below the lanes, the activity feed lists every event as it arrives, with its time and host. Beside it, the host pane shows the selected host: what it has written so far and how many writes remain, and after the push what it got, from the receipts in the push's end document (`created`, `updated` and `removed`, one line each; never a value). The pane follows the host being applied until you pick one with `↑` and `↓`.
+
+The layout follows the width. From 100 columns everything shows. From 80 to 99 the host pane goes, and below 80 the feed goes too, leaving the lanes and the clock. The bridge itself needs at least 30 x 8.
+
+When the push is over, `r` on the selected lane runs `fleet push --host <name>`: it publishes as usual, then applies only on that host. A host without an ssh destination is refused with the reason. `f` on a lane with a conflict opens the Conflicts screen with that host first; it only shows the conflict and its fix.
+
 ## Conflicts
 
 The conflicts screen lists every host's conflicts, read with `fleet status --conflicts` (read-only, no clone or fetch). A host on an older pin shows "detail needs a newer pin".

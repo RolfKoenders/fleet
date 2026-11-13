@@ -8,7 +8,7 @@ import type { HostContext } from "../contextall.ts";
 import type { PreviewResult, Pusher } from "./pusher.ts";
 import { finish, reduce, startRun } from "../pushrun.ts";
 import type { PushEnd, PushRun } from "../pushrun.ts";
-import { CONFIRM_WORD, MESSAGE_MAX, pushBlock } from "./views/push.ts";
+import { CONFIRM_WORD, MESSAGE_MAX, pickedLane, pushBlock } from "./views/push.ts";
 import { homeLayout } from "./layout.ts";
 import { items, search } from "./palette.ts";
 import type { Action, Screen } from "./palette.ts";
@@ -61,7 +61,8 @@ export type ConflictsLive = { phase: "loading" | "done"; items: Conflict[]; deta
 export type PushState =
   | { phase: "idle" }
   | { phase: "review"; gen: number; preview: PreviewResult | null; typed: string; message: string; focus: "confirm" | "message" }
-  | { phase: "running" | "finished"; run: PushRun };
+  /** `selected` is the lane picked with the arrows, null to follow the host being applied; `notice` is why the last key did nothing. */
+  | { phase: "running" | "finished"; run: PushRun; selected: number | null; notice: string | null };
 
 export type TimelineLive = {
   phase: "loading" | "done";
@@ -185,8 +186,8 @@ export function createApp(options: Options): App<State, Msg> {
     send({ type: "preview", gen, result: pusher ? await pusher.preview(signal) : { ok: false, detail: "pushing is not offered in this view" } });
   };
   // The one place a push starts. It is the real `fleet push`; its events come back as messages.
-  const startPush = (message: string): Cmd<Msg> => async ({ send }) => {
-    const end = await pusher!.run((event) => send({ type: "push", event }), message === "" ? undefined : message);
+  const startPush = (message: string, host?: string): Cmd<Msg> => async ({ send }) => {
+    const end = await pusher!.run((event) => send({ type: "push", event }), message === "" ? undefined : message, host);
     send({ type: "pushEnd", end });
   };
 
@@ -240,9 +241,35 @@ export function createApp(options: Options): App<State, Msg> {
       // Enter in the message box only moves on to the word. Whatever is typed there is a message, never the word.
       if (field === "message") return [{ ...state, push: { ...p, focus: "confirm" } }, []];
       if (p.typed !== CONFIRM_WORD || pusher === undefined || pushBlock(p) !== null) return [state, []];
-      return [{ ...state, push: { phase: "running", run: startRun(model.hosts, state.now) } }, [startPush(p.message.trim())]];
+      return [{ ...state, push: { phase: "running", run: startRun(model.hosts, state.now), selected: null, notice: null } }, [startPush(p.message.trim())]];
     }
     return [state, []];
+  }
+
+  /** The keys of a push in flight or just over: pick a lane, `r` runs the push on it alone, `f` opens its conflicts. Null for any other key. */
+  function onRun(state: State, key: Key): [State, Cmd<Msg>[]] | null {
+    const p = state.push;
+    if (p.phase !== "running" && p.phase !== "finished") return null;
+    const ch = key.ctrl || key.alt ? undefined : key.text;
+    const lanes = p.run.lanes;
+    const at = pickedLane(p);
+    const lane = lanes[at];
+    const note = (notice: string | null): [State, Cmd<Msg>[]] => [{ ...state, push: { ...p, notice } }, []];
+    const d = key.name === "down" || ch === "j" ? 1 : key.name === "up" || ch === "k" ? -1 : 0;
+    if (d !== 0) return [{ ...state, push: { ...p, selected: clamp(at + d, 0, Math.max(0, lanes.length - 1)), notice: null } }, []];
+    if (lane === undefined) return null;
+    if (ch === "r") {
+      const info = model.hosts.find((h) => h.name === lane.host);
+      if (p.phase === "running") return note("a push is running; r runs one host once it is over");
+      if (pusher === undefined) return note("pushing is not offered in this view");
+      if (info === undefined || (!info.self && info.ssh === null)) return note(`${lane.host} has no ssh destination; it applies on its own timer`);
+      return [{ ...state, push: { phase: "running", run: startRun(model.hosts.filter((h) => h.name === lane.host), state.now), selected: null, notice: null } }, [startPush("", lane.host)]];
+    }
+    if (ch === "f") {
+      if (lane.result !== "conflict") return note(`${lane.host} has no conflict to open`);
+      return [{ ...state, screen: "conflicts", conflicts: { ...state.conflicts, first: lane.host, selected: 0 } }, []];
+    }
+    return null;
   }
 
   const askHistory: Cmd<Msg> = async ({ send, signal }) => send({ type: "history", result: await probe.history(signal) });
@@ -468,6 +495,10 @@ export function createApp(options: Options): App<State, Msg> {
     if (key.ctrl && key.text === "k") return [{ ...state, overlay: { kind: "palette", query: "", selected: 0 } }, []];
     if (ch === ":" || ch === "/") return [{ ...state, overlay: { kind: "palette", query: "", selected: 0 } }, []];
     if (ch === "q") return leave(state);
+    if (state.screen === "push") {
+      const handled = onRun(state, key);
+      if (handled !== null) return handled;
+    }
     if (ch === "P") return review(state);
     if (ch === "?") return [{ ...state, overlay: { kind: "help" } }, []];
     if (ch === "r") return refresh(state);
@@ -615,12 +646,12 @@ export function createApp(options: Options): App<State, Msg> {
         }
         case "push": {
           if (state.push.phase !== "running") return [state, []];
-          return [{ ...state, push: { phase: "running", run: reduce(state.push.run, message.event) } }, []];
+          return [{ ...state, push: { ...state.push, run: reduce(state.push.run, message.event, state.now) } }, []];
         }
         case "pushEnd": {
           if (state.push.phase !== "running") return [state, []];
           // The hosts' cards are stale now, so ask them again.
-          const [next, cmds] = refresh({ ...state, overlay: state.overlay?.kind === "leave" ? null : state.overlay, push: { phase: "finished", run: finish(state.push.run, message.end) } });
+          const [next, cmds] = refresh({ ...state, overlay: state.overlay?.kind === "leave" ? null : state.overlay, push: { ...state.push, phase: "finished", run: finish(state.push.run, message.end, state.now) } });
           return [next, cmds];
         }
         case "history": {

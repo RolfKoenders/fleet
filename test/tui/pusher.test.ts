@@ -84,6 +84,9 @@ test("a typed commit message is passed as -m, also when it starts with a dash, a
   assert.deepEqual(pushArguments(""), ["push", "--json"]);
   assert.deepEqual(pushArguments("Add the triage skill"), ["push", "--json", "-m", "Add the triage skill"]);
   assert.deepEqual(pushArguments("-fix the thing"), ["push", "--json", "--message=-fix the thing"]);
+  assert.deepEqual(pushArguments(undefined, "box"), ["push", "--json", "--host", "box"]);
+  assert.deepEqual(pushArguments("Add it", "box"), ["push", "--json", "-m", "Add it", "--host", "box"]);
+  assert.deepEqual(pushArguments(undefined, "-x"), ["push", "--json", "--host=-x"]);
   for (const message of ["Add the triage skill", "-- a dashed start"]) {
     const w = world({}, {});
     w.write("notes.md", "one\n");
@@ -121,4 +124,17 @@ test("a push refused because another holds the lock ends with the refusal, for t
   assert.equal(end.exit, 7);
   assert.deepEqual(end.messages, [`fleet: a push is already running (pid ${process.pid})`]);
   assert.equal(w.pusher.running(), null);
+});
+
+test("run with a host is fleet push --host: only that host gets a lane and a call", async () => {
+  const w = world({ "me@a": { stdout: applyDoc("ok") }, "me@b": { stdout: applyDoc("ok") } }, { a: "me@a", b: "me@b", edge: null });
+  w.write("notes.md", "one\n");
+  const events: FleetEvent[] = [];
+  const end = await w.pusher.run((e) => events.push(e), undefined, "b");
+  assert.equal(end.code, "ok");
+  assert.deepEqual(end.hosts.map((h) => h.host), ["b"]);
+  assert.deepEqual(events.filter((e) => e.event === "hosts").map((e) => (e as { hosts: { host: string }[] }).hosts.map((h) => h.host)), [["b"]]);
+  const refused = await w.pusher.run(() => {}, undefined, "edge");
+  assert.equal(refused.exit, 2);
+  assert.deepEqual(refused.messages, ["fleet: edge has no ssh destination; it applies on its own timer"]);
 });
