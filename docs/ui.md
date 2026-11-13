@@ -25,7 +25,7 @@ The first screen, named like the bridge's Matrix screen and read the same way. O
 | `✕ excluded` | the host (or the defaults) excludes it |
 | `· off` | nothing picks it |
 
-Clicking a cell holds the smallest edit to that host's file: an item the defaults give is taken away with `exclude` in the host's file (the defaults are not edited), an item the host added is taken out of its list, an exclude is taken back. Clicking the same cell again takes the held edit back. A pane beside the table shows the host's file as it will be written, with comments, blank lines and list style kept; nothing is on disk yet. Hosts and Secrets list what the config has, read-only for now. A server, skill source or bundle you add in the Catalog is a row of the Matrix at once, off for every host, held like any edit.
+Clicking a cell holds the smallest edit to that host's file: an item the defaults give is taken away with `exclude` in the host's file (the defaults are not edited), an item the host added is taken out of its list, an exclude is taken back. Clicking the same cell again takes the held edit back. A pane beside the table shows the host's file as it will be written, with comments, blank lines and list style kept; nothing is on disk yet. Secrets lists what the config has, read-only. A server, skill source or bundle you add in the Catalog is a row of the Matrix at once, off for every host, held like any edit.
 
 ### Catalog
 
@@ -35,6 +35,17 @@ The MCP servers, skill sources and skill bundles your hosts can pick from, each 
 - **Check it starts.** Runs doctor's probe on the one server you are adding, on this machine, and shows its tools and their size in tokens. It asks first, naming the command: it runs with the real credentials fleet can read for this host and may download packages. A secret that has no value on this host is left out and named, so the server starts without it. Nothing is written.
 - **A skill source.** A name, a repo (a URL, an scp-style address or a path on this machine), a path and an optional branch. Look at the repo clones it shallowly into a temp directory, lists its skills and reads its head commit. A pinned source (the default) is written with that commit, `track` for the branch and `review: true`; a followed one with its `branch`. The temp clone is deleted when you close the form, when a newer one replaces it and when the server stops.
 - **A bundle.** A name and its skills, picked from the sources fleet has cloned and from a source you hold, or typed in.
+
+### Hosts
+
+One card per host: how it is reached, and what it gets. Below them, **Add a host** sets up a new machine from the page:
+
+- A name (the loader's rule for a host name), an ssh destination and where it starts from: the defaults only, or a copy of another host. ssh is required, because `fleet init` refuses a host without it; for a machine fleet cannot reach over ssh the form links [setting up machines](setting-up-machines.md). A destination that starts with `-`, or has a space or another symbol, is refused.
+- A copy takes `bundles`, `exclude`, `mcp`, `settings` and `vars` of the other host, with the comments inside them, and not its `ssh`, `age` or `files`.
+- This is not a held edit. After you confirm (the page names the machine and what will run there), the server takes the push lock, writes `hosts/<name>.yaml` with the edit engine and runs the real `fleet init <name>` as a child process, so it commits and pushes itself (the host file, `.sops.yaml` and the re-encrypted secrets), exactly as from the CLI. Its output is streamed into the page as it comes.
+- It refuses while edits are held (the page asks you to push or discard them first, so init's commit does not sweep them in), while a push runs, while the config repo has changes the page did not make, and for a host that already exists.
+- When init fails before it committed anything, the host file is deleted and the files init rewrote are restored, so the repo is as it was. When init had already committed and pushed (for example the timer step failed on the host), the host file stays, because that commit is published; the page says so, and `fleet init <name>` finishes the rest when run again.
+- Retiring a host is not here.
 
 ### Review & push
 
@@ -64,9 +75,10 @@ Every route is JSON under `/api/` and sits behind the checks below. Request bodi
 | `POST /api/catalog/probe` | `{name, entry, confirm: true}`: doctor's probe on one entry that is not on disk, on this machine; refused unless `confirm` is true. Answers `result`, `tools`, `tokens` and `unset` (secret names with no value here), never a value |
 | `POST /api/preview` | `{ops, show?}`: the files the edits change (before and after), dropped edits, the matrix after, a check per host |
 | `POST /api/plan` | `{ops}`: this host's plan from `fleet diff` on the edited config |
+| `POST /api/hosts/init` | `{name, ssh, from?, confirm: true}`: writes `hosts/<name>.yaml` and runs the real `fleet init`, streaming its output as `init` events and answering when it ends; 409 `locked`, `outside-changes` or `exists`, 422 `invalid` |
 | `POST /api/write` | `{ops, message}`: writes, commits, then pushes; 409 `locked`, `outside-changes` or `stale`, 422 `invalid` |
 | `POST /api/push` | runs `fleet push` with what is already committed |
-| `GET /api/events` | the stream of live push events |
+| `GET /api/events` | the stream of live push events, and of `init` output |
 
 ## Who can reach it
 

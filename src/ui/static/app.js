@@ -4,6 +4,7 @@ import { changed, counts, lineDiff, splitLines, tokenize } from "./diff.js";
 import { fill, h } from "./dom.js";
 import { bundleDraft, checkLines, cloneKey, confirmText, opWarnings, secretOf, secretsOf, serverDraft, skillChoices, sourceDraft, takeBack } from "./catalog.js";
 import { blockers, cellState, clickCell, opLabel, suggestMessage, summaryLine, WORDS } from "./matrix.js";
+import { blankHost, confirmInit, fileLines, heldProblem, hostDraft, idleInit, initEnd, initLine, SETUP_DOC, startInit } from "./hosts.js";
 import { heldFiles, idlePush, pushEnd, pushEvent, routeOf, statusView, tokenOf } from "./state.js";
 
 /** @typedef {import("./state.js").Held} Held */
@@ -28,7 +29,8 @@ $("local").textContent = `${location.host} · only this machine`;
  *   plan: { key: string, doc: any, error: string | null } | null,
  *   message: string, messageEdited: boolean, secrets: any, secretsError: string | null,
  *   push: PushState, pushError: string | null, link: "connecting" | "live" | "reconnecting",
- *   skills: { name: string, source: string, bundle: string | null }[], stagedSkills: Record<string, string[]>, form: any
+ *   skills: { name: string, source: string, bundle: string | null }[], stagedSkills: Record<string, string[]>, form: any,
+ *   hostForm: import("./hosts.js").HostForm, hostConfirm: boolean, init: import("./hosts.js").InitState, initError: string | null
  * }}
  */
 const model = {
@@ -37,6 +39,7 @@ const model = {
   plan: null, message: "", messageEdited: false, secrets: null, secretsError: null,
   push: idlePush(), pushError: null, link: "connecting",
   skills: [], stagedSkills: {}, form: null,
+  hostForm: blankHost(), hostConfirm: false, init: idleInit(), initError: null,
 };
 
 const client = token === null ? null : createClient(token);
@@ -45,7 +48,7 @@ const client = token === null ? null : createClient(token);
 const SCREENS = {
   matrix: ["Matrix", "What each host gets: every skill bundle and MCP server against every host. Click a cell to give it to a host or take it away. Fleet writes the smallest change: an item the defaults give is taken away with exclude, not by editing the defaults."],
   catalog: ["Catalog", "The MCP servers, skill sources and skill bundles your hosts can pick from. Adding one here gives it to no host yet: pick it in the Matrix. An addition is held like any edit, and written when you push."],
-  hosts: ["Hosts", "The hosts in this config, and how each is reached. Read-only for now."],
+  hosts: ["Hosts", "The hosts in this config, and how each is reached. Add a host here and fleet sets it up over ssh: it writes its host file, then runs the real fleet init."],
   secrets: ["Secrets", "Which secrets exist and which hosts can read them. Names only: a value is never read or shown."],
 };
 
@@ -671,7 +674,79 @@ function hostsScreen() {
         h("dl", { class: "facts small" }, h("dt", {}, "reached"), h("dd", {}, host.self ? "local" : host.ssh ? `ssh ${host.ssh}` : "on its own timer"), h("dt", {}, "bundles"), h("dd", {}, bundles.join(", ") || "none"), h("dt", {}, "servers"), h("dd", {}, servers.join(", ") || "none")),
       );
     })),
+    h("h2", {}, "Add a host"),
+    addHostPanel(),
   );
+}
+
+/** The Add-a-host form, or why it cannot be used right now. */
+function addHostPanel() {
+  const held = heldProblem(model.ops);
+  const outside = model.base?.outside ?? [];
+  if (held !== null) {
+    return h("div", { class: "notice", id: "hostheld" }, h("b", {}, held), h("div", { class: "row", style: "margin-top:10px" }, h("a", { class: "btn primary", href: "#/review" }, "Review & push"), h("button", { type: "button", class: "btn", onclick: discardAll }, "Discard held edits")));
+  }
+  const names = model.base.hosts.map((/** @type {any} */ x) => x.name);
+  const f = model.hostForm;
+  const d = hostDraft(f, names);
+  const running = model.init.running;
+  const text = (/** @type {string} */ id, /** @type {"name" | "ssh"} */ key, /** @type {Record<string, string>} */ extra) => textInput(id, f[key], (v) => { f[key] = v; model.hostConfirm = false; }, extra);
+  const sel = h(
+    "select",
+    { id: "host-from", onchange: (e) => { f.from = /** @type {HTMLSelectElement} */ (e.target).value; model.hostConfirm = false; render(); } },
+    h("option", { value: "" }, "the defaults only"),
+    ...names.map((/** @type {string} */ n) => h("option", { value: n, ...(f.from === n ? { selected: true } : {}) }, `a copy of ${n}`)),
+  );
+  const end = model.init.end;
+  return h(
+    "div",
+    { class: "panel addform", id: "addhost" },
+    h("div", { class: "ph" }, "Add a host", h("span", { class: "spacer" }), h("span", { class: "tag" }, "writes hosts/<name>.yaml, then runs fleet init from here")),
+    h(
+      "div",
+      { class: "split flush" },
+      h(
+        "div",
+        { class: "form" },
+        field("host-name", "Name", text("host-name", "name", { placeholder: "mini" }), d.name === null ? "The host's file is hosts/<name>.yaml, and the name fleet init writes on the machine." : h("span", { class: "bad" }, d.name)),
+        field("host-ssh", "Reach it over ssh", text("host-ssh", "ssh", { placeholder: "me@mini.local" }), d.ssh === null ? ["Required: fleet init reaches the host over ssh. A machine fleet cannot reach this way is set up by hand: ", h("a", { href: SETUP_DOC, target: "_blank", rel: "noopener noreferrer", class: "link" }, "setting up machines"), "."] : h("span", { class: "bad" }, d.ssh)),
+        field("host-from", "Start from", sel, f.from === "" ? "Nothing is picked: the host gets the defaults." : `Copies bundles, exclude, mcp, settings and vars of ${f.from}. Not its ssh, age key or files.`),
+        outside.length > 0 ? h("div", { class: "notice inline" }, "The config repo has changes the page did not make: commit or discard them first.") : null,
+        model.hostConfirm && d.body !== null
+          ? h("div", { class: "notice inline", id: "hostconfirm" }, confirmInit(d.body), h("div", { class: "row inset" }, h("button", { type: "button", class: "btn primary", disabled: running, onclick: runInit }, `Run fleet init ${d.body.name}`), h("button", { type: "button", class: "btn ghost", onclick: () => { model.hostConfirm = false; render(); } }, "Cancel")))
+          : h("div", { class: "row" }, h("button", { type: "button", class: "btn primary", id: "host-go", disabled: d.body === null || running || outside.length > 0, onclick: () => { model.hostConfirm = true; render(); } }, "Add and set it up"), h("span", { class: "muted" }, "Asks before running anything.")),
+      ),
+      h(
+        "div",
+        { class: "formright" },
+        h("div", { class: "ph" }, d.body ? `fleet init ${d.body.name}` : "fleet init", h("span", { class: "spacer" }), end ? h("span", { class: "tag " + (end.ok ? "ok" : "bad") }, end.code) : running ? h("span", { class: "tag" }, "running") : null),
+        model.initError !== null ? h("div", { class: "notice bad inset" }, model.initError) : null,
+        h("pre", { class: "term", id: "initlog", "aria-live": "polite" }, model.init.lines.length > 0 ? model.init.lines.join("\n") : h("span", { class: "muted" }, d.body ? `Will write:\n${fileLines(d.body).join("\n")}` : "The real fleet init runs here, over ssh, with its output streamed in.")),
+        end ? h("div", { class: "hint" }, ...(end.ok ? [`${model.init.name} is set up. It is in the Matrix now; pick what it gets there.`] : end.messages.map((m) => h("div", {}, m)))) : null,
+      ),
+    ),
+  );
+}
+
+/** Writes the host file and runs the real init. Its output comes on the stream while this call is open. */
+async function runInit() {
+  const d = hostDraft(model.hostForm, model.base.hosts.map((/** @type {any} */ x) => x.name));
+  if (client === null || d.body === null) return;
+  model.hostConfirm = false;
+  model.initError = null;
+  model.init = startInit(d.body.name);
+  render();
+  try {
+    const doc = await client.initHost(d.body);
+    model.init = initEnd(model.init, doc);
+    if (doc.ok) model.hostForm = blankHost();
+  } catch (e) {
+    model.init = { ...model.init, running: false };
+    model.initError = said(e, "the host could not be set up");
+  }
+  loadStatus();
+  loadMatrix();
+  loadSecrets();
 }
 
 function secretsScreen() {
@@ -962,7 +1037,9 @@ if (token !== null) {
       loadStatus();
     },
     onEvent: (name, doc) => {
-      model.push = name === "push" ? pushEvent(model.push, doc) : pushEnd(model.push, doc);
+      if (name === "init") model.init = initLine(model.init, doc);
+      else if (name === "initend") model.init = initEnd(model.init, doc);
+      else model.push = name === "push" ? pushEvent(model.push, doc) : pushEnd(model.push, doc);
       render();
     },
     onLink: (live) => {
