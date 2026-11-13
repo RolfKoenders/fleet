@@ -4,6 +4,14 @@ What changed in fleet, newest first. Each version lists what you can do now, wha
 
 ## Unreleased
 
+### Added
+
+- The landing page has a section on why not just dotfiles, a release pill and a What's new section, and `rolflab.nl/fleet/changelog/` lists every release with a filter for each kind of change. They are generated from this file: `npm run site:changelog` rewrites them, and a test fails when this file changes without it.
+
+### Changed
+
+- The landing page's feature cards are trimmed to conflicts, skill review and startup context, plus one strip for secrets, pinned skills, the MCP doctor and agent use.
+
 ## 2.2.0 - 2026-11-12
 
 ### Security

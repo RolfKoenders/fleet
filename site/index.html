@@ -32,7 +32,8 @@
     <nav>
       <a href="#how">How it works</a>
       <a href="#bridge">The bridge</a>
-      <a href="#omarchy">Omarchy</a>
+      <a href="#compare">Compare</a>
+      <a href="#whats-new">What's new</a>
       <a href="#start">Get started</a>
       <a href="https://github.com/RolfKoenders/fleet/tree/main/docs" data-umami-event="fleet-docs-click">Docs</a>
       <a class="gh" href="https://github.com/RolfKoenders/fleet" data-umami-event="fleet-github-click" data-umami-event-where="nav">
@@ -46,6 +47,9 @@
     <!-- Hero: the bridge's boot animation, from frames recorded off the TUI (frames.js). -->
     <section class="hero">
       <button class="boot" id="boot" type="button" aria-label="Replay the boot animation" title="Click to replay"></button>
+      <!-- site:release-pill begin -->
+      <a class="release-pill" href="#whats-new"><b>v2.2.0</b> 10 changes, 12 Nov <span aria-hidden="true">→</span></a>
+      <!-- site:release-pill end -->
       <p class="eyebrow"><span class="pulse"></span> for your coding agents</p>
       <h1>One config.<br><span class="grad">Every machine.</span></h1>
       <p class="lede">Fleet keeps the setup of your coding agents the same everywhere. Instructions, skills, MCP servers, settings and encrypted secrets live in one private git repo, and every machine is made to match it.</p>
@@ -142,10 +146,11 @@
     </section>
 
     <!-- What fleet manages, and the promise it makes. -->
-    <section class="features">
+    <section class="features" id="features">
       <div class="section-head">
         <p class="kicker">What it keeps in line</p>
         <h2>Everything your agents need. Nothing they shouldn't.</h2>
+        <p>How it works shows what fleet manages. These are the parts that keep it safe to run on every machine.</p>
       </div>
       <div class="grid">
         <article class="feat wide accent">
@@ -156,21 +161,6 @@
           </div>
           <pre class="mini"><span class="y">✕</span> ~/.claude/CLAUDE.md is a file, not a link
   <span class="g">fix</span> move it aside, then run <span class="w">fleet apply</span></pre>
-        </article>
-        <article class="feat">
-          <div class="feat-ic">≡</div>
-          <h3>Shared instructions</h3>
-          <p>One <code>AGENTS.md</code> and per-host rules, linked into Claude Code and opencode.</p>
-        </article>
-        <article class="feat">
-          <div class="feat-ic">◆</div>
-          <h3>Pinned skills</h3>
-          <p>Skills from your repo or upstream sources, pinned to a commit and grouped into bundles per host.</p>
-        </article>
-        <article class="feat">
-          <div class="feat-ic">⇄</div>
-          <h3>MCP servers</h3>
-          <p>One catalog, included or excluded per host. <code>fleet doctor</code> starts each one and checks it answers.</p>
         </article>
         <article class="feat wide">
           <div>
@@ -188,28 +178,51 @@
           </div>
           <pre class="block term" id="context-bars" tabindex="0" role="group" aria-label="Startup context of each host, as bars"></pre>
         </article>
-        <article class="feat">
-          <div class="feat-ic">⚿</div>
-          <h3>Encrypted secrets</h3>
-          <p>sops and age keep tokens encrypted in git. Each machine decrypts only what it is a recipient of.</p>
-        </article>
-        <article class="feat">
-          <div class="feat-ic">↻</div>
-          <h3>Self-healing</h3>
-          <p>A systemd or launchd timer pulls and applies every 30 minutes, so machines you forgot about catch up.</p>
-        </article>
-        <article class="feat">
-          <div class="feat-ic">⇉</div>
-          <h3>Push over ssh</h3>
-          <p><code>fleet push</code> publishes, then applies on each host in turn and stops at the first conflict.</p>
-        </article>
-        <article class="feat full">
-          <div class="feat-ic">{}</div>
-          <div>
-            <h3>Agent native</h3>
-            <p><code>--json</code> on every command, and <code>fleet agent</code> prints recipes so your agent can run it for you.</p>
-          </div>
-        </article>
+        <ul class="feat-strip">
+          <li><span class="feat-ic">⚿</span><b>Encrypted secrets</b>sops and age. Each host decrypts only its own.</li>
+          <li><span class="feat-ic">◆</span><b>Pinned skills</b>From your repo or upstream, grouped into bundles.</li>
+          <li><span class="feat-ic">⇄</span><b>MCP doctor</b><code>fleet doctor</code> starts each server and checks it answers.</li>
+          <li><span class="feat-ic">{}</span><b>Agent native</b><code>--json</code> everywhere, and <code>fleet agent</code> recipes.</li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- Why not just dotfiles: each claim is something fleet does today. The claims about other tools are checked against their docs. -->
+    <section class="compare" id="compare">
+      <div class="section-head">
+        <p class="kicker">Compare</p>
+        <h2>Why not just dotfiles?</h2>
+        <p>You could keep agent config in chezmoi or a Nix flake. A dotfiles manager usually owns whole files, though, and agents write to their own config files all the time. This is what fleet does differently.</p>
+      </div>
+      <div class="vs">
+        <div class="vs-row">
+          <div class="vs-q"><span class="n">✕</span> A dotfiles manager</div>
+          <div class="vs-a"><span class="y">✓</span> fleet</div>
+        </div>
+        <div class="vs-row">
+          <div class="vs-q"><h3>Owns all of <code>settings.json</code></h3><p>Claude Code writes to that file itself, so when the manager owns the whole file, the next apply overwrites what the agent wrote.</p></div>
+          <div class="vs-a"><h3>Owns only the keys you list</h3><p>Fleet sets the keys your config lists, like <code>attribution</code>, and leaves the rest of the file to the agent. Hand edits to its keys are a conflict, not a silent overwrite.</p><pre class="mini"><span class="g">~/.claude/settings.json</span>
+  attribution.commit   <span class="y">fleet's</span>
+  permissions.allow    <span class="w">the agent's</span>
+  model                <span class="w">yours</span></pre></div>
+        </div>
+        <div class="vs-row">
+          <div class="vs-q"><h3>An MCP server per agent, per file</h3><p>Claude Code and opencode store MCP servers in different files and shapes, so you keep two copies in sync by hand.</p></div>
+          <div class="vs-a"><h3>One catalog entry, both agents</h3><p>Define the server once in <code>catalog/mcp.yaml</code>. Fleet writes it in each agent's own format, and <code>fleet doctor</code> starts it to check it answers.</p></div>
+        </div>
+        <div class="vs-row">
+          <div class="vs-q"><h3>Waits for you on each machine</h3><p>You run an update or a rebuild on every host and hope you didn't forget one.</p></div>
+          <div class="vs-a"><h3>Reaches them for you</h3><p><code>fleet push</code> applies on every host over ssh while you watch. Machines it can't reach catch up on their own 30-minute timer.</p></div>
+        </div>
+        <div class="vs-row">
+          <div class="vs-q"><h3>Skills are just files</h3><p>An upstream skill changes what your agent does, and nothing shows you the change before it lands.</p></div>
+          <div class="vs-a"><h3>Skills are pinned and reviewed</h3><p>Every source is pinned to a commit. <code>--review</code> shows what an update brings in, with new scripts and URLs flagged.</p></div>
+        </div>
+      </div>
+      <div class="compare-pitch">
+        <div><b>Keep chezmoi for your dotfiles.</b>Fleet only owns agent config, so the two sit side by side as long as chezmoi does not manage <code>~/.claude</code>.</div>
+        <div><b>All in on Nix?</b>home-manager has Claude Code and opencode modules. Fleet works without Nix, keeps encrypted secrets per host and stops at conflicts.</div>
+        <div><b>Rules for many agents?</b>rulesync generates config for more than 60 AI coding tools from one set of rule files. Fleet keeps the setup of Claude Code and opencode the same on every machine.</div>
       </div>
     </section>
 
@@ -232,6 +245,36 @@
           <a class="btn" href="https://github.com/RolfKoenders/fleet-omarchy" data-umami-event="fleet-omarchy-click">fleet-omarchy on GitHub <span aria-hidden="true">→</span></a>
         </div>
       </div>
+    </section>
+
+    <!-- What changed lately: generated from CHANGELOG.md by 'npm run site:changelog'. -->
+    <section class="whats-new" id="whats-new">
+      <div class="section-head">
+        <p class="kicker">What's new</p>
+        <h2>What changed lately.</h2>
+        <p>Straight from the changelog. Every release says what you can do now, what changed, and whether you have to do anything before you push.</p>
+      </div>
+      <!-- site:whats-new begin -->
+      <div class="news">
+        <ol class="rail">
+          <li class="on"><a href="changelog/#v2.2.0"><b>v2.2.0</b><span>2026-11-12 · 10 changes</span></a></li>
+          <li><a href="changelog/#v2.1.0"><b>v2.1.0</b><span>2026-11-08 · 12 changes</span></a></li>
+          <li><a href="changelog/#v2.0.0"><b>v2.0.0</b><span>2026-11-03 · 9 changes</span></a></li>
+          <li><a href="changelog/#v1.0.0"><b>v1.0.0</b><span>2026-11-01 · 12 changes</span></a></li>
+          <li class="pace">Subscribe with the <a href="https://github.com/RolfKoenders/fleet/releases.atom">RSS feed</a>, or watch the GitHub repo for releases.</li>
+        </ol>
+        <div>
+          <div class="clamp"><article class="cl-rel" id="v2.2.0">
+  <header><h3>v2.2.0</h3><time datetime="2026-11-12">12 Nov 2026</time><div class="cl-tags"><span class="cl-tag security">1 security</span><span class="cl-tag added">3 added</span><span class="cl-tag changed">3 changed</span><span class="cl-tag fixed">3 fixed</span></div></header>
+  <details class="cl-sec security" open><summary>Security</summary><ul><li><span class="cl-h"><code>fleet apply</code> no longer puts a Claude MCP server's decrypted secrets on a command line.</span> <span class="cl-d">It used to add a server with <code>claude mcp add-json</code>, which takes the whole entry as an argument, and any user on the host could read that from the process list while it ran. Fleet now writes the entry into <code>~/.claude.json</code> itself, holding the same <code>~/.claude.json.lock</code> Claude takes around its own writes, so a running Claude session neither loses fleet's entry nor has its own save lost. Removing a server still uses <code>claude mcp remove</code>, which carries no secret.</span></li></ul></details>
+  <details class="cl-sec added"><summary>Added</summary><ul><li><span class="cl-h">The landing page is served from <code>rolflab.nl/fleet</code>.</span> <span class="cl-d"><code>deploy/Dockerfile</code> builds it as a container that serves <code>site/</code> under <code>/fleet/</code>. The old GitHub Pages address redirects there, keeping the section of the link.</span></li><li><span class="cl-h"><code>track: releases</code> in <code>fleet.yaml</code> makes <code>fleet update</code> follow releases instead of a branch.</span> <span class="cl-d">It moves the pin to the newest release, the highest <code>vX.Y.Z</code> tag (tags with a suffix such as <code>v3.0.0-rc.1</code> are ignored), and prints <code>tool: &lt;old&gt; -&gt; v2.2.0 (a1b2c3d)</code> with the changelog sections in between; <code>--json</code> adds <code>release</code>. On the newest release it says <code>up to date (v2.1.0)</code>; a pin that is already past it stays where it is until the next release. A move to a new major version adds a line to read "You need to do" before you push. A repo with no release tag exits 2. Any other <code>track</code> is a branch, as before.</span></li><li><span class="cl-h"><code>fleet status --json</code> and <code>status --all --json</code> carry <code>conflictList</code> for each host: its first 5 conflicts as <code>kind</code> and <code>path</code>, in the order <code>status --conflicts</code> lists them, so a row can name what is wrong.</span> <span class="cl-d"><code>conflicts</code> is still the count. A host that cannot plan its conflicts has <code>null</code> for both, and a host on an older fleet has no <code>conflictList</code>. The Omarchy widget shows the first one on the host's row.</span></li></ul></details>
+  <details class="cl-sec changed"><summary>Changed</summary><ul><li><span class="cl-h">The README and the landing page show a new screenshot of the Omarchy widget, with a host's row naming its first conflict.</span></li><li><span class="cl-h"><code>fleet new</code> writes <code>track: releases</code>, so a new config takes finished versions and not every commit on <code>main</code>.</span> <span class="cl-d">To keep following a branch, change <code>track</code> in <code>fleet.yaml</code>.</span></li><li><span class="cl-h">The landing page's title is now "fleet · One config.</span> <span class="cl-d">Every machine.", the same line as its heading, in the browser tab and in link previews.</span></li></ul></details>
+  <details class="cl-sec fixed"><summary>Fixed</summary><ul><li><span class="cl-h"><code>fleet doctor</code> in a shell with no user session, as after <code>sudo -iu</code>, no longer reports a running timer as a problem: systemd cannot be asked from there, so the timer is <code>unknown</code>, with the reason and that doctor over ssh or from a login shell can see it.</span> <span class="cl-d">It does not count as a problem or change the exit code. With a session, a timer that gives no answer is still a problem.</span></li><li><span class="cl-h"><code>fleet context</code> and the bridge's context screen say why a server has no size.</span> <span class="cl-d">A server that wants a login says it needs one, so doctor cannot list its tools, instead of telling you to run <code>fleet doctor</code> again. A server whose last doctor run failed names that result. <code>--json</code> items have a <code>doctor</code> field with what the last doctor run found.</span></li><li><span class="cl-h">On the landing page, the bridge's keys keep working after you click one of its tabs or key chips; before, they only worked while the terminal itself had focus.</span> <span class="cl-d">The feature cards with an example now span the row, text beside the example, so the short cards next to them no longer stretch into tall empty boxes.</span></li></ul></details>
+</article></div>
+          <div class="news-foot"><a class="btn primary" href="changelog/">Full changelog <span aria-hidden="true">→</span></a><a class="btn" href="https://github.com/RolfKoenders/fleet/releases.atom">RSS feed</a></div>
+        </div>
+      </div>
+      <!-- site:whats-new end -->
     </section>
 
     <!-- Getting started, straight from the README. -->

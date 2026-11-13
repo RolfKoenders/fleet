@@ -5,7 +5,8 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "node --test \"test/**/*.test.ts\"",
-    "site:frames": "node scripts/site-frames.ts"
+    "site:frames": "node scripts/site-frames.ts",
+    "site:changelog": "node scripts/site-changelog.ts"
   },
   "devDependencies": {
     "@types/node": "^22.18.0",
