@@ -46,7 +46,8 @@ export function writeExecutable(path: string, body: string): void {
   chmodSync(path, 0o755);
 }
 
-const gitEnv = {
+/** A git author and committer, and no global or system config: a CI runner has no identity of its own. */
+export const gitEnv = {
   GIT_CONFIG_GLOBAL: "/dev/null",
   GIT_CONFIG_SYSTEM: "/dev/null",
   GIT_AUTHOR_NAME: "t",
@@ -56,7 +57,8 @@ const gitEnv = {
 };
 
 export function git(cwd: string, ...args: string[]): string {
-  const r = spawnSync("git", args, { cwd, encoding: "utf8", env: { ...process.env, ...gitEnv } });
+  // A big buffer: `git log -p` of a clone that holds the vendored libraries is several MB.
+  const r = spawnSync("git", args, { cwd, encoding: "utf8", maxBuffer: 64 * 1024 * 1024, env: { ...process.env, ...gitEnv } });
   if (r.status !== 0) throw new Error(`git ${args.join(" ")} failed: ${r.stderr}`);
   return r.stdout.trim();
 }
