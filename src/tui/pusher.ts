@@ -17,8 +17,11 @@ export type PreviewResult = { ok: true; preview: Preview } | { ok: false; detail
  */
 export type Pusher = {
   preview(signal: AbortSignal): Promise<PreviewResult>;
-  /** Runs the push (with `message` as its commit message when given), reporting each event as it arrives, and resolves when it has ended. */
-  run(onEvent: (event: FleetEvent) => void, message?: string): Promise<PushEnd>;
+  /**
+   * Runs the push (with `message` as its commit message when given, and with `--host` when `host` is), reporting each
+   * event as it arrives, and resolves when it has ended.
+   */
+  run(onEvent: (event: FleetEvent) => void, message?: string, host?: string): Promise<PushEnd>;
   /** What a push still in flight is doing, or null. After the screen is gone this is what is left to say. */
   running(): string | null;
   whenDone(): Promise<PushEnd> | null;
@@ -28,10 +31,11 @@ export type Pusher = {
  * The arguments of the child push. The message goes as `-m`; one that starts with a dash goes as `--message=`, which
  * the argument parser cannot take for an option.
  */
-export const pushArguments = (message?: string): string[] => [
+export const pushArguments = (message?: string, host?: string): string[] => [
   "push",
   "--json",
   ...(message === undefined || message === "" ? [] : message.startsWith("-") ? [`--message=${message}`] : ["-m", message]),
+  ...(host === undefined ? [] : host.startsWith("-") ? [`--host=${host}`] : ["--host", host]),
 ];
 
 export class RealPusher implements Pusher {
@@ -64,11 +68,11 @@ export class RealPusher implements Pusher {
     });
   }
 
-  run(onEvent: (event: FleetEvent) => void, message?: string): Promise<PushEnd> {
-    this.follow.start(this.hosts);
+  run(onEvent: (event: FleetEvent) => void, message?: string, host?: string): Promise<PushEnd> {
+    this.follow.start(host === undefined ? this.hosts : this.hosts.filter((h) => h.name === host));
     this.ended = new Promise((resolve) => {
       // Its own session: a Ctrl-C or a closed terminal aimed at the bridge does not reach it half way through a push.
-      const child = spawn(join(this.toolDir, "bin/fleet"), pushArguments(message), {
+      const child = spawn(join(this.toolDir, "bin/fleet"), pushArguments(message, host), {
         detached: true,
         stdio: ["ignore", "pipe", "pipe"],
         env: { ...process.env, FLEET_EVENTS: "1", FLEET_NODE: probedNode(), FLEET_CONFIG: this.configDir, HOME: this.home },

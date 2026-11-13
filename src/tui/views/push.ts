@@ -3,8 +3,8 @@ import type { Canvas, Style } from "../buffer.ts";
 import type { State } from "../app.ts";
 import { spinner, theme } from "../theme.ts";
 import { truncate, wrap } from "../width.ts";
-import { looksSecret } from "../../pushrun.ts";
-import type { Lane, Phase, PushRun } from "../../pushrun.ts";
+import { looksSecret, STEP_WORDS } from "../../pushrun.ts";
+import type { Change, Lane, Phase, PushRun } from "../../pushrun.ts";
 import { pad, plural, s, segments } from "./ui.ts";
 import type { Seg } from "./ui.ts";
 
@@ -12,7 +12,18 @@ import type { Seg } from "./ui.ts";
 export const CONFIRM_WORD = "push";
 
 const STAGE_WORDS: Record<string, string> = { sync: "syncing repos", plan: "planning", write: "writing" };
-const STEP_WORDS: Record<string, string> = { "write-link": "link", "remove-link": "unlink", "write-keys": "keys", "add-server": "add server", "remove-server": "remove server" };
+
+/** The widths at which the screen gives something up: below `FEED_WIDTH` the host pane goes, below `LANES_WIDTH` the feed too. */
+export const FEED_WIDTH = 80;
+export const PANE_WIDTH = 100;
+/** The room a lane's own time takes at the end of its line. */
+const TIME_W = 7;
+
+/** A span of time as `3.2s`, or `1m04s` from a minute on. */
+export function clock(ms: number): string {
+  const seconds = Math.max(0, ms) / 1000;
+  return seconds < 60 ? `${seconds.toFixed(1)}s` : `${Math.floor(seconds / 60)}m${String(Math.floor(seconds % 60)).padStart(2, "0")}s`;
+}
 
 /** The longest commit message the box takes. */
 export const MESSAGE_MAX = 200;
@@ -109,8 +120,13 @@ function drawPipeline(c: Canvas, run: PushRun, state: State, y: number): void {
   add("publish", run.phases.publish, run.publish.of > 0 && run.phases.publish !== "waiting" ? `${run.publish.n}/${run.publish.of}` : "");
   const done = run.lanes.filter((l) => l.state === "done").length;
   add("apply", run.phases.apply, run.phases.apply === "waiting" ? "" : `${done}/${run.lanes.length} hosts`);
-  segments(c, 2, y, parts, c.w - 4);
+  const elapsed = clock((run.endedAt ?? state.now) - run.startedAt);
+  c.textRight(c.w - 2, y, elapsed, run.endedAt === null ? s.sub : s.muted);
+  segments(c, 2, y, parts, c.w - 5 - elapsed.length);
 }
+
+/** How long a lane has been at it, or took: nothing before it starts, and nothing for a host that is not applied. */
+const laneTime = (l: Lane, now: number): string | null => (l.from === null || l.result === "timer" ? null : clock((l.to ?? now) - l.from));
 
 function laneMark(l: Lane, state: State): Seg {
   if (l.state === "running") return [spinner(state.now, state.motion), s.brand];
@@ -133,7 +149,7 @@ function laneText(l: Lane, width: number, run: PushRun, stopped: string | null):
     return [[l.result ?? "no result", l.result === "conflict" ? s.warn : s.bad], [l.result === "conflict" ? " nothing written on this host" : l.note ? `  ${l.note}` : "", s.muted]];
   }
   if (l.step === null) {
-    const what = l.stage === null ? (l.via === "ssh" ? "connecting over ssh" : "starting") : (STAGE_WORDS[l.stage] ?? l.stage);
+    const what = laneStage(l);
     const count = l.stage === "write" && l.of !== null ? ` 0/${l.of}` : "";
     return [[what + count, s.sub]];
   }
@@ -151,7 +167,7 @@ function packet(c: Canvas, x: number, y: number, len: number, state: State, lit:
   if (state.motion) c.cell(x + (Math.floor(state.now / 90 + line * 3) % len), y, "●", { fg: theme.brandBright, attr: BOLD });
 }
 
-function drawLanes(c: Canvas, run: PushRun, state: State, top: number): number {
+function drawLanes(c: Canvas, run: PushRun, state: State, top: number, selected: number): number {
   const lanes = run.lanes;
   const stopped = run.lanes[0]?.result === "conflict" ? `not reached: ${run.lanes[0].host} has a conflict, so the rest wait` : run.phases.publish === "failed" || run.phases.validate === "failed" ? "not reached: the push stopped before the apply" : run.end !== null ? "not reached" : null;
   const nameW = Math.min(14, Math.max(...lanes.map((l) => l.host.length)));
@@ -185,19 +201,89 @@ function drawLanes(c: Canvas, run: PushRun, state: State, top: number): number {
     const [glyph, gs] = laneMark(l, state);
     const head: Seg[] = [[glyph, gs], [" ", s.text], [pad(l.host, nameW), l.state === "waiting" || l.state === "skipped" ? s.muted : s.bold], ["  ", s.text]];
     const x = segments(c, textX, y, head);
-    segments(c, x, y, laneText(l, c.w - x - 2, run, stopped), c.w - x - 2);
+    const time = laneTime(l, state.now);
+    const room = c.w - x - 2 - (time === null ? 0 : TIME_W);
+    segments(c, x, y, laneText(l, room, run, stopped), room);
+    if (time !== null) c.textRight(c.w - 2, y, time, l.state === "running" ? s.sub : s.muted);
+    if (i === selected && run.lanes.length > 1) c.text(0, y, "›", s.brandBold);
   });
   return top + lanes.length;
 }
 
-function drawRun(c: Canvas, state: State, run: PushRun, running: boolean): void {
+export type Over = Extract<State["push"], { phase: "running" | "finished" }>;
+
+/** The lane the host pane shows and `r` and `f` act on: the one picked with the arrows, or until one is, the host being applied now (else the last one done). */
+export function pickedLane(p: Over): number {
+  const { lanes } = p.run;
+  if (p.selected !== null) return Math.max(0, Math.min(p.selected, lanes.length - 1));
+  const running = lanes.findIndex((l) => l.state === "running");
+  if (running >= 0) return running;
+  // Between hosts, or once it is over: the one that finished last.
+  return Math.max(0, lanes.findLastIndex((l) => l.state === "done"));
+}
+
+/** The activity feed: every event as it arrived, newest last, with its time since the push began and its host. */
+function drawFeed(c: Canvas, run: PushRun, x: number, y: number, w: number, h: number): void {
+  if (h < 2 || w < 20) return;
+  c.text(x, y, "ACTIVITY", { fg: theme.muted, attr: BOLD });
+  const nameW = Math.min(12, Math.max(4, ...run.lanes.map((l) => l.host.length)));
+  const lines = run.feed.slice(-(h - 1));
+  lines.forEach((line, i) => {
+    const at = pad(clock(line.at - run.startedAt), 7);
+    const head: Seg[] = [[at, s.faint], [pad(line.host ?? "push", nameW), line.host === null ? s.muted : s.sub], [" ", s.text]];
+    const after = segments(c, x, y + 1 + i, head, w);
+    c.text(after, y + 1 + i, truncate(line.text, w - (after - x)), s.text, w - (after - x));
+  });
+  if (lines.length === 0) c.text(x, y + 1, "nothing yet", s.faint);
+}
+
+const mark = (kind: "+" | "~" | "-"): Seg => [`${kind} `, kind === "+" ? s.ok : kind === "-" ? s.warn : s.info];
+
+/** What the selected host got, or is getting: its writes so far and how many remain, and after the push its receipt. */
+function drawHostPane(c: Canvas, run: PushRun, lane: Lane, x: number, y: number, w: number, h: number): void {
+  if (h < 2 || w < 16) return;
+  c.text(x, y, lane.host.toUpperCase(), { fg: theme.muted, attr: BOLD });
+  const line = (i: number, segs: Seg[]) => void (i < h && segments(c, x, y + i, segs, w));
+  let row = 1;
+  const doc = run.end?.hosts.find((r) => r.host === lane.host);
+  if (run.end !== null && doc?.receipt !== undefined && lane.state === "done" && (doc.receipt.created.length + doc.receipt.updated.length + doc.receipt.removed.length > 0)) {
+    const { created, updated, removed } = doc.receipt;
+    line(row++, [[`${created.length} created, ${updated.length} updated, ${removed.length} removed`, s.text]]);
+    const all: [Change, "+" | "~" | "-"][] = [...created.map((e): [Change, "+"] => [e, "+"]), ...updated.map((e): [Change, "~"] => [e, "~"]), ...removed.map((e): [Change, "-"] => [e, "-"])];
+    const room = h - row;
+    const shown = all.length > room ? all.slice(0, Math.max(0, room - 1)) : all;
+    for (const [e, kind] of shown) line(row++, [mark(kind), [truncate(e.label, w - 2), s.sub]]);
+    if (shown.length < all.length) line(row++, [[`and ${all.length - shown.length} more`, s.faint]]);
+    return;
+  }
+  const writes = lane.steps;
+  if (lane.state === "waiting") return line(row, [[lane.via === "timer" ? "no ssh destination: it applies on its own schedule" : "not started yet", s.muted]]);
+  if (lane.state === "skipped") return line(row, [["not reached", s.faint]]);
+  if (run.end !== null && lane.state === "done") {
+    const why = lane.result === "ok" ? (lane.changes > 0 ? `${plural(lane.changes, "change")}; the host sent no list` : "already matched: nothing written") : lane.result === "timer" ? "not asked; it catches up on its own schedule" : lane.result === "conflict" ? "conflict: nothing written" : `${lane.result ?? "no result"}: no receipt`;
+    return line(row, [[truncate(why, w), lane.result === "ok" || lane.result === "timer" ? s.muted : s.warn]]);
+  }
+  const done = lane.step?.n ?? 0;
+  line(row++, [[lane.of === null ? (lane.state === "done" ? `${writes.length} writes` : "steps to come: not known yet") : `${done} of ${lane.of} writes done, ${Math.max(0, lane.of - done)} to go`, s.text]]);
+  const room = h - row;
+  const shown = writes.slice(-Math.max(0, room));
+  for (const st of shown) line(row++, [mark("+"), [truncate(`${STEP_WORDS[st.name] ?? st.name} ${st.target}`, w - 2), s.sub]]);
+  if (writes.length === 0 && lane.state === "running") line(row, [[truncate(laneStage(lane), w), s.muted]]);
+}
+
+const laneStage = (l: Lane): string => (l.stage === null ? (l.via === "ssh" ? "connecting over ssh" : "starting") : (STAGE_WORDS[l.stage] ?? l.stage));
+
+function drawRun(c: Canvas, state: State, p: Over): void {
+  const run = p.run;
+  const running = p.phase === "running";
   drawPipeline(c, run, state, 0);
-  const bottom = drawLanes(c, run, state, 2);
+  const selected = pickedLane(p);
+  const bottom = drawLanes(c, run, state, 2, selected);
   let y = bottom + 1;
   const first = run.lanes[0];
   const timers = run.lanes.filter((l) => l.via === "timer").map((l) => l.host);
   if (running) {
-    if (first) c.text(2, y++, truncate(`Hosts run one after another, in name order. A conflict on ${first.host} stops the rest.`, c.w - 4), s.muted);
+    if (first && run.lanes.length > 1) c.text(2, y++, truncate(`Hosts run one after another, in name order. A conflict on ${first.host} stops the rest.`, c.w - 4), s.muted);
     if (timers.length > 0) c.text(2, y++, truncate(`${timers.join(", ")} ${timers.length === 1 ? "has" : "have"} no ssh destination: fleet does not reach ${timers.length === 1 ? "it" : "them"}; ${timers.length === 1 ? "it catches" : "they catch"} up on ${timers.length === 1 ? "its" : "their"} own schedule.`, c.w - 4), s.muted);
   } else if (run.end !== null) {
     const end = run.end;
@@ -216,13 +302,18 @@ function drawRun(c: Canvas, state: State, run: PushRun, running: boolean): void 
     }
     for (const m of end.messages) if (y < c.h - 1) c.text(2, y++, truncate(m, c.w - 4), s.muted);
   }
-  const room = c.h - y - 1;
-  const lines = run.log.filter((l) => l !== "").slice(-Math.max(0, room));
-  if (lines.length > 0 && room > 1) {
-    y++;
-    c.text(2, y++, "MESSAGES", { fg: theme.muted, attr: BOLD });
-    for (const line of lines.slice(-(c.h - y))) c.text(4, y++, truncate(line, c.w - 6), s.sub);
-  }
+  if (p.notice !== null) c.text(2, y++, truncate(p.notice, c.w - 4), s.warn);
+  // By width: everything from PANE_WIDTH, no host pane below it, and no feed below FEED_WIDTH.
+  const top = y + 1;
+  const room = c.h - top - 1;
+  if (c.w < FEED_WIDTH || room < 3) return;
+  const lane = run.lanes[selected];
+  if (c.w < PANE_WIDTH || lane === undefined) return drawFeed(c, run, 2, top, c.w - 4, room);
+  const paneW = Math.min(46, Math.floor((c.w - 4) * 0.42));
+  const feedW = c.w - 4 - paneW - 3;
+  drawFeed(c, run, 2, top, feedW, room);
+  for (let i = 0; i < room; i++) c.cell(2 + feedW + 1, top + i, "│", s.faint);
+  drawHostPane(c, run, lane, c.w - 2 - paneW, top, paneW, room);
 }
 
 export function drawPush(c: Canvas, state: State): void {
@@ -233,5 +324,5 @@ export function drawPush(c: Canvas, state: State): void {
     return;
   }
   if (p.phase === "review") return drawReview(c, state);
-  drawRun(c, state, p.run, p.phase === "running");
+  drawRun(c, state, p);
 }
