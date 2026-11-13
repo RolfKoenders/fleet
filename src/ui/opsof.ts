@@ -2,6 +2,7 @@ import type { EditOp } from "../edit/index.ts";
 import type { Value } from "../edit/index.ts";
 import { parseCatalog } from "../catalog.ts";
 import { parseMcpCatalog } from "../mcp.ts";
+import { ciphertextProblem, parseSopsText, SECRET_NAME, SECRETS_PATH } from "../edit/index.ts";
 import { BadRequest } from "./request.ts";
 
 /**
@@ -47,9 +48,31 @@ function opOf(raw: unknown, i: number): EditOp {
       return { op: "addSource", ...sourceOf(at, o) };
     case "addBundle":
       return { op: "addBundle", ...bundleOf(at, o) };
+    case "setSecret":
+      return { op: "setSecret", ...setSecretOf(at, o) };
     default:
       throw new BadRequest(`${at} is not an edit the page may make`);
   }
+}
+
+/**
+ * A secrets file the page holds, encrypted. It is rebuilt from its own fields and checked as text: a path of a secrets file,
+ * names the loader accepts, and a sops file that holds ciphertext and nothing else. Whether the recipients are the right ones
+ * for that file needs the config, so `secretOpProblem` (edits.ts) checks that.
+ */
+function setSecretOf(at: string, o: Raw): { file: string; names: string[]; base: string; content: string } {
+  if (typeof o.file !== "string" || !SECRETS_PATH.test(o.file)) throw new BadRequest(`${at}: file must be a secrets file such as secrets/box.enc.yaml`);
+  const names = o.names;
+  if (!Array.isArray(names) || names.length === 0 || names.length > 100 || !names.every((n) => typeof n === "string" && SECRET_NAME.test(n))) {
+    throw new BadRequest(`${at}: names must be a list of secret names such as TRACKER_API_KEY`);
+  }
+  if (typeof o.base !== "string" || !/^([0-9a-f]{64}|absent)$/.test(o.base)) throw new BadRequest(`${at}: base must be the digest of the file the value was encrypted into`);
+  if (typeof o.content !== "string") throw new BadRequest(`${at}: content must be the encrypted file`);
+  const problem = ciphertextProblem(o.content);
+  if (problem !== null) throw new BadRequest(`${at}: ${problem}`);
+  const entries = parseSopsText(o.content).entries;
+  if (!(names as string[]).every((n) => entries.has(n))) throw new BadRequest(`${at}: the encrypted file does not hold every name`);
+  return { file: o.file, names: [...new Set(names as string[])], base: o.base, content: o.content };
 }
 
 const strings = (at: string, key: string, v: unknown, max = 100): string[] => {

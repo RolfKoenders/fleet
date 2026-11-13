@@ -4,6 +4,7 @@ import { addToList, readList, removeFromList } from "./lists.ts";
 import type { ListPath } from "./lists.ts";
 import { newHostFile } from "./hostfile.ts";
 import { CannotEdit } from "./yamltext.ts";
+import { ciphertextProblem, fingerprint, parseSopsText, SECRETS_PATH } from "./secretfile.ts";
 
 /** What a host picks from: skill bundles, or MCP servers. */
 export type PickKind = "bundles" | "mcp";
@@ -28,7 +29,13 @@ export type EditOp =
   /** A new bundle in `catalog/skills.yaml`. */
   | { op: "addBundle"; name: string; skills: string[] }
   /** A new host file, reached over `ssh`, with nothing picked yet or a copy of what `from` picks and sets. */
-  | { op: "addHost"; host: string; ssh: string; from: string | null };
+  | { op: "addHost"; host: string; ssh: string; from: string | null }
+  /**
+   * One secrets file, already encrypted by sops (see `src/ui/secretset.ts`): `content` is its whole new text and `names` the
+   * secrets it sets or replaces. `base` is the digest of the file this was made from (`fingerprint`), so it is only written over
+   * that file and refused as stale over any other. Nothing else in the file may differ, and it holds ciphertext only.
+   */
+  | { op: "setSecret"; file: string; names: string[]; base: string; content: string };
 
 /** Config files by repo-relative path (`hosts/laptop.yaml`) to their text. */
 export type Files = Record<string, string>;
@@ -109,7 +116,25 @@ function run(files: Files, op: EditOp): void {
       files[hostFile(op.host)] = newHostFile(op.ssh, source ?? null);
       return;
     }
+    case "setSecret":
+      return setSecret(files, op);
   }
+}
+
+function setSecret(files: Files, op: Extract<EditOp, { op: "setSecret" }>): void {
+  if (!SECRETS_PATH.test(op.file)) throw new Stale(`${op.file} is not a secrets file`);
+  const current = files[op.file];
+  if (fingerprint(current) !== op.base) throw new Stale(`${op.file} is not what the value was encrypted into any more: set it again`);
+  const problem = ciphertextProblem(op.content);
+  if (problem !== null) throw new Stale(problem);
+  const before = parseSopsText(current ?? "").entries;
+  const after = parseSopsText(op.content).entries;
+  // Only the named secrets may be new or different; none may go. This engine sets and replaces, it never deletes.
+  const gone = [...before.keys()].filter((k) => !after.has(k));
+  const moved = [...after].filter(([k, v]) => !op.names.includes(k) && before.get(k)?.value !== v.value).map(([k]) => k);
+  const missing = op.names.filter((n) => !after.has(n));
+  if (gone.length > 0 || moved.length > 0 || missing.length > 0) throw new Stale(`the encrypted ${op.file} does not match what it was made from`);
+  files[op.file] = op.content;
 }
 
 /** What the host gets of one kind, and why: the defaults add, the host adds, either excludes. */

@@ -1,12 +1,13 @@
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { diff } from "../apply.ts";
-import { applyOps, CATALOG_FILES, DEFAULTS_FILE, validate } from "../edit/index.ts";
+import { applyOps, CATALOG_FILES, DEFAULTS_FILE, parseSopsText, reviewText, secretsOwner, validate } from "../edit/index.ts";
 import type { Applied, EditOp, Files, HostProblems } from "../edit/index.ts";
 import { spawnSync } from "node:child_process";
 import { MissingToolError, runGit } from "../git.ts";
 import { findTool } from "../tools.ts";
-import { hostNames } from "../recipients.ts";
+import { hostNames, readRules } from "../recipients.ts";
+import { InvalidConfigError } from "../config.ts";
 import { loadModel } from "../tui/model.ts";
 import type { Model } from "../tui/model.ts";
 
@@ -16,9 +17,10 @@ import type { Model } from "../tui/model.ts";
  * and reported instead of being written over a change made elsewhere.
  */
 
-/** The files an edit may touch, by repo-relative path: the defaults, each host's file and the catalog files. */
+/** The files an edit may touch, by repo-relative path: the defaults, each host's file, the catalog files and the secrets files (as text, never decrypted). */
 export function readFiles(configDir: string): Files {
-  const paths = [DEFAULTS_FILE, ...hostNames(configDir).map((h) => `hosts/${h}.yaml`), ...new Set(Object.values(CATALOG_FILES))];
+  const hosts = hostNames(configDir);
+  const paths = [DEFAULTS_FILE, ...hosts.map((h) => `hosts/${h}.yaml`), ...new Set(Object.values(CATALOG_FILES)), ...["shared", ...hosts].map((f) => `secrets/${f}.enc.yaml`)];
   const files: Files = {};
   for (const path of paths) {
     try {
@@ -61,6 +63,8 @@ export type Preview = {
   shown: { path: string; before: string; after: string } | null;
   before: Model;
   after: Model;
+  /** Every config file as it would be after the edits. */
+  edited: Files;
   checks: HostCheck[];
 };
 
@@ -77,7 +81,8 @@ export function preview(configDir: string, self: string | null, ops: readonly Ed
     problems: failed.get(h.name)?.problems ?? [],
     changes: pickChange(before, after, h.name),
   }));
-  const text = (f: Files, path: string) => f[path] ?? "";
+  // A secrets file is shown by its names, each with a short mark of its ciphertext: the review never carries the ciphertext.
+  const text = (f: Files, path: string) => (secretsOwner(path) !== null ? reviewText(f[path] ?? "") : (f[path] ?? ""));
   return {
     applied: result.applied,
     dropped: result.dropped,
@@ -85,8 +90,33 @@ export function preview(configDir: string, self: string | null, ops: readonly Ed
     shown: show !== null && show in result.files ? { path: show, before: text(files, show), after: text(result.files, show) } : null,
     before,
     after,
+    edited: result.files,
     checks,
   };
+}
+
+/**
+ * Why a held secrets file may not be written, or null. The text of the file was checked when it came in (`opsOf`); this is
+ * what needs the config: it must be the file of `shared` or of a host with an age recipient, encrypted for exactly the
+ * recipients that file has in `.sops.yaml` (what `fleet secrets rekey` would make of it).
+ */
+export function secretOpProblem(configDir: string, ops: readonly EditOp[]): string | null {
+  const held = ops.filter((o) => o.op === "setSecret");
+  if (held.length === 0) return null;
+  let rules: ReturnType<typeof readRules>;
+  try {
+    rules = readRules(configDir);
+  } catch (error) {
+    if (error instanceof InvalidConfigError) return `the age recipients of the hosts cannot be read: ${error.problems[0] ?? "invalid config"}`;
+    throw error;
+  }
+  for (const op of held) {
+    const owner = secretsOwner(op.file);
+    const rule = rules.find((r) => r.file === owner);
+    if (rule === undefined) return `${op.file} is not the secrets file of a host with an age recipient`;
+    if (parseSopsText(op.content).recipients.join() !== rule.recipients.join()) return `${op.file} is not encrypted for the recipients .sops.yaml names for it: run fleet secrets rekey and set the value again`;
+  }
+  return null;
 }
 
 /** This host's full plan against the edited config: `fleet diff`, with the files held in memory. Nothing is written. */
@@ -122,6 +152,8 @@ export class WriteRefused extends Error {
  * The caller holds the push lock and has checked for outside changes.
  */
 export function writeAndCommit(configDir: string, ops: readonly EditOp[], message: string): { files: string[]; commit: string } {
+  const unfit = secretOpProblem(configDir, ops);
+  if (unfit !== null) throw new WriteRefused("invalid", unfit);
   const before = readFiles(configDir);
   const result = applyOps(before, ops);
   if (result.dropped.length > 0) throw new WriteRefused("stale", `${result.dropped.length} edit${result.dropped.length === 1 ? "" : "s"} no longer apply to the files on disk`, { dropped: result.dropped });

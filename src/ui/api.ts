@@ -2,7 +2,9 @@ import { readHostName } from "../host.ts";
 import { LockedError, acquirePushLock } from "../lock.ts";
 import { loadModel } from "../tui/model.ts";
 import { readSecrets } from "../tui/reads.ts";
-import { outsideChanges, plan, preview, WriteRefused, writeAndCommit } from "./edits.ts";
+import { outsideChanges, plan, preview, readFiles, secretOpProblem, WriteRefused, writeAndCommit } from "./edits.ts";
+import { secretsTable } from "./secretsview.ts";
+import { setRequest, setSecret } from "./secretset.ts";
 import { status } from "../status.ts";
 import { BadRequest } from "./request.ts";
 import { opsOf } from "./opsof.ts";
@@ -29,7 +31,8 @@ import type { PushEnd } from "../pushrun.ts";
  *                      When another push is running it answers 409 with code `locked` and "a push is already running (pid N)".
  *   GET  /api/matrix   What each host gets, from the files on disk: hosts, bundles (with their skills), servers, and the
  *                      cell of each host (`on`, `picked`, `excluded`), plus `outside`: uncommitted changes in the config repo.
- *   GET  /api/secrets  The secret names, which hosts can read each and which servers use it. Never a value.
+ *   GET  /api/secrets  The secret names, which hosts can read each and which servers use it, and `table`: each name against each host as
+ *                      `set`, `missing` or `unused`. Never a value.
  *   POST /api/preview  Body `{"ops": [...], "show": "hosts/box.yaml"}`. The edits are replayed on the files as they are now:
  *                      `files` (every changed file, before and after), `shown` (the file asked for), `dropped` (edits that no
  *                      longer apply, with the reason), `matrix` (the config after the edits), `checks` (per host: does the
@@ -60,8 +63,15 @@ import type { PushEnd } from "../pushrun.ts";
  *                      `locked`), when the config repo has changes of its own (409 `outside-changes`) or when a host would not load
  *                      (422 `invalid`). When init fails before it committed anything, the host file is removed again.
  *
+ *   POST /api/secrets/set  Body `{"name": "TRACKER_API_KEY", "value": "...", "files": ["box", "shared"], "ops": [...held]}`. Encrypts one
+ *                      value into the secrets file of each of `files` (`shared` or a host) with sops, in a private temp dir, and
+ *                      answers the held edits that now carry those files: `{"ops": [{"op": "setSecret", ...}], "replaces": [paths]}`.
+ *                      The page replaces its held `setSecret` edits for those paths with them. Nothing is written to the repo, and the
+ *                      value is never in an answer, an error, a log or the stream: a failure is one of a few fixed messages (422
+ *                      `no-recipient`, `needs-secret`, `sops-failed`, `recipients`, `invalid`; 409 `stale`).
+ *
  * Edits are operations (`EditOp`) held by the page and replayed here: `add` and `remove` of a bundle or server for a host, and the
- * catalog additions `addServer`, `addSource` and `addBundle`. Each is checked by `opsOf`, with the loader's own rules.
+ * catalog additions `addServer`, `addSource` and `addBundle`, and `setSecret`, a secrets file already encrypted. Each is checked by `opsOf`, with the loader's own rules.
  */
 
 export type ApiResponse = { status: number; body: unknown };
@@ -128,7 +138,8 @@ export function routes(deps: ApiDeps): Route[] {
       path: "/api/secrets",
       handle: () => {
         const view = readSecrets(deps.configDir, deps.home);
-        return { status: 200, body: { ok: true, hosts: view.hosts, problems: view.problems, entries: view.entries.map((e) => ({ name: e.name, file: e.file, readers: e.readers, servers: e.servers })) } };
+        const table = secretsTable(deps.configDir, loadModel(deps.configDir, readHostName(deps.home)), readFiles(deps.configDir));
+        return { status: 200, body: { ok: true, hosts: view.hosts, problems: view.problems, entries: view.entries.map((e) => ({ name: e.name, file: e.file, readers: e.readers, servers: e.servers })), table } };
       },
     },
     {
@@ -199,15 +210,15 @@ export function routes(deps: ApiDeps): Route[] {
       path: "/api/preview",
       handle: async (req) => {
         const body = await req.json();
-        const p = preview(deps.configDir, readHostName(deps.home), opsOf(body), showOf(body));
-        const { before: _before, after, ...rest } = p;
-        return { status: 200, body: { ok: true, ...rest, matrix: matrixDoc(after), outside: outside() } };
+        const p = preview(deps.configDir, readHostName(deps.home), heldOps(body), showOf(body));
+        const { before: _before, after, edited, ...rest } = p;
+        return { status: 200, body: { ok: true, ...rest, matrix: matrixDoc(after), secrets: secretsTable(deps.configDir, after, edited), outside: outside() } };
       },
     },
     {
       method: "POST",
       path: "/api/plan",
-      handle: async (req) => ({ status: 200, body: { ok: true, ...plan(deps.configDir, deps.home, opsOf(await req.json())) } }),
+      handle: async (req) => ({ status: 200, body: { ok: true, ...plan(deps.configDir, deps.home, heldOps(await req.json())) } }),
     },
     {
       method: "POST",
@@ -239,10 +250,27 @@ export function routes(deps: ApiDeps): Route[] {
     },
     {
       method: "POST",
+      path: "/api/secrets/set",
+      handle: async (req) => {
+        // The body holds a secret's value. It is read here and handed to `setSecret`, and goes nowhere else: not a log, not an
+        // error message, not the event stream, not the answer, which holds the encrypted file and nothing more.
+        const request = setRequest(await req.json(), deps.configDir);
+        const done = deps.busy();
+        try {
+          const out = setSecret(deps.configDir, deps.home, request);
+          if ("refused" in out) return refused(out.refused.status, out.refused.code, out.refused.message, out.refused.extra);
+          return { status: 200, body: { ok: true, ops: out.ops, replaces: out.replaces } };
+        } finally {
+          done();
+        }
+      },
+    },
+    {
+      method: "POST",
       path: "/api/write",
       handle: async (req) => {
         const body = await req.json();
-        const ops = opsOf(body);
+        const ops = heldOps(body);
         const message = messageOf(body);
         if (message === undefined || message.trim() === "") throw new BadRequest("a commit message is required");
         const done = deps.busy();
@@ -275,6 +303,14 @@ export function routes(deps: ApiDeps): Route[] {
       },
     },
   ];
+
+  /** The edits in a body, checked as text and against the recipients of the secrets files they hold. */
+  function heldOps(body: unknown) {
+    const ops = opsOf(body);
+    const unfit = secretOpProblem(deps.configDir, ops);
+    if (unfit !== null) throw new BadRequest(unfit);
+    return ops;
+  }
 
   function outside(): string[] {
     return outsideChanges(deps.configDir);

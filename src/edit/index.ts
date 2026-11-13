@@ -7,3 +7,4 @@ export type { Applied, Dropped, EditOp, Files, PickKind } from "./ops.ts";
 export { validate } from "./validate.ts";
 export type { HostProblems } from "./validate.ts";
 export type { Value } from "./entries.ts";
+export { ciphertextProblem, fingerprint, parseSopsText, reviewText, SECRET_NAME, SECRETS_PATH, secretsOwner, MAX_SECRETS_TEXT } from "./secretfile.ts";
