@@ -204,5 +204,5 @@ dl.facts.small { padding: 4px 0 0; grid-template-columns: 70px minmax(0, 1fr); f
 .formright .hint ul { margin: 6px 0 0; padding-left: 20px; }
 
 @media (max-width: 1250px) { .formright { border-left: 0; border-top: 1px solid var(--soft); } }
-@media (max-width: 760px) { .formright .ph { flex-wrap: wrap; } .envrow { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } .envrow input:nth-of-type(2), .envrow .tail { grid-column: 1 / -1; justify-content: flex-start; } .form { padding: 14px; } }
+@media (max-width: 760px) { .ph { flex-wrap: wrap; } .ph .tag { white-space: normal; } .envrow { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } .envrow input:nth-of-type(2), .envrow .tail { grid-column: 1 / -1; justify-content: flex-start; } .form { padding: 14px; } }
 .link { color: var(--info); text-decoration: underline; }
