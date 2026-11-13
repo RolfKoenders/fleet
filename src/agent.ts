@@ -95,7 +95,7 @@ ${list(commands.filter((c) => c.effect === "change"))}
 
 ## Pushing
 
-${PUSH_RULE} \`fleet push\` commits and publishes the config repo and any followed skill sources, never the tool, then applies on this host and over ssh on every other one. A conflict on this host stops it before any other host is touched.
+${PUSH_RULE} \`fleet push\` commits and publishes the config repo and any followed skill sources, never the tool, then applies on this host and over ssh on every other one. A conflict on this host stops it before any other host is touched. With \`--json\`, \`hosts\` has one entry per host: \`result\`, \`changes\` (a count), \`conflicts\`, and \`created\`, \`updated\` and \`removed\` as that host's \`apply --json\` listed them (key entries are \`{file, path}\`, link entries carry a \`target\`; never a value). A host fleet did not get a document from has empty lists.
 
 ## The tool version
 
