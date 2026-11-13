@@ -12,6 +12,7 @@ import { repoState, runGit, UnreachableError } from "./git.ts";
 import { readHostName } from "./host.ts";
 import type { Result } from "./output.ts";
 import type { Conflict } from "./plan.ts";
+import { Journal } from "./journal.ts";
 import { hostLines } from "./pushview.ts";
 import type { Progress } from "./pushview.ts";
 import { sourceDir } from "./sources.ts";
@@ -184,6 +185,12 @@ function refuseHost(only: string, host: string, targets: Target[]): Result | nul
   return null;
 }
 
+/** The commit the config repo is at, or null when git cannot say. */
+const headOf = (dir: string): string | null => {
+  const r = runGit(dir, "rev-parse", "HEAD");
+  return r.ok && r.stdout !== "" ? r.stdout : null;
+};
+
 /** A host that has no document to read: nothing is known to have changed. */
 const noChanges = { changes: 0, created: [], updated: [], removed: [] };
 
@@ -287,8 +294,18 @@ export async function whileHoldingPushLock(home: string, work: () => Promise<Res
  */
 export async function push(toolDir: string, configDir: string, message: string | undefined, color: boolean, home: string = homedir(), progress: Progress | null = null, only: string | undefined = undefined): Promise<Result> {
   progress?.start();
+  const journal = new Journal(home, only ?? null);
   try {
-    const result = await whileHoldingPushLock(home, () => pushLocked(toolDir, configDir, message, color, home, progress, only), () => progress?.interrupt());
+    const result = await whileHoldingPushLock(
+      home,
+      () => pushJournaled(toolDir, configDir, message, color, home, progress, only, journal),
+      () => {
+        progress?.interrupt();
+        // A push cut short keeps what it has. It cannot fail the push, which is ending anyway.
+        const problem = journal.write(null);
+        if (problem !== null) process.stderr.write(`${problem}\n`);
+      },
+    );
     progress?.finish();
     return progress?.summarized && process.stdout.isTTY === true ? { ...result, text: undefined } : result;
   } finally {
@@ -297,11 +314,19 @@ export async function push(toolDir: string, configDir: string, message: string |
   }
 }
 
-async function pushLocked(toolDir: string, configDir: string, message: string | undefined, color: boolean, home: string, progress: Progress | null, only: string | undefined): Promise<Result> {
+/** Runs the push and writes its journal. A journal that cannot be written is a message, never a failure. */
+async function pushJournaled(toolDir: string, configDir: string, message: string | undefined, color: boolean, home: string, progress: Progress | null, only: string | undefined, journal: Journal): Promise<Result> {
+  const result = await pushLocked(toolDir, configDir, message, color, home, progress, only, journal);
+  const problem = journal.write(result);
+  return problem === null ? result : { ...result, messages: [...(result.messages ?? []), problem] };
+}
+
+async function pushLocked(toolDir: string, configDir: string, message: string | undefined, color: boolean, home: string, progress: Progress | null, only: string | undefined, journal: Journal): Promise<Result> {
   const events = eventsOn();
   // Each host's apply reports its steps when something reads them: the stream on stderr, or the live block.
   const steps = events || progress?.mode === "live";
   const emit: Emit = (event) => {
+    journal.record(event);
     send(event);
     progress?.event(event);
   };
@@ -327,6 +352,7 @@ async function pushLocked(toolDir: string, configDir: string, message: string | 
       emit({ event: "step", step: "publish", target: repo.shown, n: i + 1, of: repos.length });
     }
 
+    journal.commit = headOf(configDir);
     emit({ event: "stage", stage: "apply", of: targets.length + (applyOnThisHost ? 1 : 0) });
     const seconds = new Map<string, number>();
     const visit = async (name: string, go: () => Promise<HostRecord>, timed = true): Promise<HostRecord> => {
