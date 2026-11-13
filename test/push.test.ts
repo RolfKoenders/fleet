@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readFileSync, readlinkSync, rmSync, symlinkSync,
 import { dirname, join } from "node:path";
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { git, installFakeSsh, linkFleetSkill, makeClone, makeHome, makeSource, publish, runFleet, skipIfSystemWide, tempDir, writeExecutable } from "./helpers.ts";
+import { git, installFakeSsh, linkFleetSkill, makeClone, makeHome, makeSource, publish, runFleet, tempDir, writeExecutable } from "./helpers.ts";
 import type { SshPlan } from "./helpers.ts";
 import { EXIT } from "../src/exit.ts";
 import { findTool } from "../src/tools.ts";
@@ -501,7 +501,7 @@ test("the summary counts changes by kind and shows each applied host's time", ()
   assert.match(r.stdout, /^t: timer$/m);
 });
 
-test("a secret-backed setting reaches the push document as its key path, never its value", { skip: skipIfSystemWide("sops", "age-keygen") }, () => {
+test("a secret-backed setting reaches the push document as its key path, never its value", () => {
   const TOKEN = "tok-plaintext-9f3";
   const s = setup();
   s.write("catalog/mcp.yaml", "servers:\n  tracker:\n    command: [npx, -y, \"@example/tracker-mcp@1.0.2\"]\n    env:\n      TRACKER_API_KEY: secret:TRACKER_API_KEY\n");
@@ -516,9 +516,12 @@ test("a secret-backed setting reaches the push document as its key path, never i
   assert.equal(runFleet(s.clone, ["secrets", "set", "shared", "TRACKER_API_KEY"], { home: s.home, input: TOKEN }).code, EXIT.ok);
   const { r, doc } = s.json();
   assert.equal(r.code, EXIT.ok, r.stderr);
-  assert.equal(JSON.stringify(doc.hosts[0].created).includes("mcpServers.tracker"), true, "the key is listed");
-  assert.equal(r.stdout.includes(TOKEN) || r.stderr.includes(TOKEN), false);
-  assert.equal(readFileSync(join(s.home, ".claude.json"), "utf8").includes(TOKEN), true, "the secret did reach the file");
+  // Claude's entry is only there when claude is installed; opencode's always is.
+  const created = doc.hosts[0].created as { file: string; path: string }[];
+  assert.deepEqual(created.find((e) => e.file.includes("opencode")), { file: "~/.config/opencode/opencode.jsonc", path: "mcp.tracker" }, "the key is listed by file and path");
+  for (const e of created) assert.match(e.path, /tracker$/);
+  assert.equal(r.stdout.includes(TOKEN) || r.stderr.includes(TOKEN), false, "the value is in neither output");
+  assert.equal(readFileSync(join(s.home, ".config/opencode/opencode.jsonc"), "utf8").includes(TOKEN), true, "the secret did reach the file");
 });
 
 const PUSH_LOCK = ".local/state/fleet/push.lock";
