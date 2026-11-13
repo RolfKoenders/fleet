@@ -24,6 +24,10 @@ type HostRecord = {
   result: "ok" | "conflict" | "unreachable" | "timer" | "error";
   /** Links and keys created, updated or removed. */
   changes: number;
+  /** As that host's `apply --json` listed them: key entries are `{ file, path }`, link entries carry a `target`. Empty for a host with no document. */
+  created: unknown[];
+  updated: unknown[];
+  removed: unknown[];
   conflicts: Conflict[];
 };
 
@@ -157,15 +161,20 @@ function recordFrom(host: string, status: number | null, stdout: string, notes: 
   } catch {
     // not a document
   }
-  const count = (key: string) => (Array.isArray(doc?.[key]) ? (doc[key] as unknown[]).length : 0);
+  const list = (key: string): unknown[] => (Array.isArray(doc?.[key]) ? (doc[key] as unknown[]) : []);
+  const [created, updated, removed] = [list("created"), list("updated"), list("removed")];
   const conflicts = Array.isArray(doc?.conflicts) ? (doc.conflicts as Conflict[]) : [];
-  const changes = count("created") + count("updated") + count("removed");
-  if (status === 0 && doc?.code === "ok") return { host, result: "ok", changes, conflicts: [] };
-  if (doc?.code === "conflict") return { host, result: "conflict", changes, conflicts };
+  const changes = created.length + updated.length + removed.length;
+  const seen = { changes, created, updated, removed };
+  if (status === 0 && doc?.code === "ok") return { host, result: "ok", ...seen, conflicts: [] };
+  if (doc?.code === "conflict") return { host, result: "conflict", ...seen, conflicts };
   const why = doc === null ? "its output was not a fleet document" : `${String(doc.code)}`;
   notes.push(`fleet: ${host}: apply failed (exit ${status ?? "none"}, ${why})`);
-  return { host, result: "error", changes, conflicts: [] };
+  return { host, result: "error", ...seen, conflicts: [] };
 }
+
+/** A host that has no document to read: nothing is known to have changed. */
+const noChanges = { changes: 0, created: [], updated: [], removed: [] };
 
 type Ran = { error?: Error; status: number | null; stdout: string; stderr: string };
 
@@ -208,7 +217,7 @@ async function applyHere(toolDir: string, host: string, home: string, notes: str
   });
   if (r.error) {
     notes.push(`fleet: ${host}: cannot run ${join(toolDir, "bin/fleet")}: ${r.error.message}`);
-    return { host, result: "error", changes: 0, conflicts: [] };
+    return { host, result: "error", ...noChanges, conflicts: [] };
   }
   return recordFrom(host, r.status, r.stdout, notes);
 }
@@ -220,18 +229,31 @@ async function applyThere(ssh: string, target: Target & { ssh: string }, notes: 
   });
   if (r.error || r.status === 255) {
     notes.push(`fleet: ${target.host}: unreachable over ssh (${r.error?.message ?? (firstLine(r.stderr) || "no reason given")})`);
-    return { host: target.host, result: "unreachable", changes: 0, conflicts: [] };
+    return { host: target.host, result: "unreachable", ...noChanges, conflicts: [] };
   }
   return recordFrom(target.host, r.status, r.stdout, notes);
 }
 
 const EXIT_ORDER = ["conflict", "unreachable", "error"] as const;
 
-function render(records: HostRecord[], color: boolean): string {
+const plural = (n: number, one: string) => `${n} ${one}${n === 1 ? "" : "s"}`;
+
+/** The changes of one host by kind, such as `2 links, 1 key`: an entry with a `file` is a key, any other is a link. */
+function kinds({ created, updated, removed }: HostRecord): string {
+  const all = [...created, ...updated, ...removed];
+  const keys = all.filter((e) => isObject(e) && "file" in e).length;
+  return [[all.length - keys, "link"] as const, [keys, "key"] as const].filter(([n]) => n > 0).map(([n, kind]) => plural(n, kind)).join(", ");
+}
+
+/** `seconds` is each host's wall time of its apply; a host that was not applied (timer, unreachable) has none. */
+function render(records: HostRecord[], seconds: Map<string, number>, color: boolean): string {
   const lines: string[] = [];
-  for (const { host, result, changes, conflicts } of records) {
+  for (const record of records) {
+    const { host, result, conflicts } = record;
+    const took = result === "unreachable" ? undefined : seconds.get(host);
     const shown = result === "ok" ? paint(color, "green", result) : result === "timer" ? result : paint(color, "yellow", result);
-    lines.push(`${host}: ${shown}${changes > 0 ? ` (${changes} change${changes === 1 ? "" : "s"})` : ""}`);
+    const what = kinds(record);
+    lines.push(`${host}: ${shown}${what === "" ? "" : ` · ${what}`}${took === undefined ? "" : ` (${took.toFixed(1)}s)`}`);
     for (const c of conflicts) lines.push(`  ${c.path}: ${c.detail}`, `  fix: ${c.fix}`);
   }
   return lines.join("\n");
@@ -290,9 +312,12 @@ async function pushLocked(toolDir: string, configDir: string, message: string | 
     }
 
     send({ event: "stage", stage: "apply", of: targets.length + 1 });
-    const visit = async (name: string, go: () => Promise<HostRecord>): Promise<HostRecord> => {
+    const seconds = new Map<string, number>();
+    const visit = async (name: string, go: () => Promise<HostRecord>, timed = true): Promise<HostRecord> => {
       send({ event: "host", host: name, state: "start" });
+      const began = performance.now();
       const record = await go();
+      if (timed) seconds.set(name, (performance.now() - began) / 1000);
       send({ event: "host", host: name, state: "done", result: record.result, changes: record.changes });
       return record;
     };
@@ -301,7 +326,7 @@ async function pushLocked(toolDir: string, configDir: string, message: string | 
     if (records[0]!.result !== "conflict") {
       for (const target of targets) {
         if (target.ssh === null) {
-          records.push(await visit(target.host, async () => ({ host: target.host, result: "timer", changes: 0, conflicts: [] })));
+          records.push(await visit(target.host, async () => ({ host: target.host, result: "timer", ...noChanges, conflicts: [] }), false));
         } else {
           records.push(await visit(target.host, () => applyThere(ssh!, { ...target, ssh: target.ssh! }, notes, events, home)));
         }
@@ -311,7 +336,7 @@ async function pushLocked(toolDir: string, configDir: string, message: string | 
     }
 
     const worst = EXIT_ORDER.find((result) => records.some((r) => r.result === result));
-    return { code: worst ?? "ok", text: render(records, color), messages: notes, fields: { hosts: records } };
+    return { code: worst ?? "ok", text: render(records, seconds, color), messages: notes, fields: { hosts: records } };
   } catch (error) {
     const result = failure(error);
     if (result === null) throw error;

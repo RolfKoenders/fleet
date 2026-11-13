@@ -1,14 +1,17 @@
+import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, readlinkSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { git, installFakeSsh, linkFleetSkill, makeClone, makeHome, makeSource, publish, runFleet, tempDir, writeExecutable } from "./helpers.ts";
+import { git, installFakeSsh, linkFleetSkill, makeClone, makeHome, makeSource, publish, runFleet, skipIfSystemWide, tempDir, writeExecutable } from "./helpers.ts";
 import type { SshPlan } from "./helpers.ts";
 import { EXIT } from "../src/exit.ts";
+import { findTool } from "../src/tools.ts";
 
 const applyDoc = (code: string, extra: Record<string, unknown> = {}) =>
   JSON.stringify({ ok: code === "ok", code, host: "remote", messages: [], created: [], updated: [], removed: [], conflicts: [], ...extra });
 
+const none = { changes: 0, created: [], updated: [], removed: [] };
 const OK: SshPlan = { stdout: applyDoc("ok") };
 const UNREACHABLE: SshPlan = { exit: 255, stderr: "ssh: connect to host x port 22: Connection timed out" };
 const CONFLICT: SshPlan = {
@@ -336,11 +339,11 @@ test("one failing host does not stop the others, and each gets its own record", 
   assert.equal(s.sshCalls().length, 4);
   assert.equal(r.code, EXIT.conflict, "a conflict wins");
   assert.deepEqual(doc.hosts, [
-    { host: "laptop", result: "ok", changes: 0, conflicts: [] },
-    { host: "alpha", result: "unreachable", changes: 0, conflicts: [] },
-    { host: "bravo", result: "conflict", changes: 0, conflicts: [{ kind: "link", path: "~/.claude/x.md", detail: "is a real file", fix: "move it" }] },
-    { host: "charlie", result: "ok", changes: 4, conflicts: [] },
-    { host: "delta", result: "error", changes: 0, conflicts: [] },
+    { host: "laptop", result: "ok", ...none, conflicts: [] },
+    { host: "alpha", result: "unreachable", ...none, conflicts: [] },
+    { host: "bravo", result: "conflict", ...none, conflicts: [{ kind: "link", path: "~/.claude/x.md", detail: "is a real file", fix: "move it" }] },
+    { host: "charlie", result: "ok", changes: 4, created: [{}, {}], updated: [{}], removed: [{}], conflicts: [] },
+    { host: "delta", result: "error", ...none, conflicts: [] },
   ]);
   assert.equal(doc.ok, false);
   assert.equal(doc.code, "conflict");
@@ -381,7 +384,7 @@ test("a host without ssh is reported as timer and does not affect the exit code"
   });
   const { r, doc } = s.json();
   assert.equal(r.code, EXIT.ok, r.stderr);
-  assert.deepEqual(doc.hosts.find((h: { host: string }) => h.host === "laptop2"), { host: "laptop2", result: "timer", changes: 0, conflicts: [] });
+  assert.deepEqual(doc.hosts.find((h: { host: string }) => h.host === "laptop2"), { host: "laptop2", result: "timer", ...none, conflicts: [] });
   assert.deepEqual(s.sshHosts(), ["alice@server"], "a timer host is never reached");
 });
 
@@ -397,9 +400,9 @@ test("the human output lists each host with its result and the fix for a conflic
   });
   const r = s.run();
   assert.equal(r.code, EXIT.conflict);
-  assert.match(r.stdout, /^laptop: ok$/m);
+  assert.match(r.stdout, /^laptop: ok \(\d+\.\ds\)$/m);
   assert.match(r.stdout, /^alpha: unreachable$/m);
-  assert.match(r.stdout, /^bravo: conflict$/m);
+  assert.match(r.stdout, /^bravo: conflict \(\d+\.\ds\)$/m);
   assert.match(r.stdout, /~\/\.claude\/x\.md: is a real file/);
   assert.match(r.stdout, /\n {2}fix: move it/);
   assert.match(r.stdout, /^laptop2: timer$/m);
@@ -451,9 +454,71 @@ test("the document shape: ok, code, host and one record per host", () => {
   assert.equal(doc.code, "ok");
   assert.equal(doc.host, "laptop");
   assert.deepEqual(doc.hosts, [
-    { host: "laptop", result: "ok", changes: 0, conflicts: [] },
-    { host: "server", result: "timer", changes: 0, conflicts: [] },
+    { host: "laptop", result: "ok", ...none, conflicts: [] },
+    { host: "server", result: "timer", ...none, conflicts: [] },
   ]);
+});
+
+const MIXED: SshPlan = {
+  stdout: applyDoc("ok", {
+    created: [{ file: "~/.claude/settings.json", path: "env.TOKEN" }, { target: "~/.claude/a.md", source: "/x/a.md" }, { target: "~/.claude/b.md", source: "/x/b.md" }],
+    updated: [{ file: "~/.claude/settings.json", path: "model" }],
+    removed: [{ target: "~/.claude/old.md" }],
+    forgotten: ["~/.claude/gone.md"],
+    unchanged: ["~/.claude/same.md"],
+  }),
+};
+
+test("an ok host carries the lists apply reported, and changes stays the count", () => {
+  const s = setup({ hosts: { server: "alice@server" }, ssh: { "alice@server": MIXED } });
+  const { r, doc } = s.json();
+  assert.equal(r.code, EXIT.ok, r.stderr);
+  const server = doc.hosts[1];
+  assert.deepEqual(Object.keys(server).sort(), ["changes", "conflicts", "created", "host", "removed", "result", "updated"]);
+  assert.equal(server.changes, 5);
+  assert.deepEqual(server.created, [{ file: "~/.claude/settings.json", path: "env.TOKEN" }, { target: "~/.claude/a.md", source: "/x/a.md" }, { target: "~/.claude/b.md", source: "/x/b.md" }]);
+  assert.deepEqual(server.updated, [{ file: "~/.claude/settings.json", path: "model" }]);
+  assert.deepEqual(server.removed, [{ target: "~/.claude/old.md" }]);
+  assert.equal(server.result, "ok");
+});
+
+test("timer, unreachable and error hosts have empty lists", () => {
+  const s = setup({ hosts: { a: null, b: "alice@b", c: "alice@c" }, ssh: { "alice@b": UNREACHABLE, "alice@c": { exit: 1, stdout: "garbage" } } });
+  const { doc } = s.json();
+  assert.deepEqual(doc.hosts.map((h: { host: string; result: string }) => [h.host, h.result]), [["laptop", "ok"], ["a", "timer"], ["b", "unreachable"], ["c", "error"]]);
+  for (const h of doc.hosts.slice(1)) assert.deepEqual([h.changes, h.created, h.updated, h.removed], [0, [], [], []], h.host);
+});
+
+test("the summary counts changes by kind and shows each applied host's time", () => {
+  const keysOnly: SshPlan = { stdout: applyDoc("ok", { created: [{ file: "f", path: "a" }], updated: [{ file: "f", path: "b" }] }) };
+  const oneLink: SshPlan = { stdout: applyDoc("ok", { created: [{ target: "t", source: "s" }] }) };
+  const s = setup({ hosts: { m: "alice@m", k: "alice@k", l: "alice@l", t: null }, ssh: { "alice@m": MIXED, "alice@k": keysOnly, "alice@l": oneLink } });
+  const r = s.run();
+  assert.match(r.stdout, /^laptop: ok \(\d+\.\ds\)$/m);
+  assert.match(r.stdout, /^m: ok · 3 links, 2 keys \(\d+\.\ds\)$/m);
+  assert.match(r.stdout, /^k: ok · 2 keys \(\d+\.\ds\)$/m);
+  assert.match(r.stdout, /^l: ok · 1 link \(\d+\.\ds\)$/m);
+  assert.match(r.stdout, /^t: timer$/m);
+});
+
+test("a secret-backed setting reaches the push document as its key path, never its value", { skip: skipIfSystemWide("sops", "age-keygen") }, () => {
+  const TOKEN = "tok-plaintext-9f3";
+  const s = setup();
+  s.write("catalog/mcp.yaml", "servers:\n  tracker:\n    command: [npx, -y, \"@example/tracker-mcp@1.0.2\"]\n    env:\n      TRACKER_API_KEY: secret:TRACKER_API_KEY\n");
+  const keygen = findTool("age-keygen")!;
+  mkdirSync(join(s.home, ".local/bin"), { recursive: true });
+  for (const [name, path] of [["sops", findTool("sops")!], ["age-keygen", keygen]] as const) symlinkSync(path, join(s.home, ".local/bin", name));
+  const key = spawnSync(keygen, [], { encoding: "utf8" }).stdout;
+  const recipient = spawnSync(keygen, ["-y"], { encoding: "utf8", input: key }).stdout.trim();
+  mkdirSync(join(s.home, ".config/fleet"), { recursive: true });
+  writeFileSync(join(s.home, ".config/fleet/age.key"), key, { mode: 0o600 });
+  s.write("hosts/laptop.yaml", `admin: true\nage: ${recipient}\nmcp:\n  include: [tracker]\n`);
+  assert.equal(runFleet(s.clone, ["secrets", "set", "shared", "TRACKER_API_KEY"], { home: s.home, input: TOKEN }).code, EXIT.ok);
+  const { r, doc } = s.json();
+  assert.equal(r.code, EXIT.ok, r.stderr);
+  assert.equal(JSON.stringify(doc.hosts[0].created).includes("mcpServers.tracker"), true, "the key is listed");
+  assert.equal(r.stdout.includes(TOKEN) || r.stderr.includes(TOKEN), false);
+  assert.equal(readFileSync(join(s.home, ".claude.json"), "utf8").includes(TOKEN), true, "the secret did reach the file");
 });
 
 const PUSH_LOCK = ".local/state/fleet/push.lock";

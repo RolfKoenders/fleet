@@ -53,7 +53,7 @@ test("a scripted run walks the tour, passes, and deletes the sandbox", () => {
   assert.equal(r.code, EXIT.ok, r.stderr);
   assert.match(r.stdout, /\$ fleet push -m "Add the triage skill"\n[\s\S]*server: conflict/);
   assert.match(r.stdout, /\$ ssh me@server 'rm ~\/\.claude\/rules\/host\.md'/);
-  assert.match(r.stdout, /server: ok \(2 changes\)/);
+  assert.match(r.stdout, /server: ok · 2 links \(\d+\.\ds\)/);
   assert.match(r.stdout, /every step behaved as expected/);
   assert.deepEqual(readdirSync(d.tmp), [], "nothing is left in the temp directory");
 });
