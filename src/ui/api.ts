@@ -1,3 +1,4 @@
+import { readHostName } from "../host.ts";
 import { status } from "../status.ts";
 import { RealPusher } from "../tui/pusher.ts";
 import type { FleetEvent } from "../events.ts";
@@ -52,7 +53,7 @@ export function routes(deps: ApiDeps): Route[] {
       path: "/api/status",
       handle: () => {
         const result = status(deps.toolDir, deps.configDir, false, deps.home);
-        return { status: 200, body: { ok: result.code === "ok", code: result.code, messages: result.messages ?? [], ...result.fields } };
+        return { status: 200, body: { ok: result.code === "ok", code: result.code, messages: result.messages ?? [], host: readHostName(deps.home), ...result.fields } };
       },
     },
     {
