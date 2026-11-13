@@ -7,6 +7,7 @@ What changed in fleet, newest first. Each version lists what you can do now, wha
 ### Added
 
 - The landing page has a section on why not just dotfiles, a release pill and a What's new section, and `rolflab.nl/fleet/changelog/` lists every release with a filter for each kind of change. They are generated from this file: `npm run site:changelog` rewrites them, and a test fails when this file changes without it.
+- `fleet push --host <name>` publishes as usual, then applies only on that host: this one, or one with an `ssh:` destination. From the laptop, `--host box` does not apply here, so a conflict on this host does not stop it; `--host` with this host's own name is the same as publishing and then `fleet apply`. A host without an `ssh:` destination (it applies on its own timer) or an unknown name is refused with exit 2 before anything is published, and the unknown-name message lists the valid names. It takes the push lock. `--host` was already a `fleet bridge` flag and still is.
 - `fleet push --json` lists what changed on each host. Each entry in `hosts` gains `created`, `updated` and `removed`, copied from that host's `apply --json` (key entries are `{file, path}`, link entries carry a `target`; no values), and `changes` is still the count. A host that gave no document (timer, unreachable, error) has empty lists. The text summary shows the counts by kind and the time of each host's apply, such as `server: ok · 2 links, 1 key (1.8s)`.
 
 ### Changed

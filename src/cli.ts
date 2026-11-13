@@ -58,7 +58,7 @@ const commands: Command[] = [
   { name: "diff", usage: "diff", summary: "Show what apply would change, without changing anything", effect: "read", args: 0, run: ({ color, found }) => diff(configOf(found), color) },
   { name: "bridge", usage: "bridge [--view <screen>] [--host <name>]", summary: "Open the full-screen view of every host, the matrix of what each gets, conflicts, timeline, secrets and catalog (--view opens on a screen, --host selects a host on it). It reads until you ask for more: P pushes after you type push, d runs doctor after you confirm (it starts real MCP servers). Needs a terminal", effect: "change", args: 0, run: ({ json, view, host, found }) => bridge(toolDir, () => configOf(found), json, process.env, undefined, { view, host }) },
   { name: "apply", usage: "apply", summary: "Make this host match its config", effect: "change", args: 0, run: ({ color, json, found }) => apply(toolDir, configOf(found), color, undefined, json ? ["apply", "--json"] : ["apply"]) },
-  { name: "push", usage: "push [-m <message>]", summary: "Publish changes to GitHub, then apply on every host (-m sets the commit message)", effect: "change", args: 0, run: ({ color, message, found }) => push(toolDir, configOf(found), message, color, undefined, progressFor(process.env, process.stderr)) },
+  { name: "push", usage: "push [-m <message>] [--host <name>]", summary: "Publish changes to GitHub, then apply on every host (-m sets the commit message; --host applies only on that host: this one or one with an ssh destination, after publishing as usual)", effect: "change", args: 0, run: ({ color, message, host, found }) => push(toolDir, configOf(found), message, color, undefined, progressFor(process.env, process.stderr), host) },
   { name: "adopt", usage: "adopt mcp|skill <name>", summary: "Record an existing MCP server or skill as fleet's", effect: "change", args: 2, run: ({ color, args, found }) => adopt(configOf(found), args, color) },
   // Unbounded: `secrets` checks its own arguments, so a value typed by mistake is never echoed back.
   { name: "secrets", usage: "secrets edit <file> | set <file> <NAME> | rekey", summary: "Edit, set or rekey encrypted secrets", effect: "change", args: Infinity, run: ({ args, found }) => secrets(configOf(found), args) },
@@ -87,7 +87,7 @@ Options:
   --json         Print one JSON document on stdout
   --help         Show this list
   --view <name>  With 'bridge': open on this screen (${viewNames().join(", ")})
-  --host <name>  With 'bridge': select this host on that screen
+  --host <name>  With 'bridge': select this host on that screen. With 'push': apply only on this host
 `;
 }
 
@@ -133,7 +133,7 @@ function dispatch(argv: string[]): { result: Promise<Result | Relayed> | Result 
   if ((parsed.values.review || parsed.values.yes) && command.name !== "skills") return { result: invalid(`--review and --yes are only for 'skills update'`), json };
   if (parsed.values.timeout !== undefined && command.name !== "doctor") return { result: invalid(`--timeout is only for 'doctor'`), json };
   if (parsed.values.view !== undefined && command.name !== "bridge") return { result: invalid(`--view is only for 'bridge'`), json };
-  if (parsed.values.host !== undefined && command.name !== "bridge") return { result: invalid(`--host is only for 'bridge'`), json };
+  if (parsed.values.host !== undefined && command.name !== "bridge" && command.name !== "push") return { result: invalid(`--host is only for 'bridge' and 'push'`), json };
   const timeout = parsed.values.timeout === undefined ? undefined : Number(parsed.values.timeout);
   if (timeout !== undefined && !(/^\d+(\.\d+)?$/.test(parsed.values.timeout!) && timeout > 0 && timeout <= 600)) return { result: invalid(`--timeout must be a number of seconds from just above 0 to 600 (default ${DEFAULT_TIMEOUT_SECONDS})`), json };
   if (parsed.values.message === "") return { result: invalid("the commit message after -m cannot be empty"), json };
