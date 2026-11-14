@@ -1,14 +1,17 @@
 // The page: the shell, routing between screens, and drawing the state from state.js.
 import { ApiError, createClient, openStream } from "./api.js";
+import { dropToken, loadOps, pageToken, saveOps, tabStore } from "./session.js";
+import { linkBanner, linkUsable, linkWord } from "./link.js";
+import { jobLabel, jobsOf, withJobs } from "./jobs.js";
 import { changed, counts, lineDiff, splitLines, tokenize } from "./diff.js";
 import { fill, h } from "./dom.js";
 import { ADD, CATALOG_KINDS, closable, confirmLabel, fileOf, freshAdd, hostAsDraft, paneView } from "./adding.js";
 import { bundleDraft, checkLines, cloneKey, confirmText, opWarnings, secretOf, secretsOf, serverDraft, skillChoices, sourceDraft, takeBack } from "./catalog.js";
-import { blockers, cellState, clickCell, opLabel, suggestMessage, summaryLine, WORDS } from "./matrix.js";
-import { confirmInit, heldProblem, hostDraft, idleInit, initEnd, initLine, SETUP_DOC, startInit } from "./hosts.js";
+import { blockers, DROPPED_BLOCKER, cellState, clickCell, opLabel, suggestMessage, summaryLine, WORDS } from "./matrix.js";
+import { confirmInit, elapsed, heldProblem, hostDraft, idleInit, initEnd, initLine, SETUP_DOC, startInit } from "./hosts.js";
 import { actionOf, afterSet, cellView, dialogTargets, heldNames, missingCount, valueProblem } from "./secrets.js";
 import { itemYaml, yamlPath, yamlTag } from "./yamlview.js";
-import { heldFiles, idlePush, pushEnd, pushEvent, routeOf, statusView, tokenOf } from "./state.js";
+import { heldFiles, idlePush, plain, pushEnd, pushEvent, routeOf, statusView, tokenOf, writtenNotice } from "./state.js";
 
 /** @typedef {import("./state.js").Held} Held */
 /** @typedef {import("./state.js").PushState} PushState */
@@ -17,9 +20,12 @@ import { heldFiles, idlePush, pushEnd, pushEvent, routeOf, statusView, tokenOf }
 const main = /** @type {HTMLElement} */ (document.getElementById("main"));
 const $ = (/** @type {string} */ id) => /** @type {HTMLElement} */ (document.getElementById(id));
 
-const token = tokenOf(location.hash);
-// The token lives in memory only: it leaves the address bar, so it is not in the history or a bookmark.
-if (token !== null) history.replaceState(null, "", location.pathname + "#/matrix");
+/** This tab's storage: it survives a reload of the tab and is shared with no other tab. Null when the browser blocks it. */
+const store = tabStore();
+const fromAddress = tokenOf(location.hash);
+// The token leaves the address bar at once, so it is not in the history or a bookmark. It is kept for a reload of this tab only.
+const token = pageToken(store, fromAddress);
+if (fromAddress !== null) history.replaceState(null, "", location.pathname + "#/matrix");
 
 $("local").textContent = `${location.host} · only this machine`;
 
@@ -31,7 +37,7 @@ $("local").textContent = `${location.host} · only this machine`;
  *   base: any, ops: Op[], preview: any, held: Held, focus: string | null, expanded: Set<string>,
  *   plan: { key: string, doc: any, error: string | null } | null,
  *   message: string, messageEdited: boolean, secrets: any, secretsError: string | null,
- *   push: PushState, pushError: string | null, link: "connecting" | "live" | "reconnecting",
+ *   push: PushState, pushError: string | null, pushNotice: string | null, link: import("./link.js").Link, jobs: import("./jobs.js").Job[],
  *   skills: { name: string, source: string, bundle: string | null }[], stagedSkills: Record<string, string[]>,
  *   form: import("./adding.js").AddState | null, menu: boolean, init: import("./hosts.js").InitState, initError: string | null,
  *   yaml: Record<string, string>, yamlErrors: Record<string, string>, yamlOpen: Set<string>
@@ -41,13 +47,25 @@ const model = {
   status: null, statusError: null, matrixError: null,
   base: null, ops: [], preview: null, held: {}, focus: null, expanded: new Set(),
   plan: null, message: "", messageEdited: false, secrets: null, secretsError: null,
-  push: idlePush(), pushError: null, link: "connecting",
+  push: idlePush(), pushError: null, pushNotice: null, link: "connecting", jobs: [],
   skills: [], stagedSkills: {}, form: null, menu: false,
   init: idleInit(), initError: null,
   yaml: {}, yamlErrors: {}, yamlOpen: new Set(),
 };
 
-const client = token === null ? null : createClient(token);
+// The To push list is restored after a reload. See session.js: it holds edits only, never a plain secret value.
+if (token !== null) model.ops = loadOps(store);
+let savedOps = model.ops;
+
+/** The token will never be valid again: this page is talking to a server that was started again. */
+function denied() {
+  if (model.link === "invalid") return;
+  model.link = "invalid";
+  dropToken(store);
+  render();
+}
+
+const client = token === null ? null : createClient(token, undefined, { onDenied: denied });
 
 /** @type {Record<string, [string, string]>} */
 const SCREENS = {
@@ -57,10 +75,30 @@ const SCREENS = {
   secrets: ["Secrets", "Names only. fleet ui never reads a value back, never shows one, and never writes one to disk unencrypted: a value you type goes straight to sops. Set a value and the encrypted file is a change to push like any edit, and written when you push."],
 };
 
+/** When the running `fleet init` was first seen running, in this page's time, for "running for 42 s". 0 while none runs. */
+let initSince = 0;
+/** @type {number} */
+let initTick = 0;
+
+/** Starts or stops the clock of the init pane. It only rewrites the text of one tag, so nothing else is drawn again every second. */
+function syncInitClock() {
+  if (model.init.running && initSince === 0) {
+    initSince = Date.now();
+    initTick = window.setInterval(() => {
+      const clock = document.getElementById("initclock");
+      if (clock !== null) clock.textContent = `running for ${elapsed(Date.now() - initSince)}`;
+    }, 1000);
+  } else if (!model.init.running && initSince !== 0) {
+    initSince = 0;
+    clearInterval(initTick);
+  }
+}
+
 /** The screen drawn last: drawing the same one again keeps its scroll. */
 let drawn = "";
 
 function render() {
+  syncInitClock();
   const route = routeOf(location.hash);
   for (const a of document.querySelectorAll("#side a")) a.classList.toggle("on", /** @type {HTMLElement} */ (a).dataset.r === route);
 
@@ -71,8 +109,15 @@ function render() {
   const missing = missingCount(shownSecrets());
   $("secretcount").textContent = missing > 0 ? `${missing} missing` : "";
   const link = $("link");
-  link.textContent = model.link;
-  link.className = "tag " + (model.link === "live" ? "ok" : model.link === "reconnecting" ? "warn" : "");
+  link.textContent = linkWord(model.link);
+  link.className = "tag " + (model.link === "live" ? "ok" : model.link === "reconnecting" ? "warn" : model.link === "invalid" ? "bad" : "");
+  const jobs = $("jobs");
+  jobs.textContent = model.jobs.map(jobLabel).join("; ");
+  jobs.hidden = model.jobs.length === 0;
+  if (model.ops !== savedOps) {
+    savedOps = model.ops;
+    saveOps(store, model.ops);
+  }
   const s = model.status ? statusView(model.status) : null;
   fill($("repo"), ...(s ? [h("b", {}, s.host), ...(model.status?.repos?.fleet ? [h("span", {}, `${model.status.repos.fleet.branch ?? "detached"}@${String(model.status.repos.fleet.sha).slice(0, 7)}`)] : [])] : []));
 
@@ -82,13 +127,19 @@ function render() {
   const keep = active instanceof HTMLElement && main.contains(active) && active.id !== "" ? { id: active.id, at: active instanceof HTMLInputElement ? active.selectionStart : null } : null;
   const scroll = route === drawn ? main.scrollTop : 0;
   drawn = route;
-  fill(main, screen(route));
+  // The push log stays on its newest line when it was there (or is new), and where the person scrolled it to otherwise.
+  const log = document.getElementById("pushlog");
+  const logAt = log === null ? null : { top: log.scrollTop, end: log.scrollTop + log.clientHeight >= log.scrollHeight - 4 };
+  const banner = linkBanner(model.link, { held: model.ops.length, working: model.push.running || model.init.running });
+  fill(main, ...(banner === null ? [] : [linkNotice(banner)]), screen(route));
   main.scrollTop = scroll;
+  const again = document.getElementById("pushlog");
+  if (again !== null) again.scrollTop = logAt === null || logAt.end ? again.scrollHeight : logAt.top;
   if (keep !== null && keep.id !== "") {
-    const again = document.getElementById(keep.id);
-    if (again instanceof HTMLElement && main.contains(again)) {
-      again.focus();
-      if (again instanceof HTMLInputElement && keep.at !== null) again.setSelectionRange(keep.at, keep.at);
+    const back = document.getElementById(keep.id);
+    if (back instanceof HTMLElement && main.contains(back)) {
+      back.focus();
+      if (back instanceof HTMLInputElement && keep.at !== null) back.setSelectionRange(keep.at, keep.at);
     }
   }
   renderDialog();
@@ -105,13 +156,16 @@ function screen(route) {
   return secretsScreen();
 }
 
+/** @param {{ title: string, lines: string[] }} banner */
+const linkNotice = (banner) => h("div", { class: "notice bad banner", id: "linkbanner", role: "alert" }, h("b", {}, banner.title), ...banner.lines.map((l) => h("div", {}, l)));
+
 function noToken() {
   return h(
     "div",
     {},
     h("h1", {}, "fleet ui"),
     h("div", { class: "notice bad" }, "This page cannot do anything without its token."),
-    h("p", { class: "sub" }, "Open the URL that ", h("code", {}, "fleet ui"), " printed, including the part after #."),
+    h("p", { class: "sub" }, "Open the URL that ", h("code", {}, "fleet ui"), " printed, including the part after #. If fleet ui is not running, run it again first. Edits that were on To push in a tab are kept in that tab only while it is open."),
   );
 }
 
@@ -251,6 +305,8 @@ const serverLine = (sv) => (sv.server ? `${sv.server.kind}${sv.server.only.lengt
 /** The config repo has changes of its own: listed, and nothing is pushed until they are committed or discarded elsewhere. */
 function outsideNotice() {
   const outside = model.preview?.outside ?? model.base?.outside ?? [];
+  // While a host is being set up, its own files (the host file, .sops.yaml, secrets/) are the changes: they are not the person's.
+  if (model.init.running) return h("div", { class: "notice" }, h("b", {}, `fleet init of ${model.init.name ?? "a host"} is running.`), " It is changing the config repo itself: wait for it to end before you commit, discard or push anything.");
   if (outside.length === 0) return null;
   return h(
     "div",
@@ -265,6 +321,9 @@ function outsideNotice() {
 
 /** The words after an error: the server's own, or the fallback. @param {unknown} e @param {string} fallback */
 const said = (e, fallback) => (e instanceof ApiError ? e.messages.join("; ") || e.message : fallback);
+
+/** Whether something may be changed now: not while the server cannot be reached. */
+const usable = () => linkUsable(model.link);
 
 const skillOptions = () => skillChoices(model.skills, model.ops, model.stagedSkills);
 const hostNames = () => (model.base?.hosts ?? []).map((/** @type {any} */ x) => x.name);
@@ -289,7 +348,7 @@ let openerId = "";
  * @param {import("./adding.js").AddKind} kind @param {string} [opener] the id of what gets the focus back, when it is not what has it now
  */
 function openAdd(kind, opener = "") {
-  if (client === null || model.form !== null || model.base === null) return;
+  if (client === null || !usable() || model.form !== null || model.base === null) return;
   openerId = opener !== "" ? opener : document.activeElement instanceof HTMLElement ? document.activeElement.id : "";
   if (kind === "host") {
     if (!model.init.running) model.init = idleInit();
@@ -701,7 +760,7 @@ function initPane(d) {
   return h(
     "div",
     { class: "initpane" },
-    h("div", { class: "ph" }, d.op ? `fleet init ${d.op.name}` : "fleet init", h("span", { class: "spacer" }), end ? h("span", { class: "tag " + (end.ok ? "ok" : "bad") }, end.code) : running ? h("span", { class: "tag" }, "running") : null),
+    h("div", { class: "ph" }, d.op ? `fleet init ${d.op.name}` : "fleet init", h("span", { class: "spacer" }), end ? h("span", { class: "tag " + (end.ok ? "ok" : "bad") }, end.code) : running ? h("span", { class: "tag", id: "initclock" }, `running for ${elapsed(Date.now() - initSince)}`) : null),
     model.initError !== null ? h("div", { class: "notice bad inset", role: "alert" }, model.initError) : null,
     h("pre", { class: "term", id: "initlog", "aria-live": "polite" }, model.init.lines.length > 0 ? model.init.lines.join("\n") : h("span", { class: "muted" }, "Then the real fleet init runs here, over ssh, with its output streamed in.")),
     end ? h("div", { class: "hint", id: "initdone" }, ...(end.ok ? [`${model.init.name} is set up. It is in the Matrix now; pick what it gets there.`] : end.messages.map((m) => h("div", {}, m)))) : null,
@@ -721,7 +780,7 @@ function dialogContent(f) {
   const ready = d.op !== null && (!host || (!outside && !running));
   const primary = done
     ? h("button", { type: "button", id: "add-done", class: "btn primary", onclick: closeAdd }, "Done")
-    : h("button", { type: "submit", id: "add-confirm", class: "btn primary", disabled: !ready || (host && f.confirm), "aria-describedby": "pane" }, running ? "Setting up..." : confirmLabel(f.kind));
+    : h("button", { type: "submit", id: "add-confirm", class: "btn primary", disabled: !ready || !usable() || (host && f.confirm), "aria-describedby": "pane" }, running ? "Setting up..." : confirmLabel(f.kind));
   return h(
     "form",
     { class: "adlg-form", autocomplete: "off", novalidate: true, onsubmit: (e) => { e.preventDefault(); submitAdd(); }, onkeydown: (/** @type {any} */ e) => {
@@ -741,7 +800,7 @@ function dialogContent(f) {
     h(
       "div",
       { class: "adlg-foot" },
-      f.kind === "server" ? h("button", { type: "button", id: "add-check", class: "btn", disabled: d.op === null || f.confirm || f.check?.state === "running", onclick: () => { f.confirm = true; renderDialog(); /** @type {HTMLElement | null | undefined} */ (dialogEl?.querySelector("#probe-run"))?.focus(); } }, "Check it starts") : null,
+      f.kind === "server" ? h("button", { type: "button", id: "add-check", class: "btn", disabled: d.op === null || !usable() || f.confirm || f.check?.state === "running", onclick: () => { f.confirm = true; renderDialog(); /** @type {HTMLElement | null | undefined} */ (dialogEl?.querySelector("#probe-run"))?.focus(); } }, "Check it starts") : null,
       h("span", { class: "spacer" }),
       done ? null : h("button", { type: "button", id: "add-cancel", class: "btn ghost", disabled: !closable(f.kind, model.init), onclick: closeAdd }, "Cancel"),
       blocked ? null : primary,
@@ -753,6 +812,7 @@ function dialogContent(f) {
 function renderDialog() {
   const f = model.form;
   if (f === null || dialogEl === null) return;
+  syncInitClock();
   const active = document.activeElement;
   const keep = active instanceof HTMLElement && dialogEl.contains(active) && active.id !== "" ? { id: active.id, from: /** @type {HTMLInputElement} */ (active).selectionStart, to: /** @type {HTMLInputElement} */ (active).selectionEnd } : null;
   const scrolls = [".adlg-body", ".form", ".formright", "#initlog"].map((sel) => dialogEl?.querySelector(sel)?.scrollTop ?? 0);
@@ -779,7 +839,7 @@ function renderDialog() {
 function addMenu() {
   const items = CATALOG_KINDS.map((k) => h("button", { type: "button", role: "menuitem", id: `add-${k}`, class: "menuitem", onclick: () => { setMenu(false); openAdd(k, "add-menu"); } }, ADD[k].menu));
   const list = h("div", { class: "menu", role: "menu", "aria-label": "Add to the catalog", ...(model.menu ? {} : { hidden: true }) }, ...items);
-  const button = h("button", { type: "button", class: "btn primary", id: "add-menu", "aria-haspopup": "menu", "aria-expanded": String(model.menu), onclick: () => (model.menu ? setMenu(false) : setMenu(true, true)) }, "+ Add");
+  const button = h("button", { type: "button", class: "btn primary", id: "add-menu", "aria-haspopup": "menu", "aria-expanded": String(model.menu), ...(usable() ? {} : { disabled: true, title: "fleet ui is not answering" }), onclick: () => (model.menu ? setMenu(false) : setMenu(true, true)) }, "+ Add");
   const wrap = h("div", { class: "menuwrap" }, button, list);
   wrap.addEventListener("keydown", (e) => {
     const ids = items.map((i) => i.id);
@@ -809,7 +869,7 @@ function setMenu(open, focus = false) {
 for (const type of ["click", "focusin"]) document.addEventListener(type, (e) => { if (model.menu && !(/** @type {Element} */ (e.target)).closest?.(".menuwrap")) setMenu(false); });
 
 /** @param {import("./adding.js").AddKind} kind @param {string} label */
-const addCard = (kind, label) => h("button", { type: "button", id: `tile-${kind}`, class: "panel card add", onclick: () => openAdd(kind) }, label);
+const addCard = (kind, label) => h("button", { type: "button", id: `tile-${kind}`, class: "panel card add", ...(usable() ? {} : { disabled: true }), onclick: () => openAdd(kind) }, label);
 
 /** The button that takes an addition back off To push. @param {Op | undefined} op */
 const heldTag = (op) => (op ? h("span", { class: "tag ok" }, "to push") : null);
@@ -947,7 +1007,7 @@ function hostsScreen() {
   return h(
     "div",
     {},
-    pageHead(title, about, yamlAll(items), h("button", { type: "button", class: "btn primary", id: "add-host", onclick: () => openAdd("host") }, "+ Add host")),
+    pageHead(title, about, yamlAll(items), h("button", { type: "button", class: "btn primary", id: "add-host", ...(usable() ? {} : { disabled: true, title: "fleet ui is not answering" }), onclick: () => openAdd("host") }, "+ Add host")),
     h("div", { class: "cards" },
       ...model.base.hosts.map((/** @type {any} */ host) => {
         const bundles = model.base.bundles.filter((/** @type {any} */ b) => b.cells[host.name]?.on).map((/** @type {any} */ b) => b.name);
@@ -1002,7 +1062,7 @@ function secretsScreen() {
                   const v = cellView(row.cells[x.name], row.name, x.name, model.ops);
                   return h("td", { class: v.tone, title: `${row.name} on ${x.name}: ${v.word}${v.held ? " (to push)" : ""}` }, v.mark === "" ? v.word : `${v.mark} ${v.word}`, v.held ? h("span", { class: "held" }, "to push") : null);
                 }),
-                h("td", { class: "act" }, h("button", { type: "button", class: "btn" + (action.missing.length > 0 ? "" : " ghost") + " small", onclick: () => openSecretDialog(row, table) }, action.label)),
+                h("td", { class: "act" }, h("button", { type: "button", class: "btn" + (action.missing.length > 0 ? "" : " ghost") + " small", ...(usable() ? {} : { disabled: true, title: "fleet ui is not answering" }), onclick: () => openSecretDialog(row, table) }, action.label)),
               );
             })),
           ),
@@ -1061,7 +1121,7 @@ function openSecretDialog(row, table) {
   dialog.querySelector("form")?.addEventListener("submit", async (e) => {
     e.preventDefault();
     const files = targets.filter((_, i) => /** @type {HTMLInputElement} */ (boxes[i]).checked).map((t) => t.file);
-    const problem = files.length === 0 ? "Tick at least one file to set it in." : valueProblem(input.value);
+    const problem = files.length === 0 ? "Tick at least one file to set it in." : !usable() ? "fleet ui is not answering, so the value cannot be encrypted. Run fleet ui again and open its new URL." : valueProblem(input.value);
     if (problem !== null) return void (err.textContent = problem);
     // The field is emptied before the request goes: from here the value is only the argument of the call.
     let value = input.value;
@@ -1094,10 +1154,13 @@ function reviewScreen() {
   const files = heldFiles(model.held);
   const dropped = p?.dropped ?? [];
   const checks = p?.checks ?? [];
-  const stop = blockers({ outside: p?.outside ?? model.base?.outside ?? [], dropped, checks, running: model.push.running });
+  const stop = [
+    ...blockers({ outside: model.init.running ? [] : (p?.outside ?? model.base?.outside ?? []), dropped, checks, running: model.push.running }),
+    ...(model.init.running ? [`fleet init of ${model.init.name ?? "a host"} is running`] : []),
+  ];
   const editing = model.ops.length > 0;
   const message = h("input", { type: "text", id: "msg", placeholder: editing ? "commit message" : "commit message (optional, for what is already in the repo)", maxlength: "1000", "aria-label": "commit message", value: model.message, oninput: (e) => { model.message = /** @type {HTMLInputElement} */ (e.target).value; model.messageEdited = true; } });
-  const go = h("button", { class: "btn primary", disabled: stop.length > 0 || (editing && model.message.trim() === ""), onclick: writeAndPush }, model.push.running ? "Pushing..." : editing ? "Write and push" : "Push");
+  const go = h("button", { class: "btn primary", disabled: !usable() || stop.length > 0 || (editing && model.message.trim() === ""), onclick: writeAndPush }, model.push.running ? "Pushing..." : editing ? "Write and push" : "Push");
   return h(
     "div",
     {},
@@ -1118,7 +1181,7 @@ function reviewScreen() {
       "div",
       { class: "panel" },
       h("div", { class: "pushbox" }, message, go, editing ? h("button", { class: "btn ghost danger", disabled: model.push.running, onclick: discardAll }, "Discard all") : null),
-      stop.length > 0 && !model.push.running ? h("div", { class: "notice bad inset" }, stop.join("; ")) : null,
+      stop.filter((t) => t !== DROPPED_BLOCKER).length > 0 && !model.push.running ? h("div", { class: "notice bad inset" }, stop.filter((t) => t !== DROPPED_BLOCKER).join("; ")) : null,
       pushPanel(),
     ),
   );
@@ -1141,7 +1204,7 @@ function checkCard(c) {
 function planPanel() {
   const host = model.base?.self;
   const plan = model.plan;
-  const text = plan === null || plan.doc === null ? (plan?.error ?? "Planning...") : plan.doc.text.trim() === "" ? (plan.doc.messages.join("\n") || "Nothing would change on this host.") : plan.doc.text.trimEnd();
+  const text = plan === null || plan.doc === null ? (plan?.error ?? "Planning...") : plan.doc.text.trim() === "" ? (plan.doc.messages.map(plain).join("\n") || "Nothing would change on this host.") : plan.doc.text.trimEnd();
   return h(
     "div",
     { class: "panel plan" },
@@ -1193,9 +1256,12 @@ function pushPanel() {
     "div",
     {},
     p.end || p.stage ? h("div", { class: "row inset" }, p.end ? h("span", { class: "tag " + (p.end.ok ? "ok" : "bad") }, p.end.code) : null, p.stage ? h("span", { class: "tag" }, p.stage) : null) : null,
+    // What the push itself said about how it ended (a host that is unreachable, a conflict), under the tag.
+    p.end !== null && p.end.messages.length > 0 ? h("div", { class: "notice inset" + (p.end.ok ? "" : " bad"), id: "pushmessages" }, ...p.end.messages.map((m) => h("div", {}, m))) : null,
+    model.pushNotice !== null ? h("div", { class: "notice inset", id: "pushnotice" }, model.pushNotice) : null,
     model.pushError !== null ? h("div", { class: "notice bad inset" }, model.pushError) : null,
     lanes.length > 0 ? h("div", { class: "lanes" }, ...lanes) : null,
-    h("pre", { class: "term", "aria-live": "polite" }, p.log.length > 0 ? p.log.join("\n") : h("span", { class: "muted" }, "Live push output shows here.")),
+    h("pre", { class: "term", id: "pushlog", "aria-live": "polite" }, p.log.length > 0 ? p.log.join("\n") : h("span", { class: "muted" }, "Live push output shows here.")),
   );
 }
 
@@ -1286,23 +1352,27 @@ async function writeAndPush() {
   if (client === null) return;
   const message = model.message.trim();
   model.pushError = null;
+  model.pushNotice = null;
   model.push = { ...idlePush(), running: true };
   render();
   try {
     // The events arrive on the stream while this call is open; its own answer is the end.
     if (model.ops.length === 0) {
-      model.push = pushEnd(model.push, await client.push(message === "" ? undefined : message));
+      const end = await client.push(message === "" ? undefined : message);
+      // Read the state after the answer: the stream has been filling it (lanes, log) while the call was open.
+      model.push = pushEnd(model.push, end);
     } else {
       const done = await client.write(model.ops, message);
       model.push = pushEnd(model.push, done.push);
+      // The files are committed whether or not the push went through, so the edits are no longer held either way.
+      model.pushNotice = writtenNotice(done.written, done.code);
       model.ops = [];
       model.plan = null;
       model.messageEdited = false;
     }
   } catch (e) {
     model.push = { ...model.push, running: false };
-    if (e instanceof ApiError) model.pushError = e.messages.join("; ") || e.message;
-    else throw e;
+    model.pushError = e instanceof ApiError ? e.messages.join("; ") || e.message : "the push ended in a way the page did not understand. Look at fleet status in a terminal to see what was pushed.";
   }
   loadStatus();
   loadMatrix();
@@ -1341,6 +1411,15 @@ function opened() {
   if (route === "matrix" || route === "catalog" || route === "hosts") loadMatrix();
 }
 
+// A new `fleet ui` URL opened in this tab changes only the fragment when the port is the same, so the page is not loaded
+// again by itself: take the new token and load it, which restores the To push list kept for this tab.
+window.addEventListener("hashchange", () => {
+  const fresh = tokenOf(location.hash);
+  if (fresh === null) return;
+  pageToken(store, fresh);
+  history.replaceState(null, "", location.pathname + "#/matrix");
+  location.reload();
+});
 window.addEventListener("hashchange", opened);
 render();
 if (token !== null) {
@@ -1349,18 +1428,39 @@ if (token !== null) {
   loadSecrets();
   openStream(token, {
     onHello: (doc) => {
-      if (doc?.pushing && !model.push.running) model.push = { ...model.push, running: true };
+      // The server's list of running jobs is the truth for a connection that just opened. A push or init that runs starts afresh
+      // here, and its events so far are replayed right after this.
+      model.jobs = jobsOf(doc);
+      Object.assign(model, withJobs(model, model.jobs, null));
+      render();
       loadStatus();
     },
     onEvent: (name, doc) => {
-      if (name === "init") model.init = initLine(model.init, doc);
+      if (name === "jobs") {
+        const now = jobsOf(doc);
+        Object.assign(model, withJobs(model, now, model.jobs));
+        model.jobs = now;
+      } else if (name === "init") model.init = initLine(model.init, doc);
       else if (name === "initend") model.init = initEnd(model.init, doc);
       else model.push = name === "push" ? pushEvent(model.push, doc) : pushEnd(model.push, doc);
       render();
+      // Another tab's push or init changed the repo and this host: read them again, so nothing here is older than its end.
+      if (name === "initend" || name === "pushend") {
+        loadStatus();
+        loadMatrix();
+        loadSecrets();
+      }
     },
-    onLink: (live) => {
-      model.link = live ? "live" : "reconnecting";
+    onLink: (link) => {
+      if (link === "invalid") return denied();
+      model.link = link === "live" ? "live" : "reconnecting";
       render();
     },
+  });
+  // Leaving the page does not stop a push or a host set-up, but the page is the only place their output is seen live.
+  window.addEventListener("beforeunload", (e) => {
+    if (!model.push.running && !model.init.running) return;
+    e.preventDefault();
+    e.returnValue = "";
   });
 }

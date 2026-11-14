@@ -19,6 +19,9 @@ export function tokenOf(hash) {
   return t === null || t === "" ? null : t;
 }
 
+/** A message of fleet's as the page shows it: the `fleet: ` prefix is for a terminal, where it says who is speaking. @param {string} message */
+export const plain = (message) => message.replace(/^fleet: /, "");
+
 /** Milliseconds to wait before reconnect attempt `attempt` (0 is the first): 0.5s, doubling, at most 10s. @param {number} attempt */
 export const backoff = (attempt) => Math.min(10_000, 500 * 2 ** Math.max(0, attempt));
 
@@ -71,7 +74,7 @@ export function pushEvent(state, event) {
         changes: event.changes ?? l.changes,
       }));
     case "message":
-      return { ...base, log: logged(base.log, event.host ? `${event.host}: ${event.text}` : String(event.text)) };
+      return { ...base, log: logged(base.log, event.host ? `${event.host}: ${plain(String(event.text))}` : plain(String(event.text))) };
     default:
       return { ...base, log: logged(base.log, JSON.stringify(event)) };
   }
@@ -94,7 +97,28 @@ export function pushEnd(state, doc) {
     const h = doc.hosts?.find((x) => x.host === l.host);
     return h ? { ...l, state: /** @type {const} */ ("done"), result: h.result, changes: h.changes } : l;
   });
-  return { ...state, running: false, lanes, end: { ok: doc.ok, code: doc.code, messages: doc.messages ?? [] } };
+  return { ...state, running: false, lanes, end: { ok: doc.ok, code: doc.code, messages: (doc.messages ?? []).map(plain) } };
+}
+
+/**
+ * What to tell the person after "Write and push" when the push did not go through: the edits were written and committed either
+ * way, so they are no longer on To push, and the commit is there to be pushed. Null when the push worked.
+ * @param {{ commit?: string } | null | undefined} written `written` of the answer of `POST /api/write`
+ * @param {string | undefined} code the push's own code (`ok`, `conflict`, `unreachable`, ...)
+ * @returns {string | null}
+ */
+export function writtenNotice(written, code) {
+  if (code === "ok" || code === undefined || !written) return null;
+  const sha = typeof written.commit === "string" && written.commit !== "" ? ` as ${written.commit.slice(0, 7)}` : "";
+  const next =
+    code === "conflict"
+      ? "A conflict stopped it: resolve it as the log says (a repo that has diverged is pulled or rebased in a terminal), then press Push here."
+      : code === "unreachable"
+        ? "Something could not be reached: check the network or ssh, then press Push to try again."
+        : code === "locked"
+          ? "Another push was running: wait for it to end, then press Push."
+          : "Fix what the log names, then press Push.";
+  return `Your change is committed${sha}, but it was not pushed and applied everywhere (${code}). It is in the config repo now, so it is no longer on To push. ${next}`;
 }
 
 /**
@@ -150,7 +174,7 @@ export function statusView(doc) {
   rows.push({ label: "conflicts", value: doc?.conflicts == null ? "unknown" : String(doc.conflicts), tone: doc?.conflicts ? "warn" : "ok" });
   const tools = Object.entries(doc?.tools ?? {}).map(([name, version]) => ({ name, version: typeof version === "string" ? version : null }));
   const conflicts = (doc?.conflictList ?? []).map((/** @type {{ kind: string, path: string }} */ c) => `${c.kind} ${c.path}`);
-  return { host: typeof doc?.host === "string" ? doc.host : "unknown host", rows, tools, conflicts, messages: Array.isArray(doc?.messages) ? doc.messages : [] };
+  return { host: typeof doc?.host === "string" ? doc.host : "unknown host", rows, tools, conflicts, messages: Array.isArray(doc?.messages) ? doc.messages.map(plain) : [] };
 }
 
 /** @param {number} seconds */

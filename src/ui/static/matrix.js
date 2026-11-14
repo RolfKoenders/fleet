@@ -113,6 +113,9 @@ export function suggestMessage(ops) {
   return catalog === "" ? `Change${changed.slice("change".length)}` : changed === "" ? catalog : `${catalog}; ${changed}`;
 }
 
+/** What stops a push while an edit no longer applies. The Review screen lists those edits itself, so it leaves this out of its stop notice. */
+export const DROPPED_BLOCKER = "some edits no longer apply: forget them first";
+
 /**
  * What stops the page from writing and pushing now, as sentences. Empty when nothing does.
  * @param {{ outside: string[], dropped: unknown[], checks: { host: string, loads: boolean }[], running: boolean }} s
@@ -123,7 +126,7 @@ export function blockers(s) {
   return [
     ...(s.running ? ["a push is running"] : []),
     ...(s.outside.length > 0 ? ["the config repo has changes the page did not make: commit or discard them outside the page first"] : []),
-    ...(s.dropped.length > 0 ? ["some edits no longer apply: forget them first"] : []),
+    ...(s.dropped.length > 0 ? [DROPPED_BLOCKER] : []),
     ...(failing.length > 0 ? [`the config does not load for ${failing.join(", ")}`] : []),
   ];
 }

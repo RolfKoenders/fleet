@@ -50,7 +50,7 @@ test("init output is folded line by line, kept to the last 300, and its end says
   assert.deepEqual(s.lines, ["$ fleet init mini", "1. prerequisites: unchanged"]);
   assert.equal(s.running, true);
   s = initEnd(s, { ok: false, code: "unreachable", messages: ["fleet: removed", 3], removed: true });
-  assert.deepEqual(s.end, { ok: false, code: "unreachable", messages: ["fleet: removed"], removed: true, kept: false });
+  assert.deepEqual(s.end, { ok: false, code: "unreachable", messages: ["removed"], removed: true, kept: false });
   assert.equal(s.running, false);
   // The next line is a new run.
   s = initLine(s, { text: "$ fleet init other" });

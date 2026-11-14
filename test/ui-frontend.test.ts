@@ -122,7 +122,7 @@ test("statusView names the rows the status screen shows", () => {
   assert.equal(row("conflicts")?.value, "1");
   assert.deepEqual(v.conflicts, ["file /x"]);
   assert.deepEqual(v.tools, [{ name: "claude", version: "2.1.4" }, { name: "opencode", version: null }]);
-  assert.deepEqual(v.messages, ["fleet: careful"]);
+  assert.deepEqual(v.messages, ["careful"]);
   const empty = statusView({});
   assert.equal(empty.host, "unknown host");
   assert.equal(empty.rows.find((r) => r.label === "applied")?.value, "never");
@@ -149,7 +149,8 @@ test("the API client sends the token as a header and turns a refusal into an Api
   await assert.rejects(down.status(), (e: unknown) => e instanceof ApiError && e.code === "network");
 });
 
-test("the stream client reconnects with a growing delay after the browser gives up, and resets on hello", () => {
+test("the stream client reconnects with a growing delay after the browser gives up, and resets on hello", async () => {
+  const tick = () => new Promise((r) => setImmediate(r));
   type Listener = (e: { data: string }) => void;
   const made: FakeSource[] = [];
   class FakeSource {
@@ -173,8 +174,8 @@ test("the stream client reconnects with a growing delay after the browser gives 
   const log: string[] = [];
   const stream = openStream(
     "t k",
-    { onHello: (d) => log.push("hello " + JSON.stringify(d)), onEvent: (n, d) => log.push(n + " " + JSON.stringify(d)), onLink: (l) => log.push(l ? "live" : "down") },
-    { open: (url) => new FakeSource(url) as unknown as EventSource, later: (fn, ms) => (waits.push(ms), timers.push(fn)) },
+    { onHello: (d) => log.push("hello " + JSON.stringify(d)), onEvent: (n, d) => log.push(n + " " + JSON.stringify(d)), onLink: (l) => log.push(l === "live" ? "live" : l) },
+    { open: (url) => new FakeSource(url) as unknown as EventSource, later: (fn, ms) => (waits.push(ms), timers.push(fn)), probe: async () => "down" },
   );
   assert.equal(made[0].url, "/api/events?token=t%20k");
   made[0].listeners.hello({ data: '{"pushing":false}' });
@@ -184,14 +185,17 @@ test("the stream client reconnects with a growing delay after the browser gives 
   assert.equal(timers.length, 0, "while the browser is retrying by itself we do nothing");
   made[0].readyState = 2;
   made[0].onerror!();
+  await tick();
   timers.shift()!();
   made[1].readyState = 2;
   made[1].onerror!();
+  await tick();
   timers.shift()!();
   assert.deepEqual(waits, [500, 1000]);
   made[2].listeners.hello({ data: "{}" });
   made[2].readyState = 2;
   made[2].onerror!();
+  await tick();
   assert.deepEqual(waits, [500, 1000, 500], "a hello resets the delay");
   assert.deepEqual(log.slice(0, 4), ['live', 'hello {"pushing":false}', 'push {"event":"stage"}', "pushend null"]);
   stream.close();

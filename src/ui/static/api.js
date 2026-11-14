@@ -1,15 +1,16 @@
 // The page's API client: every call carries the token as a header, and nothing else is ever sent.
 
 import { setBody } from "./secrets.js";
-import { backoff } from "./state.js";
+import { backoff, plain } from "./state.js";
 
 /** A refused or failed call. `code` is fleet's (`unauthorized`, `forbidden`, `locked`, ...), or `network`. */
 export class ApiError extends Error {
   /** @param {string} code @param {string[]} messages @param {number} status */
   constructor(code, messages, status) {
-    super(messages.join("; ") || code);
+    const said = messages.map(plain);
+    super(said.join("; ") || code);
     this.code = code;
-    this.messages = messages;
+    this.messages = said;
     this.status = status;
   }
 }
@@ -17,8 +18,9 @@ export class ApiError extends Error {
 /**
  * @param {string} token
  * @param {typeof fetch} [fetcher]
+ * @param {{ onDenied?: () => void }} [hooks] `onDenied` runs when the server refuses the token (401 or 403)
  */
-export function createClient(token, fetcher = (...args) => fetch(...args)) {
+export function createClient(token, fetcher = (...args) => fetch(...args), hooks = {}) {
   /** @param {string} path @param {RequestInit} [init] @returns {Promise<any>} */
   async function call(path, init = {}) {
     /** @type {Response} */
@@ -35,6 +37,7 @@ export function createClient(token, fetcher = (...args) => fetch(...args)) {
     } catch {
       // not JSON: handled by the status below
     }
+    if (res.status === 401 || res.status === 403) hooks.onDenied?.();
     if (!res.ok) throw new ApiError(doc?.code ?? "error", doc?.messages ?? [`the server answered ${res.status}`], res.status);
     return doc;
   }
@@ -78,18 +81,31 @@ export function createClient(token, fetcher = (...args) => fetch(...args)) {
 
 /**
  * The stream of live updates. `EventSource` cannot send a header, so the token goes in the query (only for this call).
- * The browser reconnects by itself after a dropped connection, but gives up after a refusal; this reopens in that case too.
+ * The browser reconnects by itself after a dropped connection, but gives up after a refusal; this reopens in that case too,
+ * except after a refusal of the token itself: a token that was refused never becomes valid, so it stops and says `invalid`.
+ * `onLink` is told `live`, `down` (nothing answers: the server stopped, or this machine slept) or `invalid`.
  * @param {string} token
  * @param {{
  *   onHello(doc: any): void,
  *   onEvent(name: string, doc: any): void,
- *   onLink(live: boolean): void,
+ *   onLink(link: "live" | "down" | "invalid"): void,
  * }} handlers
- * @param {{ open?: (url: string) => EventSource, later?: (fn: () => void, ms: number) => unknown }} [deps]
+ * @param {{ open?: (url: string) => EventSource, later?: (fn: () => void, ms: number) => unknown, probe?: () => Promise<"denied" | "answering" | "down"> }} [deps]
  */
 export function openStream(token, handlers, deps = {}) {
   const open = deps.open ?? ((url) => new EventSource(url));
   const later = deps.later ?? ((fn, ms) => setTimeout(fn, ms));
+  // An EventSource does not say why it failed, so one that gave up is asked in a plain call: refused, or no answer.
+  const probe =
+    deps.probe ??
+    (async () => {
+      try {
+        const res = await fetch("/api/status", { headers: { "X-Fleet-Token": token } });
+        return res.status === 401 || res.status === 403 ? "denied" : "answering";
+      } catch {
+        return "down";
+      }
+    });
   let attempt = 0;
   let closed = false;
   /** @type {EventSource | null} */
@@ -101,19 +117,25 @@ export function openStream(token, handlers, deps = {}) {
     source = stream;
     stream.addEventListener("hello", (e) => {
       attempt = 0;
-      handlers.onLink(true);
+      handlers.onLink("live");
       handlers.onHello(parse(/** @type {MessageEvent} */ (e).data));
     });
-    for (const name of ["push", "pushend", "init", "initend"]) {
+    for (const name of ["push", "pushend", "init", "initend", "jobs"]) {
       stream.addEventListener(name, (e) => handlers.onEvent(name, parse(/** @type {MessageEvent} */ (e).data)));
     }
     stream.onerror = () => {
-      handlers.onLink(false);
-      // CONNECTING: the browser is retrying by itself. CLOSED: it gave up, so we start a new one.
-      if (stream.readyState === 2 /* CLOSED */) {
-        stream.close();
+      // CONNECTING: the browser is retrying by itself. CLOSED: it gave up, so we find out why and start a new one.
+      if (stream.readyState !== 2 /* CLOSED */) return void handlers.onLink("down");
+      stream.close();
+      void probe().then((seen) => {
+        if (closed) return;
+        if (seen === "denied") {
+          closed = true;
+          return void handlers.onLink("invalid");
+        }
+        handlers.onLink("down");
         later(connect, backoff(attempt++));
-      }
+      });
     };
   }
   connect();

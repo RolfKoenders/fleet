@@ -8,6 +8,8 @@
  * @typedef {{ name: string, ssh: string, from: string | null }} HostBody
  */
 
+import { plain } from "./state.js";
+
 /** The loader's rule for a host name (`src/recipients.ts`). */
 const NAME = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 /** An ssh destination: never starts with `-` (ssh would read it as an option), no space or control character. */
@@ -83,9 +85,15 @@ export function initEnd(state, doc) {
     end: {
       ok: doc?.ok === true,
       code: typeof doc?.code === "string" ? doc.code : "error",
-      messages: Array.isArray(doc?.messages) ? doc.messages.filter((/** @type {unknown} */ m) => typeof m === "string") : [],
+      messages: Array.isArray(doc?.messages) ? doc.messages.filter((/** @type {unknown} */ m) => typeof m === "string").map(plain) : [],
       removed: doc?.removed === true,
       kept: doc?.kept === true,
     },
   };
+}
+
+/** How long a run has lasted, for "running for 42 s": seconds, then minutes and seconds. @param {number} ms */
+export function elapsed(ms) {
+  const total = Math.max(0, Math.floor(ms / 1000));
+  return total < 60 ? `${total} s` : `${Math.floor(total / 60)} min ${String(total % 60).padStart(2, "0")} s`;
 }

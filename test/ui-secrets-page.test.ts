@@ -99,7 +99,8 @@ test("the page keeps no value: the field is not named, not remembered and emptie
   // The value is read once, into a local; no assignment to the model, storage, history or location from it.
   assert.equal((dialog.match(/input\.value/g) ?? []).length >= 4, true);
   assert.doesNotMatch(dialog, /model\.[a-zA-Z]+ = [^;]*value|localStorage|sessionStorage|history\.|location\./);
-  for (const file of ["app.js", "api.js", "secrets.js", "state.js"]) {
+  // The only storage is the tab's `sessionStorage` in session.js, which keeps the token and the To push list (edits, ciphertext only).
+  for (const file of ["app.js", "api.js", "secrets.js", "state.js", "link.js", "jobs.js"]) {
     const text = readFileSync(join(repoRoot, "src/ui/static", file), "utf8");
     assert.doesNotMatch(text, /localStorage|sessionStorage/, file);
     assert.doesNotMatch(text, /console\.(log|info|debug)/, file);
