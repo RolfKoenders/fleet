@@ -1,9 +1,10 @@
+import { redactUrl } from "./redact.ts";
 import { InvalidConfigError } from "./config.ts";
 import { repoState, runGit, UnreachableError } from "./git.ts";
 import type { Pin } from "./pin.ts";
 import type { Conflict } from "./plan.ts";
 
-const firstLine = (text: string) => text.split("\n")[0] ?? "";
+const firstLine = (text: string) => redactUrl(text.split("\n")[0] ?? "");
 
 /** Why fleet will not move the fleet clone, as a conflict. Nobody works in the fleet clone, so the fix is to clear it. */
 function toolConflict(dir: string, blocked: string, pin: Pin): Conflict {
@@ -40,13 +41,13 @@ export function placeTool(dir: string, pin: Pin): { conflict: Conflict | null; m
   const origin = runGit(dir, "remote", "get-url", "origin").stdout;
   if (origin !== pin.repo) {
     const set = runGit(dir, "remote", origin === "" ? "add" : "set-url", "origin", pin.repo);
-    if (!set.ok) throw new Error(`cannot point ${dir} at ${pin.repo}: ${firstLine(set.stderr)}`);
+    if (!set.ok) throw new Error(`cannot point ${dir} at ${redactUrl(pin.repo)}: ${firstLine(set.stderr)}`);
   }
   const have = () => runGit(dir, "cat-file", "-e", `${pin.commit}^{commit}`).ok;
   if (!have()) {
     const fetch = runGit(dir, "fetch", "--quiet", "origin");
-    if (!fetch.ok) throw new UnreachableError(`cannot fetch the fleet clone from ${pin.repo}: ${firstLine(fetch.stderr)}`);
-    if (!have()) throw new InvalidConfigError([`fleet.yaml: the pinned tool commit ${pin.commit} is not in ${pin.repo}`]);
+    if (!fetch.ok) throw new UnreachableError(`cannot fetch the fleet clone from ${redactUrl(pin.repo)}: ${firstLine(fetch.stderr)}`);
+    if (!have()) throw new InvalidConfigError([`fleet.yaml: the pinned tool commit ${pin.commit} is not in ${redactUrl(pin.repo)}`]);
   }
   const checkout = runGit(dir, "-c", "advice.detachedHead=false", "checkout", "--quiet", "--detach", pin.commit);
   if (!checkout.ok) throw new Error(`cannot check out ${pin.commit} in ${dir}: ${firstLine(checkout.stderr)}`);

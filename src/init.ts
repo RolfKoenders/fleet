@@ -1,3 +1,4 @@
+import { redactUrl } from "./redact.ts";
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
@@ -75,7 +76,7 @@ const CONFIG_DEFAULT = `"$HOME/${CONFIG_DIR}"`;
 /** The fleet clone `~/.local/bin/fleet` points into, on every host. */
 const TOOL_CLONE = '"$HOME/.local/share/fleet/fleet"';
 
-const firstLine = (text: string) => text.trim().split("\n")[0] ?? "";
+const firstLine = (text: string) => redactUrl(text.trim().split("\n")[0] ?? "");
 const invalid = (...problems: string[]): Result => ({ code: "invalid", messages: problems.map((p) => `fleet: ${p}`) });
 const q = (text: string) => `'${text.replaceAll("'", `'\\''`)}'`;
 
@@ -252,8 +253,8 @@ git -C "$dir" push --dry-run --quiet origin "refs/remotes/origin/$branch:refs/he
 `;
   const r = ctx.machine(script("clone", body));
   if (r.status === 21) return { stop: { code: "error", messages: [`fleet: ${ctx.host}: ${firstLine(r.stderr)}`] } };
-  if (r.status === 22) return { stop: { code: "unreachable", messages: [`fleet: ${ctx.host} cannot clone or fetch ${ctx.url}`] } };
-  if (r.status === 24) return { stop: { code: "unreachable", messages: [`fleet: ${ctx.host} cannot clone the tool from ${ctx.pin.repo}`] } };
+  if (r.status === 22) return { stop: { code: "unreachable", messages: [`fleet: ${ctx.host} cannot clone or fetch ${redactUrl(ctx.url)}`] } };
+  if (r.status === 24) return { stop: { code: "unreachable", messages: [`fleet: ${ctx.host} cannot clone the tool from ${redactUrl(ctx.pin.repo)}`] } };
   if (r.status === 23) {
     ctx.checklist.push(CHECKLIST.repo(ctx.url));
     return { stop: { code: "missing-prerequisite", messages: [`fleet: ${ctx.host} can read the repository but not push to it`] } };
@@ -375,7 +376,7 @@ ${pull}if [ "$(git -C "$tool" rev-parse HEAD)" != ${pin} ]; then
   n=$(git -C "$tool" rev-list --count HEAD --not --remotes)
   [ "$n" = 0 ] || { echo "$tool has $n local commit(s) not on any remote branch, so fleet cannot move it" >&2; exit 25; }
   git -C "$tool" cat-file -e ${pin}'^{commit}' 2>/dev/null || git -C "$tool" fetch --quiet origin || exit 22
-  git -C "$tool" cat-file -e ${pin}'^{commit}' 2>/dev/null || { echo ${q(`the pinned tool commit ${ctx.pin.commit} is not in ${ctx.pin.repo}`)} >&2; exit 26; }
+  git -C "$tool" cat-file -e ${pin}'^{commit}' 2>/dev/null || { echo ${q(`the pinned tool commit ${ctx.pin.commit} is not in ${redactUrl(ctx.pin.repo)}`)} >&2; exit 26; }
   git -C "$tool" -c advice.detachedHead=false checkout --quiet --detach ${pin} >&2 || exit 25
   echo moved
 fi

@@ -1,3 +1,4 @@
+import { redactUrl } from "./redact.ts";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
@@ -29,8 +30,8 @@ type Reading = { moved: Moved | null; review?: Review } | { problems: string[] }
 function cloneTrack(source: Source, into: string): string | null {
   const r = runGit(into, "clone", "--quiet", "--no-checkout", `--branch=${source.track}`, "--", source.repo, join(into, "repo"));
   if (r.ok) return null;
-  if (/Remote branch .* not found/.test(r.stderr)) return `source '${source.name}': branch ${source.track} is not in ${source.repo}`;
-  throw new UnreachableError(`cannot clone ${source.repo} for source '${source.name}': ${r.stderr.split("\n")[0]}`);
+  if (/Remote branch .* not found/.test(r.stderr)) return `source '${source.name}': branch ${source.track} is not in ${redactUrl(source.repo)}`;
+  throw new UnreachableError(`cannot clone ${redactUrl(source.repo)} for source '${source.name}': ${redactUrl(r.stderr.split("\n")[0] ?? "")}`);
 }
 
 /**
@@ -48,12 +49,12 @@ function readSource(source: Source, bundled: string[], review: boolean, color: b
     const to = runGit(clone, "rev-parse", "HEAD").stdout;
     if (to === from) return { moved: null };
     if (!runGit(clone, "cat-file", "-e", `${from}^{commit}`).ok) {
-      return { problems: [`source '${source.name}': pinned commit ${from} is not in ${source.repo}, so its skills cannot be compared; set 'commit' by hand`] };
+      return { problems: [`source '${source.name}': pinned commit ${from} is not in ${redactUrl(source.repo)}, so its skills cannot be compared; set 'commit' by hand`] };
     }
 
     const skillsAt = (sha: string) => {
       const r = runGit(clone, "-c", "advice.detachedHead=false", "checkout", "--quiet", "--detach", sha);
-      if (!r.ok) throw new Error(`cannot check out ${sha} to read source '${source.name}': ${r.stderr.split("\n")[0]}`);
+      if (!r.ok) throw new Error(`cannot check out ${sha} to read source '${source.name}': ${redactUrl(r.stderr.split("\n")[0] ?? "")}`);
       return findSkillsIn(clone, source);
     };
     const before = skillsAt(from).dirs;
@@ -71,7 +72,7 @@ function readSource(source: Source, bundled: string[], review: boolean, color: b
     if (problems.length > 0) return { problems };
 
     const diff = runGit(clone, "diff", "--name-only", "--no-renames", "-z", from, to);
-    if (!diff.ok) throw new Error(`cannot compare ${short(from)} and ${short(to)} in ${source.repo}: ${diff.stderr.split("\n")[0]}`);
+    if (!diff.ok) throw new Error(`cannot compare ${short(from)} and ${short(to)} in ${redactUrl(source.repo)}: ${redactUrl(diff.stderr.split("\n")[0] ?? "")}`);
     const touched = diff.stdout.split("\0").filter((p) => p !== "");
     const touches = (dirs: string[]) => {
       const prefixes = dirs.map((dir) => `${shown(dir)}/`);

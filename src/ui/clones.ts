@@ -3,6 +3,7 @@ import { randomBytes } from "node:crypto";
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { redactUrl } from "../redact.ts";
 import { findSkillsIn } from "../sources.ts";
 import { findTool } from "../tools.ts";
 import { branchProblem, repoProblem } from "./opsof.ts";
@@ -60,10 +61,10 @@ export class CloneStore {
     try {
       // `--` ends the options, so a repo can never be read as one.
       const clone = await run(git, ["clone", "--quiet", "--depth", "1", ...(branch === null ? [] : ["--branch", branch]), "--", repo, dir], root);
-      if (!clone.ok) throw new Error(`cannot clone ${repo}: ${clone.stderr.split("\n")[0] || "git failed"}`);
+      if (!clone.ok) throw new Error(redactUrl(`cannot clone ${repo}: ${clone.stderr.split("\n")[0] || "git failed"}`));
       const head = await run(git, ["rev-parse", "HEAD"], dir);
       const name = await run(git, ["branch", "--show-current"], dir);
-      if (!head.ok || !/^[0-9a-f]{40}$/.test(head.stdout)) throw new Error(`cannot read the head commit of ${repo}`);
+      if (!head.ok || !/^[0-9a-f]{40}$/.test(head.stdout)) throw new Error(redactUrl(`cannot read the head commit of ${repo}`));
       const found = findSkillsIn(dir, { name: "new", repo, path, commit: null, track: null, branch: null, review: false });
       this.evict();
       return { id, repo, commit: head.stdout, branch: name.ok && name.stdout !== "" ? name.stdout : null, path, skills: [...found.dirs.keys()].sort(), problem: found.problem };

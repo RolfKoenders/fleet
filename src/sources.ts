@@ -1,3 +1,4 @@
+import { redactUrl } from "./redact.ts";
 import { existsSync, mkdirSync, readdirSync, statSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import type { Source } from "./catalog.ts";
@@ -15,7 +16,7 @@ export type SourceMode = "apply" | "diff" | "validate" | "offline";
 
 export type PlaceOutcome = { problems: string[]; conflicts: Conflict[] };
 
-const firstLine = (text: string) => text.split("\n")[0] ?? "";
+const firstLine = (text: string) => redactUrl(text.split("\n")[0] ?? "");
 
 /** A clone that cannot be fast-forwarded because of work in it. `label` is how the repo is shown, and works in `git -C`. */
 export function repoConflict(label: string, blocked: string): Conflict {
@@ -34,18 +35,18 @@ function clone(source: Source, dir: string): string | null {
   const r = runGit(dirname(dir), "clone", "--quiet", ...branch, source.repo, dir);
   if (r.ok) return null;
   const why = firstLine(r.stderr);
-  if (/Remote branch .* not found/.test(r.stderr)) return `source '${source.name}': branch ${source.branch} is not in ${source.repo}`;
+  if (/Remote branch .* not found/.test(r.stderr)) return `source '${source.name}': branch ${source.branch} is not in ${redactUrl(source.repo)}`;
   if (/already exists and is not an empty directory/.test(r.stderr)) {
     throw new Error(`${dir} exists but is not a git clone; move or delete it, then run 'fleet apply'`);
   }
-  throw new UnreachableError(`cannot clone ${source.repo} for source '${source.name}': ${why}`);
+  throw new UnreachableError(`cannot clone ${redactUrl(source.repo)} for source '${source.name}': ${why}`);
 }
 
 /** Fetches once, only when what is wanted is not already in the clone. */
 function fetchUnlessHave(dir: string, source: Source, have: () => boolean): boolean {
   if (have()) return true;
   const r = runGit(dir, "fetch", "--quiet", "origin");
-  if (!r.ok) throw new UnreachableError(`cannot fetch ${source.repo} for source '${source.name}': ${firstLine(r.stderr)}`);
+  if (!r.ok) throw new UnreachableError(`cannot fetch ${redactUrl(source.repo)} for source '${source.name}': ${firstLine(r.stderr)}`);
   return have();
 }
 
@@ -91,7 +92,7 @@ export function placeSource(source: Source, home: string, mode: SourceMode): Pla
     }
     const have = () => runGit(dir, "cat-file", "-e", `${source.commit}^{commit}`).ok;
     if (!fetchUnlessHave(dir, source, have)) {
-      outcome.problems.push(`source '${source.name}': pinned commit ${source.commit} is not in ${source.repo}`);
+      outcome.problems.push(`source '${source.name}': pinned commit ${source.commit} is not in ${redactUrl(source.repo)}`);
       return outcome;
     }
     const r = runGit(dir, "-c", "advice.detachedHead=false", "checkout", "--quiet", "--detach", source.commit);
@@ -107,7 +108,7 @@ export function placeSource(source: Source, home: string, mode: SourceMode): Pla
     const branch = source.branch as string;
     const have = () => runGit(dir, "rev-parse", "--verify", "--quiet", `refs/heads/${branch}`).ok || runGit(dir, "rev-parse", "--verify", "--quiet", `refs/remotes/origin/${branch}`).ok;
     if (!fetchUnlessHave(dir, source, have)) {
-      outcome.problems.push(`source '${source.name}': branch ${branch} is not in ${source.repo}`);
+      outcome.problems.push(`source '${source.name}': branch ${branch} is not in ${redactUrl(source.repo)}`);
       return outcome;
     }
     const r = runGit(dir, "checkout", "--quiet", branch);
@@ -121,7 +122,7 @@ export function placeSource(source: Source, home: string, mode: SourceMode): Pla
     try {
       blocked = syncRepo(dir).blocked;
     } catch (error) {
-      if (error instanceof UnreachableError) throw new UnreachableError(`cannot fetch ${source.repo} for source '${source.name}': ${error.message}`);
+      if (error instanceof UnreachableError) throw new UnreachableError(`cannot fetch ${redactUrl(source.repo)} for source '${source.name}': ${error.message}`);
       throw error;
     }
   } else if (mode === "diff" || mode === "offline") {
@@ -148,7 +149,7 @@ export function findSkillsIn(clone: string, source: Source): { dirs: Map<string,
   try {
     if (!statSync(root).isDirectory()) throw new Error("not a directory");
   } catch {
-    return { dirs, problem: `source '${source.name}': path '${source.path}' is not a directory in ${source.repo}` };
+    return { dirs, problem: `source '${source.name}': path '${source.path}' is not a directory in ${redactUrl(source.repo)}` };
   }
   const named = basename(source.path);
   if (named !== "." && existsSync(join(root, "SKILL.md"))) dirs.set(named, [root]);

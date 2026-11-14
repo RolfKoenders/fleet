@@ -1,3 +1,4 @@
+import { MCP_URL_CREDENTIALS, URL_SPACE, urlHoldsCredentials } from "./redact.ts";
 import { dirname, join } from "node:path";
 import { SETTINGS_FILE } from "./settings.ts";
 import type { DesiredKey, Tool } from "./settings.ts";
@@ -55,6 +56,9 @@ function parseServer(at: string, name: string, raw: unknown, problems: string[])
   } else {
     if (transport !== "http" && transport !== "sse") problems.push(`${where}: 'transport' must be http or sse`);
     if (typeof url !== "string" || url === "") problems.push(`${where}: a network server needs a 'url'`);
+    // A `{{ vars.NAME }}` has spaces of its own: they are not the URL's.
+    else if (/[\u0000-\u0020\u007f]/.test(url.replace(/\{\{[^}]*\}\}/g, ""))) problems.push(`${where}: ${URL_SPACE}`);
+    else if (urlHoldsCredentials(url)) problems.push(`${where}: ${MCP_URL_CREDENTIALS}`);
     if (env !== undefined) problems.push(`${where}: 'env' belongs to a stdio server`);
   }
   for (const [key, value] of [["env", env], ["headers", headers]] as const) {

@@ -1,3 +1,4 @@
+import { redactUrl } from "./redact.ts";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { runGit, UnreachableError } from "./git.ts";
@@ -25,9 +26,9 @@ export function update(configDir: string): Result {
   if (pin.track === TRACK_RELEASES) return updateToRelease(configDir, pin);
 
   const remote = runGit(configDir, "ls-remote", "--", pin.repo, `refs/heads/${pin.track}`);
-  if (!remote.ok) throw new UnreachableError(`cannot read ${pin.repo}: ${remote.stderr.split("\n")[0]}`);
+  if (!remote.ok) throw new UnreachableError(`cannot read ${redactUrl(pin.repo)}: ${redactUrl(remote.stderr.split("\n")[0] ?? "")}`);
   const head = /^([0-9a-f]{40})\t/.exec(remote.stdout)?.[1];
-  if (head === undefined) return invalid(`branch ${pin.track} is not in ${pin.repo}`);
+  if (head === undefined) return invalid(`branch ${pin.track} is not in ${redactUrl(pin.repo)}`);
 
   const fields = { repo: pin.repo, track: pin.track, from: pin.commit, to: head };
   if (head === pin.commit) return { code: "ok", text: `tool: up to date (${short(head)})`, fields: { ...fields, updated: false } };
@@ -53,9 +54,9 @@ export function update(configDir: string): Result {
  */
 function updateToRelease(configDir: string, pin: Pin): Result {
   const remote = runGit(configDir, "ls-remote", "--tags", "--", pin.repo);
-  if (!remote.ok) throw new UnreachableError(`cannot read ${pin.repo}: ${remote.stderr.split("\n")[0]}`);
+  if (!remote.ok) throw new UnreachableError(`cannot read ${redactUrl(pin.repo)}: ${redactUrl(remote.stderr.split("\n")[0] ?? "")}`);
   const release = newestRelease(remote.stdout);
-  if (release === null) return invalid(`no release tags (vX.Y.Z) in ${pin.repo}`);
+  if (release === null) return invalid(`no release tags (vX.Y.Z) in ${redactUrl(pin.repo)}`);
 
   const fields = { repo: pin.repo, track: pin.track, from: pin.commit, to: release.commit, release: release.tag };
   if (release.commit === pin.commit) return { code: "ok", text: `tool: up to date (${release.tag})`, fields: { ...fields, updated: false } };
