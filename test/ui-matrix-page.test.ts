@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { clickCell, cellState, opLabel, suggestMessage, summaryLine } from "../src/ui/static/matrix.js";
+import { cellAction, clickCell, cellState, opLabel, suggestMessage, summaryLine } from "../src/ui/static/matrix.js";
 import { routeOf } from "../src/ui/static/state.js";
 
 const cell = (on: boolean, picked: any, excluded: any = null) => ({ on, picked, excluded });
@@ -23,6 +23,14 @@ test("a click holds the smallest edit, and a second click takes it back", () => 
   const other = clickCell(given, "box", "mcp", "docs", cell(true, "defaults"));
   assert.equal(other.length, 2);
   assert.equal(clickCell(other, "box", "mcp", "tracker", cell(false, null)).length, 1, "only that cell's edit is taken back");
+});
+
+test("a cell says what a click will do", () => {
+  assert.equal(cellAction("defaults", false), "take away");
+  assert.equal(cellAction("added", false), "take away");
+  assert.equal(cellAction("excluded", false), "give");
+  assert.equal(cellAction("off", false), "give");
+  assert.equal(cellAction("off", true), "undo");
 });
 
 test("a host's pick changes read as one line", () => {

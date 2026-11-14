@@ -32,7 +32,7 @@ The first screen, named like the bridge's Matrix screen and read the same way. O
 | `✕ excluded` | the host (or the defaults) excludes it |
 | `· off` | nothing picks it |
 
-Clicking a cell makes the smallest edit to that host's file, as a change to push: an item the defaults give is taken away with `exclude` in the host's file (the defaults are not edited), an item the host added is taken out of its list, an exclude is taken back. Clicking the same cell again takes that edit back. A pane beside the table shows the host's file as it will be written, with comments, blank lines and list style kept; nothing is on disk yet. A server, skill source or bundle you add in the Catalog is a row of the Matrix at once, off for every host, held like any edit.
+Clicking a cell makes the smallest edit to that host's file, as a change to push: an item the defaults give is taken away with `exclude` in the host's file (the defaults are not edited), an item the host added is taken out of its list, an exclude is taken back. Clicking the same cell again takes that edit back. Hovering a cell says what a click will do: `give`, `take away` or `undo`. A host's name is a button that shows its file in the pane beside the table, as it will be written, with comments, blank lines and list style kept; nothing is on disk yet. The **+ Add** button in the header offers what the Catalog's does, plus a host. A server, skill source or bundle you add is a row of the Matrix at once, off for every host, held like any edit.
 
 ### Catalog
 

@@ -29,6 +29,12 @@ export function cellState(cell) {
 /** The mark and the word a cell shows. @type {Record<CellState, [string, string]>} */
 export const WORDS = { defaults: ["✓", "default"], added: ["+", "added"], excluded: ["✕", "excluded"], off: ["·", "off"] };
 
+/**
+ * What a click on a cell will do, shown on hover: a cell with an edit to push takes it back, an item the host has is taken away,
+ * and one it does not have is given. @param {CellState} state @param {boolean} staged
+ */
+export const cellAction = (state, staged) => (staged ? "undo" : state === "defaults" || state === "added" ? "take away" : "give");
+
 /** @param {Op} o @returns {o is PickOp} */
 export const isPick = (o) => o.op === "add" || o.op === "remove";
 

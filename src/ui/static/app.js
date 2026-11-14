@@ -7,7 +7,7 @@ import { changed, counts, lineDiff, splitLines, tokenize } from "./diff.js";
 import { fill, h } from "./dom.js";
 import { ADD, addable, CATALOG_KINDS, closable, confirmLabel, fileOf, freshAdd, hostAsDraft, paneView } from "./adding.js";
 import { bundleDraft, checkLines, cloneKey, confirmText, opWarnings, secretOf, secretsOf, serverDraft, skillChoices, sourceDraft, sourceInputs, takeBack } from "./catalog.js";
-import { blockers, DROPPED_BLOCKER, cellState, clickCell, opLabel, suggestMessage, summaryLine, WORDS } from "./matrix.js";
+import { blockers, cellAction, DROPPED_BLOCKER, cellState, clickCell, opLabel, suggestMessage, summaryLine, WORDS } from "./matrix.js";
 import { confirmInit, elapsed, heldProblem, hostDraft, idleInit, initEnd, initLine, SETUP_DOC, startInit } from "./hosts.js";
 import { actionOf, afterSet, cellView, dialogTargets, heldNames, missingCount, retryText, valueProblem } from "./secrets.js";
 import { itemYaml, yamlPath, yamlTag } from "./yamlview.js";
@@ -231,6 +231,7 @@ function matrixScreen() {
         const state = cellState(row.cells[host.name]);
         const staged = cellState(baseRow?.cells[host.name]) !== state;
         const [mark, word] = WORDS[state];
+        const act = cellAction(state, staged);
         return h(
           "td",
           {},
@@ -238,12 +239,13 @@ function matrixScreen() {
             "button",
             {
               class: `cell ${state} ${staged ? "staged" : ""} ${host.name === focus ? "focus" : ""}`,
-              title: `${row.name} on ${host.name}: ${word}${staged ? " (to push)" : ""}`,
+              title: `${row.name} on ${host.name}: ${word}${staged ? " (to push)" : ""}. Click to ${act}.`,
               "aria-label": `${row.name} on ${host.name}: ${word}${staged ? ", to push" : ""}`,
               onclick: () => click(host.name, kind, row.name),
             },
             h("span", { class: "mk" }, mark),
             h("span", { class: "w" }, word),
+            h("span", { class: "act", "aria-hidden": "true" }, act),
           ),
         );
       }),
@@ -255,7 +257,7 @@ function matrixScreen() {
     {},
     h("th", {}),
     ...hosts.map((/** @type {any} */ host) =>
-      h("th", { class: host.name === focus ? "focus" : "" }, h("button", { class: "hostbtn", onclick: () => focusHost(host.name) }, host.name), h("span", { class: "v" }, host.self ? "this host" : host.ssh ?? "timer only")),
+      h("th", { class: host.name === focus ? "focus" : "" }, h("button", { class: "hostbtn", title: `Show hosts/${host.name}.yaml`, "aria-pressed": String(host.name === focus), onclick: () => focusHost(host.name) }, fileIcon(), host.name), h("span", { class: "v" }, host.self ? "this host" : host.ssh ?? "timer only")),
     ),
   );
   const body = [];
@@ -275,8 +277,7 @@ function matrixScreen() {
   return h(
     "div",
     {},
-    h("h1", {}, title),
-    h("p", { class: "sub" }, about),
+    pageHead(title, about, addMenu([...CATALOG_KINDS, "host"])),
     outsideNotice(),
     model.base.problems.length > 0 ? h("div", { class: "notice" }, "Config problem: " + model.base.problems[0]) : null,
     h(
@@ -298,6 +299,9 @@ function matrixScreen() {
       : null,
   );
 }
+
+/** A small file icon, from the page's template: the host's name opens its file in the pane. */
+const fileIcon = () => /** @type {HTMLTemplateElement | null} */ (document.getElementById("ic-file"))?.content.firstElementChild?.cloneNode(true) ?? null;
 
 /** @param {any} sv */
 const serverLine = (sv) => (sv.server ? `${sv.server.kind}${sv.server.only.length === 1 ? ` · ${sv.server.only[0]} only` : ""}${sv.server.secrets > 0 ? ` · ${sv.server.secrets} secret${sv.server.secrets === 1 ? "" : "s"}` : ""}` : "");
@@ -842,11 +846,11 @@ function renderDialog() {
 }
 
 /**
- * The Add button of the Catalog: a small menu of the three things that can be added. Whether it is open is in the model, so
+ * The Add button of the Catalog and the Matrix: a small menu of what can be added there (the Matrix also offers a host). Whether it is open is in the model, so
  * a screen drawn again (an answer arrives, a push event) keeps it open, and focus goes back to what had it (`render`).
  */
-function addMenu() {
-  const items = CATALOG_KINDS.map((k) => h("button", { type: "button", role: "menuitem", id: `add-${k}`, class: "menuitem", onclick: () => { setMenu(false); openAdd(k, "add-menu"); } }, ADD[k].menu));
+function addMenu(kinds = CATALOG_KINDS) {
+  const items = kinds.map((k) => h("button", { type: "button", role: "menuitem", id: `add-${k}`, class: "menuitem", onclick: () => { setMenu(false); openAdd(k, "add-menu"); } }, ADD[k].menu));
   const list = h("div", { class: "menu", role: "menu", "aria-label": "Add to the catalog", ...(model.menu ? {} : { hidden: true }) }, ...items);
   const button = h("button", { type: "button", class: "btn primary", id: "add-menu", "aria-haspopup": "menu", "aria-expanded": String(model.menu), ...(usable() ? {} : { disabled: true, title: "fleet ui is not answering" }), onclick: () => (model.menu ? setMenu(false) : setMenu(true, true)) }, "+ Add");
   const wrap = h("div", { class: "menuwrap" }, button, list);
