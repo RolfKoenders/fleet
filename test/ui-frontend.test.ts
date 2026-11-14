@@ -272,3 +272,17 @@ test("the real API client and stream client work against the real server", async
     await reader.cancel();
   });
 });
+
+test("the page's chrome: the logo is the website's mark, the menu has Review & push above Status, and the tray says To push", () => {
+  const html = readFileSync(join(staticDir, "index.html"), "utf8");
+  const site = readFileSync(join(repoRoot, "site/index.html"), "utf8");
+  const mark = (svg: string) => svg.match(/<path d="M8 20h22[\s\S]*<\/g>/)?.[0];
+  const logo = readFileSync(join(staticDir, "favicon.svg"), "utf8");
+  assert.ok(mark(logo), "the favicon draws the logo");
+  assert.equal(mark(logo), mark(site.match(/<a class="brand"[\s\S]*?<\/svg>/)![0]), "the favicon is the website's logo");
+  assert.equal(mark(html.match(/<a class="logo"[\s\S]*?<\/svg>/)![0]), mark(logo), "the header shows the same mark");
+  const nav = [...html.match(/<nav[\s\S]*<\/nav>/)![0].matchAll(/<a href="#\/(\w+)"|<hr>/g)].map((m) => m[1] ?? "hr");
+  assert.deepEqual(nav, ["matrix", "catalog", "hosts", "secrets", "hr", "review", "status"]);
+  assert.match(html, /id="tray"[^>]*><span>To push<\/span>/);
+  assert.doesNotMatch(html, /Held/, "the page says To push, not Held");
+});
