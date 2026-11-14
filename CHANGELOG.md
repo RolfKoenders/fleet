@@ -4,6 +4,8 @@ What changed in fleet, newest first. Each version lists what you can do now, wha
 
 ## Unreleased
 
+## 2.3.0 - 2026-11-14
+
 ### Added
 
 - The landing page has a section on why not just dotfiles, a release pill and a What's new section, and `rolflab.nl/fleet/changelog/` lists every release with a filter for each kind of change. They are generated from this file: `npm run site:changelog` rewrites them, and a test fails when this file changes without it.
