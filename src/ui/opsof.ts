@@ -3,6 +3,7 @@ import type { Value } from "../edit/index.ts";
 import { parseCatalog } from "../catalog.ts";
 import { parseMcpCatalog } from "../mcp.ts";
 import { ciphertextProblem, parseSopsText, SECRET_NAME, SECRETS_PATH } from "../edit/index.ts";
+import { REPO_CREDENTIALS, urlHoldsCredentials } from "../redact.ts";
 import { BadRequest } from "./request.ts";
 
 /**
@@ -18,6 +19,9 @@ const ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
 const SKILL_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 const BRANCH = /^[A-Za-z0-9][A-Za-z0-9._/-]*$/;
 export const MAX_OPS = 200;
+/** The longest name of a server, source, bundle or host. */
+export const MAX_NAME = 64;
+export const nameLength = (what: string, name: string): string | null => (name.length > MAX_NAME ? `the ${what} can be at most ${MAX_NAME} characters` : null);
 const MAX_SKILLS = 200;
 
 type Raw = Record<string, unknown>;
@@ -29,8 +33,19 @@ export function opsOf(body: unknown): EditOp[] {
   if (!isRaw(body)) throw new BadRequest("the body must be a JSON object");
   const list = body.ops;
   if (!Array.isArray(list) || list.length > MAX_OPS) throw new BadRequest(`ops must be a list of at most ${MAX_OPS} edits`);
-  return list.map((raw, i) => opOf(raw, i));
+  const ops = list.map((raw, i) => opOf(raw, i));
+  const seen = new Set<string>();
+  for (const [i, op] of ops.entries()) {
+    if (op.op !== "addServer" && op.op !== "addSource" && op.op !== "addBundle") continue;
+    const key = `${op.op}:${op.name.toLowerCase()}`;
+    if (seen.has(key)) throw new BadRequest(`ops[${i}]: ${alreadyHeld(op.name)}`);
+    seen.add(key);
+  }
+  return ops;
 }
+
+/** What a second addition of a name already added to To push says. The page says the same (`static/catalog.js`). */
+const alreadyHeld = (name: string): string => `'${name}' is already added to To push`;
 
 function opOf(raw: unknown, i: number): EditOp {
   const o: Raw = isRaw(raw) ? raw : {};
@@ -92,6 +107,8 @@ const stringMap = (at: string, key: string, v: unknown): Record<string, string> 
 function serverOf(at: string, o: Raw): { name: string; entry: Record<string, Value> } {
   const name = o.name;
   if (typeof name !== "string" || !SERVER_NAME.test(name)) throw new BadRequest(`${at}: server name must be letters, digits, '_' or '-', and start with a letter or digit`);
+  const long = nameLength("name", name);
+  if (long !== null) throw new BadRequest(`${at}: ${long}`);
   if (!isRaw(o.entry)) throw new BadRequest(`${at}: entry must be a map`);
   const e = o.entry;
   const entry: Record<string, Value> = {};
@@ -115,6 +132,7 @@ export function repoProblem(repo: string): string | null {
   if (repo === "" || repo.length > 500) return "the repo must be a URL or a path";
   if (/[\u0000- \u007f]/.test(repo)) return "the repo must not hold a space or a control character";
   if (repo.startsWith("-")) return "the repo must not start with '-'";
+  if (urlHoldsCredentials(repo)) return REPO_CREDENTIALS;
   if (repo.includes("::")) return "the repo must not use a remote helper (a '::' address)";
   if (/^(https?|ssh|git|file):\/\/[^/]/.test(repo)) return null;
   if (/^[A-Za-z0-9._-]+@[A-Za-z0-9.-]+:[^/].*/.test(repo) || /^[A-Za-z0-9._-]+@[A-Za-z0-9.-]+:\/.*/.test(repo)) return null;
@@ -122,12 +140,17 @@ export function repoProblem(repo: string): string | null {
   return "the repo must be an https, ssh, git or file URL, an scp-style address (user@host:path) or an absolute path";
 }
 
+/** The page says the same (`pathProblem` in `static/catalog.js`). */
+export const PATH_PROBLEM = "the path must be a directory inside the repo, without '..'";
+
 /** A branch name `git clone --branch` takes: no leading `-`, no `..`. */
 export const branchProblem = (branch: string): string | null => (BRANCH.test(branch) && !branch.includes("..") ? null : "the branch name is not one fleet will pass to git");
 
 function sourceOf(at: string, o: Raw): { name: string; entry: Record<string, Value> } {
   const name = o.name;
   if (typeof name !== "string" || !NAME.test(name)) throw new BadRequest(`${at}: source name must be letters, digits, '.', '_' or '-', and start with a letter or digit`);
+  const long = nameLength("name", name);
+  if (long !== null) throw new BadRequest(`${at}: ${long}`);
   if (!isRaw(o.entry)) throw new BadRequest(`${at}: entry must be a map`);
   const entry: Record<string, Value> = {};
   for (const [key, v] of Object.entries(o.entry)) {
@@ -143,6 +166,7 @@ function sourceOf(at: string, o: Raw): { name: string; entry: Record<string, Val
     const problem = typeof entry[key] === "string" ? branchProblem(entry[key] as string) : null;
     if (problem !== null) throw new BadRequest(`${at}: ${problem}`);
   }
+  if (typeof entry.path === "string" && (entry.path.startsWith("/") || entry.path.split("/").includes("..") || /[\u0000-\u001f\u007f]/.test(entry.path))) throw new BadRequest(`${at}: ${PATH_PROBLEM}`);
   const problems: string[] = [];
   parseCatalog(".", problems, { root: ".", files: { "catalog/skills.yaml": JSON.stringify({ sources: { [name]: entry } }) } });
   if (problems.length > 0) throw new BadRequest(`${at}: ${problems[0]!.replace(/^catalog\/skills\.yaml: /, "")}`);
@@ -152,6 +176,8 @@ function sourceOf(at: string, o: Raw): { name: string; entry: Record<string, Val
 function bundleOf(at: string, o: Raw): { name: string; skills: string[] } {
   const name = o.name;
   if (typeof name !== "string" || !NAME.test(name)) throw new BadRequest(`${at}: bundle name must be letters, digits, '.', '_' or '-', and start with a letter or digit`);
+  const long = nameLength("name", name);
+  if (long !== null) throw new BadRequest(`${at}: ${long}`);
   const skills = strings(at, "skills", o.skills, MAX_SKILLS);
   if (skills.length === 0) throw new BadRequest(`${at}: a bundle needs at least one skill`);
   if (!skills.every((s) => SKILL_NAME.test(s))) throw new BadRequest(`${at}: a skill name must be letters, digits, '.', '_' or '-'`);

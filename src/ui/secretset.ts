@@ -23,6 +23,10 @@ import { BadRequest } from "./request.ts";
 
 export const MAX_VALUE = 8192;
 const SHARED = "shared";
+/** What a value that cannot be set says. The page says the same words before the click (`static/secrets.js`). */
+export const VALUE_EMPTY = "Type the value first.";
+export const VALUE_LONG = `The value is too long: a value can be at most ${MAX_VALUE} characters.`;
+export const VALUE_BLANK = "The value is only spaces: type the value itself.";
 
 export type SetRequest = { name: string; value: string; files: string[]; ops: EditOp[] };
 type Refusal = { status: number; code: string; message: string; extra?: Record<string, unknown> };
@@ -36,7 +40,9 @@ export function setRequest(body: unknown, configDir: string): SetRequest {
   if (typeof body !== "object" || body === null || Array.isArray(body)) throw new BadRequest("the body must be a JSON object");
   const { name, value, files } = body as Record<string, unknown>;
   if (typeof name !== "string" || !SECRET_NAME.test(name) || name.length > 100) throw new BadRequest("name must be a secret name such as TRACKER_API_KEY");
-  if (typeof value !== "string" || value === "" || value.length > MAX_VALUE) throw new BadRequest(`the value must be text of 1 to ${MAX_VALUE} characters`);
+  if (typeof value !== "string" || value === "") throw new BadRequest(VALUE_EMPTY);
+  if (value.length > MAX_VALUE) throw new BadRequest(VALUE_LONG);
+  if (value.trim() === "") throw new BadRequest(VALUE_BLANK);
   const known = new Set([SHARED, ...hostNames(configDir)]);
   if (!Array.isArray(files) || files.length === 0 || files.length > 100 || !files.every((f) => typeof f === "string")) throw new BadRequest("files must be a list of `shared` and host names");
   const unknown = (files as string[]).filter((f) => !known.has(f));
