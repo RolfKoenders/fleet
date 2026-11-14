@@ -25,7 +25,7 @@ test("a name that is not the loader's, or that exists, and an ssh destination ss
     assert.notEqual(d.ssh, null, ssh);
   }
   assert.match(hostDraft(form({ ssh: "-F/x" }), []).ssh!, /cannot start with '-'/);
-  for (const ssh of ["mini", "me@mini.local", "me@10.0.0.4", "me@[fe80::1%eth0]", "me@host:22"]) assert.notEqual(hostDraft(form({ ssh }), []).body, null, ssh);
+  for (const ssh of ["mini", "me@mini.local", "me@10.0.0.4", "me@[fe80::1%eth0]"]) assert.notEqual(hostDraft(form({ ssh }), []).body, null, ssh);
   assert.equal(hostDraft(form({ from: "gone" }), ["box"]).body, null, "a host to copy that is not there");
 });
 

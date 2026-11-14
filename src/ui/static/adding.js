@@ -109,6 +109,13 @@ export function paneView(kind, d, live, held, name = "") {
 }
 
 /**
+ * Whether the addition may go to To push: not while the pane says the server refuses it or it does not apply, nor when the
+ * config would not load with it.
+ * @param {Pane} pane
+ */
+export const addable = (pane) => pane.state !== "refused" && pane.broken === null;
+
+/**
  * Whether Esc and Cancel may close the dialog. Not while a host is being set up: the run goes on without the page, and its
  * output is the only way to see how it ends.
  * @param {AddKind} kind @param {{ running: boolean }} init

@@ -50,6 +50,8 @@ export type Dropped = {
 export type Applied = { files: Files; changed: string[]; applied: EditOp[]; dropped: Dropped[] };
 
 const HOST_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+/** `shared` is the secrets file every host reads (`secrets/shared.enc.yaml`), so no host may be called that. The page says the same. */
+export const SHARED_HOST = "The name shared is reserved: it names the secrets file every host can read. Pick another name.";
 export const DEFAULTS_FILE = "hosts/_defaults.yaml";
 export const hostFile = (host: string): string => `hosts/${host}.yaml`;
 export const CATALOG_FILES = { servers: "catalog/mcp.yaml", sources: "catalog/skills.yaml", bundles: "catalog/skills.yaml" } as const;
@@ -110,7 +112,9 @@ function run(files: Files, op: EditOp): void {
       return addCatalog(files, "bundles", op.name, op.skills);
     case "addHost": {
       if (!HOST_NAME.test(op.host)) throw new Stale(`'${op.host}' is not a host name`);
-      if (hostFile(op.host) in files) throw new Stale(`${hostFile(op.host)} already exists`);
+      if (op.host.toLowerCase() === "shared") throw new Stale(SHARED_HOST);
+      const clash = Object.keys(files).find((f) => f.toLowerCase() === hostFile(op.host).toLowerCase());
+      if (clash !== undefined) throw new Stale(clash === hostFile(op.host) ? `${clash} already exists` : `${hostFile(op.host)} clashes with ${clash}: host names are compared without regard to case`);
       const source = op.from === null ? null : files[hostFile(op.from)];
       if (op.from !== null && source === undefined) throw new Stale(`${hostFile(op.from)} does not exist`);
       files[hostFile(op.host)] = newHostFile(op.ssh, source ?? null);
@@ -183,6 +187,8 @@ function remove(files: Files, op: Extract<EditOp, { op: "remove" }>): void {
 function addCatalog(files: Files, section: Section, name: string, entry: Value): void {
   const path = CATALOG_FILES[section];
   const text = files[path] ?? "";
-  if (entryNames(text, section).includes(name)) throw new Stale(`${section} already has '${name}' in ${path}`);
+  // Compared without case: a source is a directory of that name, a server a key some tools lower-case.
+  const same = entryNames(text, section).find((n) => n.toLowerCase() === name.toLowerCase());
+  if (same !== undefined) throw new Stale(same === name ? `'${name}' is already in the catalog` : `'${name}' clashes with '${same}', which is already in the catalog: names are compared without regard to case`);
   files[path] = addEntry(text, section, name, entry);
 }

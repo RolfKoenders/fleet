@@ -5,11 +5,11 @@ import { linkBanner, linkUsable, linkWord } from "./link.js";
 import { jobLabel, jobsOf, withJobs } from "./jobs.js";
 import { changed, counts, lineDiff, splitLines, tokenize } from "./diff.js";
 import { fill, h } from "./dom.js";
-import { ADD, CATALOG_KINDS, closable, confirmLabel, fileOf, freshAdd, hostAsDraft, paneView } from "./adding.js";
-import { bundleDraft, checkLines, cloneKey, confirmText, opWarnings, secretOf, secretsOf, serverDraft, skillChoices, sourceDraft, takeBack } from "./catalog.js";
+import { ADD, addable, CATALOG_KINDS, closable, confirmLabel, fileOf, freshAdd, hostAsDraft, paneView } from "./adding.js";
+import { bundleDraft, checkLines, cloneKey, confirmText, opWarnings, secretOf, secretsOf, serverDraft, skillChoices, sourceDraft, sourceInputs, takeBack } from "./catalog.js";
 import { blockers, DROPPED_BLOCKER, cellState, clickCell, opLabel, suggestMessage, summaryLine, WORDS } from "./matrix.js";
 import { confirmInit, elapsed, heldProblem, hostDraft, idleInit, initEnd, initLine, SETUP_DOC, startInit } from "./hosts.js";
-import { actionOf, afterSet, cellView, dialogTargets, heldNames, missingCount, valueProblem } from "./secrets.js";
+import { actionOf, afterSet, cellView, dialogTargets, heldNames, missingCount, retryText, valueProblem } from "./secrets.js";
 import { itemYaml, yamlPath, yamlTag } from "./yamlview.js";
 import { heldFiles, idlePush, plain, pushEnd, pushEvent, routeOf, statusView, tokenOf, writtenNotice } from "./state.js";
 
@@ -331,10 +331,11 @@ const hostNames = () => (model.base?.hosts ?? []).map((/** @type {any} */ x) => 
 /** What the open dialog would hold (a catalog edit, or a host request), or why it cannot yet. @param {import("./adding.js").AddState} f @returns {any} */
 function draftOf(f) {
   const view = shownMatrix();
-  if (f.kind === "server") return serverDraft(f.server, view.servers.map((/** @type {any} */ r) => r.name));
-  if (f.kind === "source") return sourceDraft(f.source, (view.sources ?? []).map((/** @type {any} */ r) => r.name), f.clone.doc);
+  const held = (/** @type {string} */ op) => model.ops.filter((/** @type {any} */ o) => o.op === op).map((/** @type {any} */ o) => o.name);
+  if (f.kind === "server") return serverDraft(f.server, view.servers.map((/** @type {any} */ r) => r.name), held("addServer"));
+  if (f.kind === "source") return sourceDraft(f.source, (view.sources ?? []).map((/** @type {any} */ r) => r.name), f.clone.doc, held("addSource"));
   if (f.kind === "host") return hostAsDraft(f.host, hostNames());
-  return bundleDraft(f.bundle, view.bundles.map((/** @type {any} */ r) => r.name), skillOptions());
+  return bundleDraft(f.bundle, view.bundles.map((/** @type {any} */ r) => r.name), skillOptions(), held("addBundle"));
 }
 
 /** The dialog element while one is open, and the control that opened it (focus goes back there). @type {HTMLDialogElement | null} */
@@ -510,7 +511,7 @@ async function lookAtRepo() {
   const f = model.form;
   if (f === null || client === null) return;
   const s = f.source;
-  if (s.repo.trim() === "" || f.clone.state === "running") return;
+  if (s.repo.trim() === "" || f.clone.state === "running" || Object.values(sourceInputs(s)).some((p) => p !== null)) return;
   const key = cloneKey(s);
   dropClone();
   f.clone = { state: "running", doc: null, error: null };
@@ -524,6 +525,8 @@ async function lookAtRepo() {
     f.clone = { state: "error", doc: null, error: said(e, "the repo could not be cloned") };
   }
   edited();
+  // The error is below the button, and may be past the end of what the dialog shows.
+  setTimeout(() => dialogEl?.querySelector(".cloneerr")?.scrollIntoView({ block: "nearest" }), 0);
 }
 
 async function runCheck() {
@@ -647,19 +650,21 @@ function sourceFields(f) {
   const s = f.source;
   const c = f.clone;
   const fresh = c.doc !== null && c.doc.key === cloneKey(s);
+  const typed = sourceInputs(s);
+  const wrong = (/** @type {string | null} */ p, /** @type {any} */ help) => (p === null ? help : h("span", { class: "bad" }, p));
   return [
     field("s-name", "Name", textInput("s-name", s.name, (v) => (s.name = v)), "What bundles and messages call it."),
-    field("s-repo", "Repo", textInput("s-repo", s.repo, (v) => (s.repo = v), { placeholder: "the repo URL, or a path on this machine" }), "A URL, or a path on this machine. It is cloned shallowly into a temp directory to list its skills, and the clone is deleted when you close this dialog."),
-    field("s-path", "Path in the repo", textInput("s-path", s.path, (v) => (s.path = v), { placeholder: "." }), "Where to look for skills: directories with a SKILL.md, at any depth. Use . for the whole repo."),
-    field("s-branch", "Branch", textInput("s-branch", s.branch, (v) => (s.branch = v), { placeholder: "the repo's default" })),
+    field("s-repo", "Repo", textInput("s-repo", s.repo, (v) => (s.repo = v), { placeholder: "the repo URL, or a path on this machine" }), wrong(typed.repo, "A URL, or a path on this machine. It is cloned shallowly into a temp directory to list its skills, and the clone is deleted when you close this dialog.")),
+    field("s-path", "Path in the repo", textInput("s-path", s.path, (v) => (s.path = v), { placeholder: "." }), wrong(typed.path, "Where to look for skills: directories with a SKILL.md, at any depth. Use . for the whole repo.")),
+    field("s-branch", "Branch", textInput("s-branch", s.branch, (v) => (s.branch = v), { placeholder: "the repo's default" }), typed.branch === null ? null : h("span", { class: "bad" }, typed.branch)),
     field("s-mode", "Keep it", seg("s-mode", ["pinned to a commit", "following the branch"], ["pin", "follow"], s.mode, (v) => (s.mode = v)), s.mode === "pin" ? "A pinned source moves only when you run fleet skills update, so a change upstream cannot reach your machines unreviewed." : "A followed source is on the newest commit of its branch at every apply. Use it for skills you write."),
     s.mode === "pin" ? h("div", { class: "field" }, check("s-review", "Review what a move brings in before the pin changes (review: true)", s.review, (v) => (s.review = v))) : null,
     h(
       "div",
       { class: "row" },
-      h("button", { type: "button", id: "s-look", class: "btn", disabled: s.repo.trim() === "" || c.state === "running", onclick: lookAtRepo }, c.state === "running" ? "Cloning..." : fresh ? "Look again" : "Look at the repo"),
-      c.state === "error" ? h("span", { class: "bad", role: "alert" }, c.error) : null,
+      h("button", { type: "button", id: "s-look", class: "btn", disabled: s.repo.trim() === "" || typed.repo !== null || typed.branch !== null || typed.path !== null || c.state === "running", onclick: lookAtRepo }, c.state === "running" ? "Cloning..." : fresh ? "Look again" : "Look at the repo"),
     ),
+    c.state === "error" ? h("div", { class: "notice bad inline cloneerr", role: "alert" }, c.error) : null,
     fresh && c.doc.problem === null
       ? h("div", { class: "found" }, h("div", { class: "muted" }, `${c.doc.skills.length} skill${c.doc.skills.length === 1 ? "" : "s"} found at ${c.doc.path}; head ${c.doc.commit.slice(0, 7)}${c.doc.headBranch ? ` on ${c.doc.headBranch}` : ""}`), h("div", { class: "row" }, ...c.doc.skills.slice(0, 40).map((/** @type {string} */ sk) => h("span", { class: "tag" }, sk))))
       : null,
@@ -721,10 +726,12 @@ function hostBlocked() {
   );
 }
 
+/** What the pane beside the form shows for the form as it is now. @param {any} f @param {any} d */
+const paneOf = (f, d) => paneView(f.kind, d, f.live, f.kind === "host" ? null : (model.held[fileOf(f.kind)]?.after ?? null), f.host.name);
+
 /** The pane beside the form: the file as a diff, or what is missing. @param {any} f @param {any} d */
 function filePane(f, d) {
-  const held = f.kind === "host" ? null : (model.held[fileOf(f.kind)]?.after ?? null);
-  const pane = paneView(f.kind, d, f.live, held, f.host.name);
+  const pane = paneOf(f, d);
   const head = h("div", { class: "ph" }, h("span", { class: "path" }, pane.path), h("span", { class: "spacer" }), h("span", { class: "tag " + pane.tone }, pane.tag));
   if (pane.state === "missing") return h("div", { class: "pane-file", id: "pane" }, head, h("div", { class: "hint" }, "To add it:", h("ul", {}, ...pane.problems.map((p) => h("li", {}, p)))));
   if (pane.state === "reading") return h("div", { class: "pane-file", id: "pane" }, head, h("div", { class: "hint" }, "Reading the file..."));
@@ -777,7 +784,9 @@ function dialogContent(f) {
   const fields = f.kind === "server" ? serverFields(f) : f.kind === "source" ? sourceFields(f) : f.kind === "bundle" ? bundleFields(f) : blocked ? [] : hostFields(f);
   const warnings = f.kind === "bundle" ? d.warnings.map((/** @type {string} */ w) => h("div", { class: "notice inline" }, w)) : [];
   const outside = (model.base?.outside ?? []).length > 0;
-  const ready = d.op !== null && (!host || (!outside && !running));
+  const pane = paneOf(f, d);
+  // Not while the pane says the server refuses it, it does not apply, or the config would not load with it.
+  const ready = d.op !== null && addable(pane) && (!host || (!outside && !running));
   const primary = done
     ? h("button", { type: "button", id: "add-done", class: "btn primary", onclick: closeAdd }, "Done")
     : h("button", { type: "submit", id: "add-confirm", class: "btn primary", disabled: !ready || !usable() || (host && f.confirm), "aria-describedby": "pane" }, running ? "Setting up..." : confirmLabel(f.kind));
@@ -1084,7 +1093,7 @@ function openSecretDialog(row, table) {
   const targets = dialogTargets(table, row);
   const input = h("input", {
     type: "password", id: "secret-value", "aria-label": `value of ${row.name}`,
-    autocomplete: "new-password", autocapitalize: "off", autocorrect: "off", spellcheck: "false", maxlength: "8192",
+    autocomplete: "new-password", autocapitalize: "off", autocorrect: "off", spellcheck: "false",
     "data-lpignore": "true", "data-1p-ignore": "true", "data-form-type": "other",
   });
   const boxes = targets.map((t) => h("input", { type: "checkbox", id: `st-${t.file}`, checked: t.checked, disabled: t.disabled }));
@@ -1140,7 +1149,7 @@ function openSecretDialog(row, table) {
       value = "";
       for (const el of [encrypt, cancel, input, ...boxes]) /** @type {HTMLButtonElement | HTMLInputElement} */ (el).disabled = false;
       encrypt.textContent = "Encrypt for push";
-      err.textContent = `${said(error, "the value could not be encrypted")} Type the value again.`;
+      err.textContent = retryText(said(error, "the value could not be encrypted"));
       input.focus();
     }
   });

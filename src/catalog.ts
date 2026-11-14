@@ -1,3 +1,4 @@
+import { REPO_CREDENTIALS, urlHoldsCredentials } from "./redact.ts";
 import { join } from "node:path";
 import { isObject, isStringList, parseFile } from "./yamlfile.ts";
 import type { Overlay } from "./yamlfile.ts";
@@ -49,6 +50,7 @@ function parseSource(at: string, name: string, raw: unknown, problems: string[])
   }
   const { repo, path, commit, track, branch, review } = raw;
   if (typeof repo !== "string" || repo === "") problems.push(`${where}: 'repo' must be a URL`);
+  else if (urlHoldsCredentials(repo)) problems.push(`${where}: ${REPO_CREDENTIALS}`);
   if (typeof path !== "string" || path === "" || path.startsWith("/") || path.split("/").includes("..")) {
     problems.push(`${where}: 'path' must be a directory inside the repo, without '..'`);
   }

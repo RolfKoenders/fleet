@@ -174,7 +174,7 @@ test("addSource and addBundle: the files are spliced like the entries before, an
     const p = await postJson(s, "/api/preview", { ops: [{ op: "addSource", name: "mine", entry }, { op: "addBundle", name: "extra", skills: ["notes", "debug"] }, { op: "addBundle", name: "core", skills: ["x"] }] });
     assert.equal(p.dropped.length, 1);
     assert.equal(p.dropped[0].why, "stale");
-    assert.match(p.dropped[0].reason, /already has 'core'/);
+    assert.match(p.dropped[0].reason, /'core' is already in the catalog/);
     const after = p.files.find((f: any) => f.path === "catalog/skills.yaml").after as string;
     assert.match(after, /sources:\n {2}local:[\s\S]*\n {2}mine:\n {4}repo: https:\/\/github.com\/you\/skills.git\n {4}path: skills\n {4}commit: a{40}\n {4}track: main\n {4}review: true\n/);
     assert.match(after, /bundles:\n {2}core: \[review\]\n {2}extra: \[notes, debug\]\n$/);

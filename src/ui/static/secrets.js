@@ -12,6 +12,11 @@
 /** The longest value the server takes (`MAX_VALUE` in `src/ui/secretset.ts`). */
 export const MAX_VALUE = 8192;
 
+// The words of these refusals are the server's (`src/ui/secretset.ts`): a test holds them equal.
+export const VALUE_EMPTY = "Type the value first.";
+export const VALUE_LONG = `The value is too long: a value can be at most ${MAX_VALUE} characters.`;
+export const VALUE_BLANK = "The value is only spaces: type the value itself.";
+
 /** The secrets file of a host, or `shared`. @param {string} owner */
 export const fileOf = (owner) => `secrets/${owner}.enc.yaml`;
 
@@ -20,10 +25,14 @@ export const isSecretOp = (op) => op?.op === "setSecret";
 
 /** Why a typed value cannot be sent, or null. Says nothing of what was typed. @param {string} value */
 export function valueProblem(value) {
-  if (value === "") return "Type the value first.";
-  if (value.length > MAX_VALUE) return `A value can be at most ${MAX_VALUE} characters.`;
+  if (value === "") return VALUE_EMPTY;
+  if (value.length > MAX_VALUE) return VALUE_LONG;
+  if (value.trim() === "") return VALUE_BLANK;
   return null;
 }
+
+/** A refusal followed by the ask to type again, as two sentences whether or not the message ends one. @param {string} message */
+export const retryText = (message) => `${message.replace(/[^.!?]$/, "$&.")} Type the value again.`;
 
 /**
  * How one cell reads: a mark, a word, a tone, and whether the value in it is held (encrypted, not written yet).

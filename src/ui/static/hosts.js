@@ -15,6 +15,38 @@ const NAME = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 /** An ssh destination: never starts with `-` (ssh would read it as an option), no space or control character. */
 const SSH = /^[A-Za-z0-9_][A-Za-z0-9._@:%+[\]-]*$/;
 
+// The words of these refusals are the server's (`src/ui/hostinit.ts`, `src/edit/ops.ts`): a test holds them equal.
+export const NAME_SHAPE = "Letters, digits, '.', '_' and '-', starting with a letter or digit.";
+export const NAME_LONG = "the name can be at most 64 characters.";
+export const SHARED_HOST = "The name shared is reserved: it names the secrets file every host can read. Pick another name.";
+export const SSH_EMPTY_HOST = "There is no host after the @: a destination such as user@host.";
+export const SSH_PORT = "Leave the port out: set Port for this host in ~/.ssh/config, and give only user@host here.";
+export const SSH_OPTION = "A destination cannot start with '-': ssh would read it as an option.";
+export const SSH_SHAPE = "A destination such as user@host: no spaces or other symbols.";
+
+/**
+ * Why a host name is refused apart from its shape, or null: `shared` is a secrets file, and a name that differs from another
+ * only in case is the same file on some disks (`nameClash` in `src/ui/hostinit.ts`).
+ * @param {string} name @param {string[]} existing
+ */
+export function nameClash(name, existing) {
+  if (name.toLowerCase() === "shared") return SHARED_HOST;
+  const same = existing.find((e) => e.toLowerCase() === name.toLowerCase());
+  if (same === undefined) return null;
+  return same === name ? `${name} is already a host.` : `${name} is too close to the host ${same}: names are compared without regard to case.`;
+}
+
+/** Why an ssh destination is refused, or null (`sshProblem` in `src/ui/hostinit.ts`). @param {string} ssh */
+export function sshProblem(ssh) {
+  if (ssh.startsWith("-")) return SSH_OPTION;
+  if (ssh.length > 255 || !SSH.test(ssh)) return SSH_SHAPE;
+  const host = ssh.slice(ssh.lastIndexOf("@") + 1);
+  if (host === "") return SSH_EMPTY_HOST;
+  // One colon (or `]:`) is a port; several without brackets is an IPv6 address.
+  if (/^[^:]+:\d*$/.test(host) || /\]:\d*$/.test(host)) return SSH_PORT;
+  return null;
+}
+
 /** Where to send a person whose machine fleet cannot reach over ssh. */
 export const SETUP_DOC = "https://github.com/RolfKoenders/fleet/blob/main/docs/setting-up-machines.md";
 
@@ -32,15 +64,11 @@ export function hostDraft(form, existing) {
   const ssh = form.ssh.trim();
   /** @type {string | null} */
   let nameProblem = null;
-  if (name !== "") {
-    if (name.length > 64 || !NAME.test(name)) nameProblem = "Letters, digits, '.', '_' and '-', starting with a letter or digit.";
-    else if (existing.includes(name)) nameProblem = `${name} is already a host.`;
-  }
+  if (name !== "") nameProblem = !NAME.test(name) ? NAME_SHAPE : name.length > 64 ? NAME_LONG : nameClash(name, existing);
   /** @type {string | null} */
-  let sshProblem = null;
-  if (ssh !== "" && (ssh.length > 255 || !SSH.test(ssh))) sshProblem = ssh.startsWith("-") ? "A destination cannot start with '-': ssh would read it as an option." : "A destination such as user@host: no spaces or other symbols.";
-  const ok = name !== "" && ssh !== "" && nameProblem === null && sshProblem === null && (form.from === "" || existing.includes(form.from));
-  return { body: ok ? { name, ssh, from: form.from === "" ? null : form.from } : null, name: nameProblem, ssh: sshProblem };
+  const sshBad = ssh === "" ? null : sshProblem(ssh);
+  const ok = name !== "" && ssh !== "" && nameProblem === null && sshBad === null && (form.from === "" || existing.includes(form.from));
+  return { body: ok ? { name, ssh, from: form.from === "" ? null : form.from } : null, name: nameProblem, ssh: sshBad };
 }
 
 /**

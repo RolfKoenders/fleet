@@ -103,6 +103,31 @@ test("the host file is previewed before anything is confirmed: the same text ini
   });
 });
 
+test("a host name that clashes with another without regard to case, or is `shared`, or an ssh target with no host or a port, is refused and nothing is touched", async () => {
+  await withServer(async (s, w) => {
+    const head = git(w.clone, "rev-parse", "HEAD");
+    const box = readFileSync(join(w.clone, "hosts/box.yaml"), "utf8");
+    for (const [over, status, words] of [
+      [{ name: "BOX" }, 409, /too close to the host box/],
+      [{ name: "shared" }, 400, /shared is reserved/],
+      [{ name: "SHARED" }, 400, /shared is reserved/],
+      [{ ssh: "bob@" }, 400, /no host after the @/],
+      [{ ssh: "bob@mini:22" }, 400, /~\/\.ssh\/config/],
+    ] as const) {
+      for (const path of ["/api/hosts/preview", "/api/hosts/init"]) {
+        const res = await fetch(`${base(s)}${path}`, { method: "POST", headers: { "x-fleet-token": s.token, origin: base(s), "content-type": "application/json" }, body: JSON.stringify(mini(over)) });
+        assert.equal(res.status, status, `${path} ${JSON.stringify(over)}`);
+        assert.match(((await res.json()) as any).messages[0], words, `${path} ${JSON.stringify(over)}`);
+      }
+    }
+    // The file that was there is the file that is there: a refusal never removes or rewrites what it did not create.
+    assert.equal(readFileSync(join(w.clone, "hosts/box.yaml"), "utf8"), box);
+    assert.equal(existsSync(join(w.clone, "hosts/BOX.yaml")) && !existsSync(join(w.clone, "hosts/box.yaml")), false);
+    assert.equal(git(w.clone, "rev-parse", "HEAD"), head);
+    assert.deepEqual(w.sshCalls(), []);
+  });
+});
+
 test("a host from the defaults: the file is written, the real init sets it up over ssh and commits and pushes, and its output is streamed", async () => {
   await withServer(async (s, w) => {
     const { state, done } = watch(s);
