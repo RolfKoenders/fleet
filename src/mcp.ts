@@ -3,6 +3,7 @@ import { SETTINGS_FILE } from "./settings.ts";
 import type { DesiredKey, Tool } from "./settings.ts";
 import { fillVars, hasSecretRef } from "./template.ts";
 import { isObject, isStringList, parseFile } from "./yamlfile.ts";
+import type { Overlay } from "./yamlfile.ts";
 import type { Obj } from "./yamlfile.ts";
 
 /** Where Claude keeps its user-scope servers. Fleet writes its entries holding Claude's lock; see `claudemcp.ts`. */
@@ -74,10 +75,10 @@ function parseServer(at: string, name: string, raw: unknown, problems: string[])
   };
 }
 
-export function parseMcpCatalog(configDir: string, problems: string[]): Map<string, Server> {
+export function parseMcpCatalog(configDir: string, problems: string[], overlay?: Overlay): Map<string, Server> {
   const path = join(configDir, "catalog/mcp.yaml");
   const servers = new Map<string, Server>();
-  const doc = parseFile(path, true, problems);
+  const doc = parseFile(path, true, problems, overlay);
   if (doc === null) return servers;
   for (const key of Object.keys(doc)) {
     if (key !== "servers") problems.push(`${path}: unknown key '${key}'`);
@@ -113,7 +114,7 @@ function launch(command: string[], env: Record<string, string>, node: string): {
   return { command: [join(bin, "npx"), ...command.slice(1)], env: { ...env, PATH: `${bin}:/usr/local/bin:/usr/bin:/bin` } };
 }
 
-function renderFor(tool: Tool, server: Server, node: string): Obj {
+export function renderFor(tool: Tool, server: Server, node: string): Obj {
   if (server.command !== null) {
     const { command, env } = launch(server.command, server.env, node);
     return tool === "claude"

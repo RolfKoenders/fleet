@@ -54,13 +54,13 @@ export function failure(error: unknown): Result | null {
  * Validates the config, reads the host and plans. Writes nothing. `repoConflicts` are those already met
  * while syncing the repos, reported together with the sources' own.
  */
-function prepare(configDir: string, home: string, sources: SourceMode, repoConflicts: Conflict[] = []): Planned | Result {
+function prepare(configDir: string, home: string, sources: SourceMode, repoConflicts: Conflict[] = [], overlay?: Readonly<Record<string, string>>): Planned | Result {
   const host = readHostName(home);
   if (host === null) {
     return { code: "invalid", messages: ["fleet: no host name set; `fleet init <host>` writes one"] };
   }
   try {
-    const config = loadConfig(configDir, host, { home, sources });
+    const config = loadConfig(configDir, host, { home, sources, overlay });
     const state = readState(home);
     // A source that could not be put in place hides its skills, so planning would only invent removals.
     const repos = [...repoConflicts, ...config.conflicts];
@@ -150,8 +150,8 @@ export function planConflicts(configDir: string, home: string): Conflict[] | Res
   return isResult(planned) ? planned : conflictsOf(planned.plan);
 }
 
-export function diff(configDir: string, color: boolean, home: string = homedir()): Result {
-  const planned = prepare(configDir, home, "diff");
+export function diff(configDir: string, color: boolean, home: string = homedir(), overlay?: Readonly<Record<string, string>>): Result {
+  const planned = prepare(configDir, home, "diff", [], overlay);
   if (isResult(planned)) return planned;
   return report(planned.plan, { create: "create", update: "update", remove: "remove", forget: "forget" }, color);
 }

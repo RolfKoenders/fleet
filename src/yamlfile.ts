@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { relative } from "node:path";
 import { load } from "../vendor/js-yaml.mjs";
 
 export type Obj = Record<string, unknown>;
@@ -6,11 +7,15 @@ export type Obj = Record<string, unknown>;
 export const isObject = (v: unknown): v is Obj => typeof v === "object" && v !== null && !Array.isArray(v);
 export const isStringList = (v: unknown): v is string[] => Array.isArray(v) && v.every((x) => typeof x === "string");
 
-/** Reads a YAML map. Problems are appended to `problems`; a missing optional file is null without one. */
-export function parseFile(path: string, optional: boolean, problems: string[]): Obj | null {
+/** Texts that stand in for files of the config repo at `root`, keyed by repo-relative path. Held edits, not yet on disk. */
+export type Overlay = { root: string; files: Readonly<Record<string, string>> };
+
+/** Reads a YAML map. Problems are appended to `problems`; a missing optional file is null without one. A file in `overlay` is read from there instead of from disk. */
+export function parseFile(path: string, optional: boolean, problems: string[], overlay?: Overlay): Obj | null {
   let text: string;
   try {
-    text = readFileSync(path, "utf8");
+    const held = overlay ? relative(overlay.root, path) : null;
+    text = held !== null && Object.hasOwn(overlay!.files, held) ? overlay!.files[held]! : readFileSync(path, "utf8");
   } catch (error) {
     if (optional && (error as NodeJS.ErrnoException).code === "ENOENT") return null;
     problems.push(`${path}: cannot read: ${(error as Error).message}`);
@@ -18,7 +23,8 @@ export function parseFile(path: string, optional: boolean, problems: string[]): 
   }
   let doc: unknown;
   try {
-    doc = load(text, { filename: path });
+    // Comments and blank lines alone are an empty file, not a missing document.
+    doc = text.split("\n").every((line) => /^\s*(#.*)?$/.test(line)) ? null : load(text, { filename: path });
   } catch (error) {
     problems.push(`${path}: ${(error as Error).message.split("\n")[0]}`);
     return null;

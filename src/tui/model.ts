@@ -5,7 +5,7 @@ import { hasSecretRef } from "../template.ts";
 import { hostNames } from "../recipients.ts";
 import { hostTargets } from "../targets.ts";
 import { isObject, isStringList, parseFile } from "../yamlfile.ts";
-import type { Obj } from "../yamlfile.ts";
+import type { Obj, Overlay } from "../yamlfile.ts";
 
 export type HostInfo = { name: string; ssh: string | null; self: boolean };
 
@@ -30,12 +30,16 @@ export type Row = {
   cells: Record<string, Cell>;
 };
 
+export type SourceInfo = { name: string; repo: string; path: string; commit: string | null; track: string | null; branch: string | null; review: boolean };
+
 export type Model = {
   configDir: string;
   self: string | null;
   hosts: HostInfo[];
   bundles: Row[];
   servers: Row[];
+  /** The skill sources of the catalog, as written. */
+  sources: SourceInfo[];
   /** Why the config could not be read in full. Shown, never thrown: the bridge opens on a broken config too. */
   problems: string[];
 };
@@ -51,15 +55,19 @@ function cellFor(name: string, adds: string[][], excludes: string[][]): Cell {
   return { on: picked !== null && excluded === null, picked, excluded };
 }
 
-/** What the config says each host gets, computed from the files alone: no host is touched, no clone is made. */
-export function loadModel(configDir: string, self: string | null): Model {
+/**
+ * What the config says each host gets, computed from the files alone: no host is touched, no clone is made. Files in
+ * `overlay` (repo-relative path to text) stand in for the ones on disk, to show a config that is not written yet.
+ */
+export function loadModel(configDir: string, self: string | null, held?: Readonly<Record<string, string>>): Model {
+  const overlay: Overlay | undefined = held && { root: configDir, files: held };
   const problems: string[] = [];
-  const defaults = parseFile(join(configDir, "hosts/_defaults.yaml"), true, problems);
-  const targets = hostTargets(configDir, null, problems);
+  const defaults = parseFile(join(configDir, "hosts/_defaults.yaml"), true, problems, overlay);
+  const targets = hostTargets(configDir, null, problems, overlay);
   const docs = new Map<string, Obj | null>();
-  for (const name of hostNames(configDir)) docs.set(name, parseFile(join(configDir, "hosts", `${name}.yaml`), false, problems));
-  const catalog = parseCatalog(configDir, problems);
-  const servers = parseMcpCatalog(configDir, problems);
+  for (const name of hostNames(configDir)) docs.set(name, parseFile(join(configDir, "hosts", `${name}.yaml`), false, problems, overlay));
+  const catalog = parseCatalog(configDir, problems, overlay);
+  const servers = parseMcpCatalog(configDir, problems, overlay);
 
   // This host first, then the others by name.
   const hosts: HostInfo[] = targets.map((t) => ({ name: t.host, ssh: t.ssh, self: t.host === self })).sort((a, b) => Number(b.self) - Number(a.self));
@@ -85,7 +93,7 @@ export function loadModel(configDir: string, self: string | null): Model {
       },
     }),
   );
-  return { configDir, self, hosts, bundles, servers: serverRows, problems };
+  return { configDir, self, hosts, bundles, servers: serverRows, sources: catalog.sources, problems };
 }
 
 /** The rows of the matrix as shown: bundles, then servers, with the skills of the bundles named in `expanded` under them. */

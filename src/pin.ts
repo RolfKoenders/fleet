@@ -1,5 +1,6 @@
 import { join } from "node:path";
 import { isObject, parseFile } from "./yamlfile.ts";
+import type { Overlay } from "./yamlfile.ts";
 
 /** The tool commit a config pins, from `fleet.yaml` at the config repo's root. */
 export type Pin = {
@@ -15,9 +16,9 @@ export const TRACK_RELEASES = "releases";
 export const PIN_FILE = "fleet.yaml";
 const COMMIT = /^[0-9a-f]{40}$/;
 
-export function readPin(configDir: string, problems: string[]): Pin | null {
+export function readPin(configDir: string, problems: string[], overlay?: Overlay): Pin | null {
   const path = join(configDir, PIN_FILE);
-  const doc = parseFile(path, false, problems);
+  const doc = parseFile(path, false, problems, overlay);
   if (doc === null) return null;
 
   const before = problems.length;

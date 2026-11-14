@@ -9,6 +9,8 @@ import { secretNames } from "../template.ts";
 import { estimateTokens } from "../tokens.ts";
 import { findTool } from "../tools.ts";
 import { parseFile } from "../yamlfile.ts";
+import { parseSopsText } from "../edit/secretfile.ts";
+import type { SopsFile } from "../edit/secretfile.ts";
 
 /**
  * What the browsing screens read, all of it read-only: git history of the config repo, the clear text keys of
@@ -73,31 +75,8 @@ export const isSecretsFile = (path: string): boolean => /^secrets\/[^/]+\.enc\.y
 
 const PATCH_LINES = 2000;
 
-export type SopsFile = {
-  /** Clear text keys with their (encrypted) value text and 1-based line. The value is only compared, never shown. */
-  entries: Map<string, { line: number; value: string }>;
-  recipients: string[];
-};
-
-/** The top-level keys of a sops file and the age recipients of its `sops:` block. Ignores `mac` and `lastmodified`. */
-export function parseSopsText(text: string): SopsFile {
-  const entries = new Map<string, { line: number; value: string }>();
-  const recipients: string[] = [];
-  let inSops = false;
-  text.split("\n").forEach((raw, i) => {
-    const top = /^([A-Za-z_][A-Za-z0-9_.-]*):(?:[ \t]+(.*))?$/.exec(raw);
-    if (top) {
-      inSops = top[1] === "sops";
-      if (!inSops) entries.set(top[1]!, { line: i + 1, value: top[2] ?? "" });
-      return;
-    }
-    if (inSops) {
-      const r = /recipient:\s*(age1[a-z0-9]+)/.exec(raw);
-      if (r) recipients.push(r[1]!);
-    }
-  });
-  return { entries, recipients: [...new Set(recipients)].sort() };
-}
+export { parseSopsText };
+export type { SopsFile };
 
 function compareSops(file: string, before: SopsFile, after: SopsFile): SecretsChange {
   const added = [...after.entries.keys()].filter((k) => !before.entries.has(k));
