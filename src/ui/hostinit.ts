@@ -120,7 +120,7 @@ function runChild(toolDir: string, configDir: string, home: string, name: string
     const child = spawn(join(toolDir, "bin/fleet"), ["init", name], {
       detached: true,
       stdio: ["ignore", "pipe", "pipe"],
-      env: { ...process.env, NO_COLOR: "1", FLEET_NODE: probedNode(), FLEET_CONFIG: configDir, HOME: home },
+      env: { ...process.env, NO_COLOR: "1", FLEET_INIT_PROGRESS: "1", FLEET_NODE: probedNode(), FLEET_CONFIG: configDir, HOME: home },
     });
     const pending = { out: "", err: "" };
     const take = (which: "out" | "err") => (chunk: string) => {

@@ -122,7 +122,11 @@ test("a host from the defaults: the file is written, the real init sets it up ov
     assert.ok(w.timerOn());
     // The output came over the stream while it ran, and the end after it.
     assert.match(state.seen, /event: init\ndata: \{"text":"\$ fleet init mini"\}/);
-    assert.match(state.seen, /1\. prerequisites/);
+    // Each step says when it starts and how it ended, as it happens, not in one report at the end.
+    assert.match(state.seen, /"text":"step 1\/\d+ prerequisites \.\.\."/);
+    assert.match(state.seen, /"text":"step 1\/\d+ prerequisites: (done|unchanged)/);
+    assert.match(state.seen, /"text":"step \d+\/\d+ timer: done/);
+    assert.ok(state.seen.indexOf("prerequisites ...") < state.seen.indexOf("clone ..."), "in order");
     assert.match(state.seen, /event: initend\ndata: \{"ok":true,"code":"ok"/);
     assert.ok(state.seen.indexOf('"text":"$ fleet init mini"') < state.seen.indexOf("event: initend"));
   });

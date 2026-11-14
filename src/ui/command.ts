@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import type { Result } from "../output.ts";
 import { startUi } from "./server.ts";
+import type { Job } from "./jobs.ts";
 
 export type Opener = (url: string) => void;
 
@@ -48,10 +49,21 @@ export async function ui(c: UiCommand): Promise<Result> {
   if (c.open && !remote) (c.opener ?? openBrowser)(server.url);
   else if (remote) out(`This looks like an ssh session. From your own machine: ssh -L ${server.port}:127.0.0.1:${server.port} <this host>, then open the URL above there.\n`);
   out("Press ctrl-c to stop.\n");
-  const abort = () => void server.close();
+  /** What was running when ctrl-c came: a push or an init is its own process and finishes without the page. */
+  let left: Job[] = [];
+  const abort = () => {
+    left = server.running().filter((j) => j.kind === "push" || j.kind === "init");
+    void server.close();
+  };
   if (c.signal?.aborted) abort();
   c.signal?.addEventListener("abort", abort, { once: true });
   const why = await server.stopped;
   c.signal?.removeEventListener("abort", abort);
-  return { code: "ok", text: why === "idle" ? "fleet ui stopped: no page was connected for a while" : "fleet ui stopped" };
+  const notes = left.map((j) =>
+    j.kind === "push"
+      ? "A push is still running. It finishes on its own; see how it went with 'fleet status'."
+      : `Setting up ${j.name ?? "a host"} (fleet init) is still running. It finishes on its own, but nothing will tidy up after it: if it fails, hosts/${j.name ?? "<name>"}.yaml stays in the config repo until you run 'fleet init ${j.name ?? "<name>"}' again or remove it. See how it went with 'fleet status'.`,
+  );
+  const stopped = why === "idle" ? "fleet ui stopped: no page was connected for a while" : "fleet ui stopped";
+  return { code: "ok", text: [stopped, ...notes].join("\n") };
 }

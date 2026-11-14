@@ -19,6 +19,7 @@ import { yamlOf, yamlRequest } from "./yamlview.ts";
 import { addHost, hostFields, hostRequest, previewHost } from "./hostinit.ts";
 import type { FleetEvent } from "../events.ts";
 import type { PushEnd } from "../pushrun.ts";
+import type { Job } from "./jobs.ts";
 
 /**
  * The page's API. Every route is JSON under `/api/`, behind the server's checks (Host, Origin on a write, the token),
@@ -100,8 +101,8 @@ export type ApiDeps = {
   home: string;
   /** Sends one Server-Sent Event to every open stream. */
   broadcast(event: string, data: unknown): void;
-  /** Marks a long job as running, so the server does not stop itself under it. Returns the call that says it ended. */
-  busy(): () => void;
+  /** Marks a long job as running, so the server does not stop itself under it, and tells the pages which one. Returns the call that says it ended. */
+  busy(job: Job): () => void;
   /** The temp clones of the Add-a-skill-source form; the server clears them when it stops. */
   clones: CloneStore;
 };
@@ -121,7 +122,7 @@ export function routes(deps: ApiDeps): Route[] {
       path: "/api/push",
       handle: async (req) => {
         const message = messageOf(await req.json());
-        const done = deps.busy();
+        const done = deps.busy({ kind: "push" });
         try {
           const end = await runPush(message);
           return { status: end.code === "locked" ? 409 : end.exit === null ? 500 : 200, body: pushDoc(end) };
@@ -171,7 +172,7 @@ export function routes(deps: ApiDeps): Route[] {
         if (typeof repo !== "string") throw new BadRequest("repo must be a string");
         if (path !== undefined && typeof path !== "string") throw new BadRequest("path must be a string");
         if (branch !== undefined && typeof branch !== "string") throw new BadRequest("branch must be a string");
-        const done = deps.busy();
+        const done = deps.busy({ kind: "clone" });
         try {
           return { status: 200, body: { ok: true, ...(await deps.clones.create(repo, path ?? ".", branch === undefined || branch === "" ? null : branch)) } };
         } catch (error) {
@@ -202,7 +203,7 @@ export function routes(deps: ApiDeps): Route[] {
         if (typeof body !== "object" || body === null || (body as Record<string, unknown>).confirm !== true) throw new BadRequest("the check runs the server with real credentials: it must be confirmed");
         const op = opsOf({ ops: [{ op: "addServer", name: (body as Record<string, unknown>).name, entry: (body as Record<string, unknown>).entry }] })[0]!;
         if (op.op !== "addServer") throw new BadRequest("the check takes one server");
-        const done = deps.busy();
+        const done = deps.busy({ kind: "check", name: op.name });
         try {
           return { status: 200, body: { ok: true, ...(await checkEntry(deps.configDir, readHostName(deps.home), deps.home, op.name, op.entry)) } };
         } finally {
@@ -247,7 +248,7 @@ export function routes(deps: ApiDeps): Route[] {
       path: "/api/hosts/init",
       handle: async (req) => {
         const request = hostRequest(await req.json());
-        const done = deps.busy();
+        const done = deps.busy({ kind: "init", name: request.name });
         try {
           // The lock is held for the whole init: it does not take the push lock itself, and a push must not run under it.
           let release: () => void;
@@ -277,7 +278,7 @@ export function routes(deps: ApiDeps): Route[] {
         // The body holds a secret's value. It is read here and handed to `setSecret`, and goes nowhere else: not a log, not an
         // error message, not the event stream, not the answer, which holds the encrypted file and nothing more.
         const request = setRequest(await req.json(), deps.configDir);
-        const done = deps.busy();
+        const done = deps.busy({ kind: "secret", name: request.name });
         try {
           const out = setSecret(deps.configDir, deps.home, request);
           if ("refused" in out) return refused(out.refused.status, out.refused.code, out.refused.message, out.refused.extra);
@@ -295,7 +296,7 @@ export function routes(deps: ApiDeps): Route[] {
         const ops = heldOps(body);
         const message = messageOf(body);
         if (message === undefined || message.trim() === "") throw new BadRequest("a commit message is required");
-        const done = deps.busy();
+        const done = deps.busy({ kind: "push" });
         try {
           // The lock is held while the files are written and committed, so no push starts under it, and let go before
           // the real push, which takes it itself.

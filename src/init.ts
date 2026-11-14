@@ -482,10 +482,18 @@ const STEPS: { name: string; run: (ctx: Ctx) => Outcome | Promise<Outcome> }[] =
   { name: "timer", run: timer },
 ];
 
+/**
+ * Set by `fleet ui`, which runs init as a child and relays what it prints as it comes. Each step then says on stderr when it
+ * starts and how it ended, instead of the whole report arriving at the end, and the report leaves out the list of steps it
+ * has already shown. The normal output and `--json` are the same without it.
+ */
+const progress = () => process.env.FLEET_INIT_PROGRESS === "1";
+const say = (text: string) => void process.stderr.write(`${text}\n`);
+
 function finish(ctx: Ctx, color: boolean, result: Result): Result {
   const shown = (s: StepRecord) => (s.state === "done" ? paint(color, "green", s.state) : s.state === "failed" ? paint(color, "yellow", s.state) : s.state);
   const lines = ctx.steps.map((s) => `${s.step}. ${s.name}: ${shown(s)}${s.detail ? ` (${s.detail})` : ""}`);
-  const blocks = [lines.join("\n")];
+  const blocks = progress() ? [] : [lines.join("\n")];
   if (result.text) blocks.push(result.text);
   if (ctx.checklist.length > 0) {
     blocks.push(`Do these by hand on ${ctx.host}, then run 'fleet init ${ctx.host}' again:\n${ctx.checklist.map((i) => `  [ ] ${i}`).join("\n")}`);
@@ -521,18 +529,23 @@ export async function init(configDir: string, name: string | undefined, color: b
 
     for (const [i, step] of STEPS.entries()) {
       current = i;
+      const at = `step ${i + 1}/${STEPS.length} ${step.name}`;
+      if (progress()) say(`${at} ...`);
       const outcome = await step.run(ctx);
       if ("stop" in outcome) {
         ctx.steps.push({ step: i + 1, name: step.name, state: "failed" });
+        if (progress()) say(`${at}: failed`);
         return finish(ctx, color, outcome.stop);
       }
       ctx.steps.push({ step: i + 1, name: step.name, state: outcome.changed ? "done" : "unchanged", ...(outcome.detail ? { detail: outcome.detail } : {}) });
+      if (progress()) say(`${at}: ${outcome.changed ? "done" : "unchanged"}${outcome.detail ? ` (${outcome.detail})` : ""}`);
     }
     return finish(ctx, color, { code: "ok", text: schedulerFor(ctx.os).done(ctx.host) });
   } catch (error) {
     const result = failure(error) ?? { code: "error" as const, messages: [`fleet: ${(error as Error).message}`] };
     if (ctx === null) return result;
     ctx.steps.push({ step: current + 1, name: STEPS[current]!.name, state: "failed" });
+    if (progress()) say(`step ${current + 1}/${STEPS.length} ${STEPS[current]!.name}: failed`);
     return finish(ctx, color, result);
   }
 }

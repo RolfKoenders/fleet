@@ -6,6 +6,8 @@ import { extname, join, sep } from "node:path";
 import { BadRequest, routes } from "./api.ts";
 import type { ApiResponse } from "./api.ts";
 import { CloneStore } from "./clones.ts";
+import { Jobs } from "./jobs.ts";
+import type { Job } from "./jobs.ts";
 
 /**
  * The server behind `fleet ui`. It can write config and push, so it must be reachable by you and nothing else:
@@ -35,6 +37,8 @@ export type UiServer = {
   port: number;
   token: string;
   address: string;
+  /** The jobs running now. A push or an init is a child process that goes on when the server stops. */
+  running(): Job[];
   /** Resolves when the server has stopped: `idle` for the timeout, `closed` for `close()`. */
   stopped: Promise<"idle" | "closed">;
   close(): Promise<void>;
@@ -66,15 +70,17 @@ export async function startUi(options: UiOptions): Promise<UiServer> {
   const staticDir = options.staticDir ?? join(import.meta.dirname, "static");
   const idleMs = options.idleMs ?? IDLE_MS;
   const streams = new Set<ServerResponse>();
-  let jobs = 0;
   let port = 0;
   let idleTimer: NodeJS.Timeout | null = null;
   let stop!: (why: "idle" | "closed") => void;
   const stopped = new Promise<"idle" | "closed">((resolve) => (stop = resolve));
 
+  const sendTo = (stream: ServerResponse, event: string, data: unknown) => void stream.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
   const broadcast = (event: string, data: unknown) => {
-    for (const stream of streams) stream.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+    jobs.record(event, data);
+    for (const stream of streams) sendTo(stream, event, data);
   };
+  const jobs = new Jobs((list) => broadcast("jobs", { jobs: list }));
   const clones = new CloneStore();
   const api = routes({
     clones,
@@ -82,11 +88,11 @@ export async function startUi(options: UiOptions): Promise<UiServer> {
     configDir: options.configDir,
     home: options.home,
     broadcast,
-    busy: () => {
-      jobs++;
+    busy: (job: Job) => {
       if (idleTimer) clearTimeout(idleTimer);
+      const ended = jobs.start(job);
       return () => {
-        jobs--;
+        ended();
         armIdle();
       };
     },
@@ -102,7 +108,7 @@ export async function startUi(options: UiOptions): Promise<UiServer> {
   function armIdle(): void {
     if (idleTimer) clearTimeout(idleTimer);
     idleTimer = null;
-    if (streams.size > 0 || jobs > 0) return;
+    if (streams.size > 0 || jobs.count > 0) return;
     idleTimer = setTimeout(() => void shutdown("idle"), idleMs);
     idleTimer.unref();
   }
@@ -154,7 +160,10 @@ export async function startUi(options: UiOptions): Promise<UiServer> {
 
   function openStream(req: IncomingMessage, res: ServerResponse): void {
     res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-store", connection: "keep-alive", "x-content-type-options": "nosniff" });
-    res.write(`event: hello\ndata: ${JSON.stringify({ pushing: jobs > 0 })}\n\n`);
+    // Which jobs run, then the events of the push or init among them so far, so a page that joins mid-run catches up.
+    const running = jobs.list();
+    sendTo(res, "hello", { pushing: running.some((j) => j.kind === "push"), jobs: running });
+    for (const { event, data } of jobs.replay()) sendTo(res, event, data);
     streams.add(res);
     armIdle();
     const beat = setInterval(() => res.write(": keep-alive\n\n"), HEARTBEAT_MS);
@@ -191,7 +200,7 @@ export async function startUi(options: UiOptions): Promise<UiServer> {
   if (address === null || typeof address === "string") throw new Error("the server has no address");
   port = address.port;
   armIdle();
-  return { url: `http://127.0.0.1:${port}/#t=${token}`, port, token, address: address.address, stopped, close: () => shutdown("closed") };
+  return { url: `http://127.0.0.1:${port}/#t=${token}`, port, token, address: address.address, running: () => jobs.list(), stopped, close: () => shutdown("closed") };
 }
 
 const headerToken = (req: IncomingMessage): string | null => {

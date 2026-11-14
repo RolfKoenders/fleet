@@ -223,7 +223,9 @@ test("write: a stale edit, an edit that breaks a host, and nothing to write are 
     const head = git(w.clone, "rev-parse", "HEAD");
     const stale = await post(s, "/api/write", { ops: [add("laptop", "docs")], message: "x" });
     assert.equal(stale.status, 409);
-    assert.equal(((await stale.json()) as any).code, "stale");
+    const refusal = (await stale.json()) as any;
+    assert.equal(refusal.code, "stale");
+    assert.match(refusal.messages[0], /^fleet: 1 edit no longer applies to the files on disk$/);
     const broken = await post(s, "/api/write", { ops: [add("remote", "nope", "bundles")], message: "x" });
     assert.equal(broken.status, 422);
     assert.equal(((await broken.json()) as any).code, "invalid");

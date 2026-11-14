@@ -156,7 +156,7 @@ export function writeAndCommit(configDir: string, ops: readonly EditOp[], messag
   if (unfit !== null) throw new WriteRefused("invalid", unfit);
   const before = readFiles(configDir);
   const result = applyOps(before, ops);
-  if (result.dropped.length > 0) throw new WriteRefused("stale", `${result.dropped.length} edit${result.dropped.length === 1 ? "" : "s"} no longer apply to the files on disk`, { dropped: result.dropped });
+  if (result.dropped.length > 0) throw new WriteRefused("stale", result.dropped.length === 1 ? "1 edit no longer applies to the files on disk" : `${result.dropped.length} edits no longer apply to the files on disk`, { dropped: result.dropped });
   if (result.changed.length === 0) throw new WriteRefused("nothing", "there is nothing to write");
   const failed = validate(configDir, result.files);
   if (failed.length > 0) throw new WriteRefused("invalid", `the edited config does not load for ${failed.map((f) => f.host).join(", ")}`, { problems: failed });
