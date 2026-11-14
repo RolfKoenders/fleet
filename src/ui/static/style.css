@@ -304,3 +304,4 @@ html.modal main { overflow: hidden; }
 .pageact { display: flex; gap: var(--space-2); flex-wrap: wrap; justify-content: flex-end; }
 .card dl + .row { margin-top: 10px; }
 [hidden] { display: none !important; }
+.notice.cloneerr { margin: 10px 0 0; overflow-wrap: anywhere; }

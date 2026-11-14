@@ -22,6 +22,50 @@ const ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
 const HEADER_NAME = /^[A-Za-z0-9][A-Za-z0-9-]*$/;
 const SECRET_NAME = /^[A-Z][A-Z0-9_]*$/;
 const RESERVED = ["fleet", "synced", ".trash"];
+const BRANCH = /^[A-Za-z0-9][A-Za-z0-9._/-]*$/;
+/** The longest name of a server, source or bundle (`MAX_NAME` in `src/ui/opsof.ts`). */
+export const MAX_NAME = 64;
+
+// The words of these refusals are the server's (`src/redact.ts`, `src/ui/opsof.ts`): a test holds them equal.
+export const URL_SPACE = "the URL must not hold a space or a control character";
+export const MCP_URL_CREDENTIALS = "the URL must not hold credentials (user:password@): put them in 'headers' as secret:NAME";
+export const REPO_CREDENTIALS = "the repo must not hold credentials (user:password@): use a git credential helper or an ssh key, never the URL";
+
+/** Credentials in a URL: any userinfo in an http(s) URL, or a password in the userinfo of any other (`urlHoldsCredentials` in `src/redact.ts`). @param {string} url */
+export const holdsCredentials = (url) => {
+  const m = /^([a-z][a-z0-9+.-]*):\/\/([^/?#]*)@/i.exec(url);
+  return m !== null && (/^https?$/i.test(/** @type {string} */ (m[1])) || /** @type {string} */ (m[2]).includes(":"));
+};
+
+/**
+ * Why `repo` may not be handed to `git clone`, or null: `repoProblem` of `src/ui/opsof.ts`, word for word.
+ * @param {string} repo
+ */
+export function repoProblem(repo) {
+  if (repo === "" || repo.length > 500) return "the repo must be a URL or a path";
+  if (/[\u0000- \u007f]/.test(repo)) return "the repo must not hold a space or a control character";
+  if (repo.startsWith("-")) return "the repo must not start with '-'";
+  if (holdsCredentials(repo)) return REPO_CREDENTIALS;
+  if (repo.includes("::")) return "the repo must not use a remote helper (a '::' address)";
+  if (/^(https?|ssh|git|file):\/\/[^/]/.test(repo)) return null;
+  if (/^[A-Za-z0-9._-]+@[A-Za-z0-9.-]+:[^/].*/.test(repo) || /^[A-Za-z0-9._-]+@[A-Za-z0-9.-]+:\/.*/.test(repo)) return null;
+  if (repo.startsWith("/")) return null;
+  return "the repo must be an https, ssh, git or file URL, an scp-style address (user@host:path) or an absolute path";
+}
+
+/** @param {string} branch */
+export const branchProblem = (branch) => (BRANCH.test(branch) && !branch.includes("..") ? null : "the branch name is not one fleet will pass to git");
+
+/** @param {string} path */
+export const pathProblem = (path) => (path.startsWith("/") || path.split("/").includes("..") || /[\u0000-\u001f\u007f]/.test(path) ? "the path must be a directory inside the repo, without '..'" : null);
+
+/** @param {string} url */
+export const urlProblem = (url) => {
+  if (!/^https?:\/\/[^\s/]/.test(url)) return "the URL must be an http or https address";
+  if (/[\u0000-\u0020\u007f]/.test(url)) return URL_SPACE;
+  if (holdsCredentials(url)) return MCP_URL_CREDENTIALS;
+  return null;
+};
 
 /** The secret names a text refers to as `secret:NAME`, as the loader finds them. @param {string} text */
 export const secretNamesIn = (text) => [...text.matchAll(/(?<![A-Za-z0-9_])secret:([A-Z][A-Z0-9_]*)/g)].map((m) => /** @type {string} */ (m[1]));
@@ -105,13 +149,26 @@ export function unpinned(command) {
   return `${tool} ${spec} has no version, so this server changes whenever the package does. Pin it: ${tool === "npx" ? `${bare}@1.2.3` : `${bare}==1.2.3`}.`;
 }
 
-/** @param {string} name @param {string[]} taken */
-const nameProblem = (name, taken, re = NAME, what = "name") => {
+/**
+ * @param {string} name
+ * @param {string[]} taken names in the catalog
+ * @param {string[]} held names already added to To push
+ * Names are compared without regard to case: a source is a directory of that name, and tools lower-case a server's.
+ */
+const nameProblem = (name, taken, held = [], re = NAME, what = "name") => {
   if (name === "") return `give it a ${what}`;
   if (!re.test(name)) return `the ${what} must be letters, digits${re === SERVER_NAME ? ", '_' or '-'" : ", '.', '_' or '-'"}, and start with a letter or digit`;
-  if (taken.includes(name)) return `'${name}' is already in the catalog`;
-  return null;
+  if (name.length > MAX_NAME) return `the ${what} can be at most ${MAX_NAME} characters`;
+  const low = name.toLowerCase();
+  const inHeld = held.find((n) => n.toLowerCase() === low);
+  if (inHeld !== undefined) return alreadyHeld(name);
+  const inCatalog = taken.find((n) => n.toLowerCase() === low);
+  if (inCatalog === undefined) return null;
+  return inCatalog === name ? `'${name}' is already in the catalog` : `'${name}' clashes with '${inCatalog}', which is already in the catalog: names are compared without regard to case`;
 };
+
+/** The second addition of a name already added to To push (`alreadyHeld` in `src/ui/opsof.ts`). @param {string} name */
+const alreadyHeld = (name) => `'${name}' is already added to To push`;
 
 /** A secret name for an environment row, or null when there is none to use. @param {Row} row */
 export const secretOf = (row) => (row.value.trim() !== "" ? row.value.trim() : ENV_NAME.test(row.key.trim()) ? row.key.trim() : "");
@@ -123,15 +180,16 @@ const filled = (rows) => rows.filter((r) => r.key.trim() !== "" || r.value.trim(
  * The edit a server form holds, or why it cannot yet.
  * @param {ServerForm} f
  * @param {string[]} taken names already in the catalog (and held)
+ * @param {string[]} [held] the names already added to To push
  * @returns {Draft}
  */
-export function serverDraft(f, taken) {
+export function serverDraft(f, taken, held = []) {
   /** @type {string[]} */
   const problems = [];
   /** @type {string[]} */
   const warnings = [];
   const name = f.name.trim();
-  const bad = nameProblem(name, taken, SERVER_NAME, "name");
+  const bad = nameProblem(name, taken, held, SERVER_NAME, "name");
   if (bad !== null) problems.push(bad);
   /** @type {Record<string, any>} */
   const entry = {};
@@ -147,7 +205,8 @@ export function serverDraft(f, taken) {
     }
   } else {
     const url = f.url.trim();
-    if (!/^https?:\/\/[^\s/]/.test(url)) problems.push("the URL must be an http or https address");
+    const bad = urlProblem(url);
+    if (bad !== null) problems.push(bad);
     else {
       entry.transport = f.kind;
       entry.url = url;
@@ -158,7 +217,8 @@ export function serverDraft(f, taken) {
   for (const row of filled(f.rows)) {
     const key = row.key.trim();
     const label = f.kind === "command" ? "environment variable" : "header";
-    if (!(f.kind === "command" ? ENV_NAME : HEADER_NAME).test(key)) problems.push(`'${key}' is not a valid ${label} name`);
+    if (key === "") problems.push(`give it a name (this row has a value but no ${label} name)`);
+    else if (!(f.kind === "command" ? ENV_NAME : HEADER_NAME).test(key)) problems.push(`'${key}' is not a valid ${label} name`);
     else if (key in vars) problems.push(`${key} is set twice`);
     else if (row.mode === "secret") {
       const secret = secretOf(row);
@@ -180,21 +240,39 @@ export const secretsOf = (op) => (op && op.op === "addServer" ? [...new Set(Obje
 export const cloneKey = (f) => [f.repo.trim(), f.path.trim() || ".", f.branch.trim()].join("\n");
 
 /**
+ * What is wrong with the repo, branch and path as typed, field by field, before the repo is looked at. Nothing is said of an
+ * empty field: the repo is needed (said by the draft), the branch and path have defaults.
+ * @param {SourceForm} f
+ * @returns {{ repo: string | null, branch: string | null, path: string | null }}
+ */
+export function sourceInputs(f) {
+  const repo = f.repo.trim();
+  const branch = f.branch.trim();
+  const path = f.path.trim();
+  return { repo: repo === "" ? null : repoProblem(repo), branch: branch === "" ? null : branchProblem(branch), path: path === "" ? null : pathProblem(path) };
+}
+
+/**
  * The edit a skill source form holds. A source is added from a clone: it names the skills found and the commit to pin.
  * @param {SourceForm} f
  * @param {string[]} taken
  * @param {Cloned | null} clone
+ * @param {string[]} [held] the source names already added to To push
  * @returns {Draft}
  */
-export function sourceDraft(f, taken, clone) {
+export function sourceDraft(f, taken, clone, held = []) {
   /** @type {string[]} */
   const problems = [];
   const name = f.name.trim();
-  const bad = nameProblem(name, taken);
+  const bad = nameProblem(name, taken, held);
   if (bad !== null) problems.push(bad);
   const repo = f.repo.trim();
+  const typed = sourceInputs(f);
   if (repo === "") problems.push("enter the repo: a URL, or a path on this machine");
-  else if (clone === null || clone.key !== cloneKey(f)) problems.push("look at the repo first: it is cloned shallowly to list its skills and read its head commit");
+  const wrong = [typed.repo, typed.branch, typed.path].filter((p) => p !== null);
+  problems.push(.../** @type {string[]} */ (wrong));
+  if (repo === "" || wrong.length > 0) return { op: null, problems, warnings: [] };
+  if (clone === null || clone.key !== cloneKey(f)) problems.push("look at the repo first: it is cloned shallowly to list its skills and read its head commit");
   else if (clone.problem !== null) problems.push(clone.problem);
   else if (clone.skills.length === 0) problems.push("no skill (a directory with a SKILL.md) was found under that path");
   if (problems.length > 0 || clone === null) return { op: null, problems, warnings: [] };
@@ -238,13 +316,14 @@ export const typedSkills = (text) => text.split(/[\s,]+/).filter((s) => s !== ""
  * @param {BundleForm} f
  * @param {string[]} taken bundle names already there
  * @param {Known[]} choices what skillChoices says
+ * @param {string[]} [held] the bundle names already added to To push
  * @returns {Draft}
  */
-export function bundleDraft(f, taken, choices) {
+export function bundleDraft(f, taken, choices, held = []) {
   /** @type {string[]} */
   const problems = [];
   const name = f.name.trim();
-  const bad = nameProblem(name, taken);
+  const bad = nameProblem(name, taken, held);
   if (bad !== null) problems.push(bad);
   const skills = [...new Set([...f.picked, ...typedSkills(f.extra)])];
   if (skills.length === 0) problems.push("pick at least one skill");
