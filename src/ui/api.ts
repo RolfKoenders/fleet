@@ -15,7 +15,7 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { findSkills, sourceDir } from "../sources.ts";
 import { RealPusher } from "../tui/pusher.ts";
-import { addHost, hostRequest } from "./hostinit.ts";
+import { addHost, hostFields, hostRequest, previewHost } from "./hostinit.ts";
 import type { FleetEvent } from "../events.ts";
 import type { PushEnd } from "../pushrun.ts";
 
@@ -55,6 +55,8 @@ import type { PushEnd } from "../pushrun.ts";
  *                      disk, on this machine, with the secrets it can read: `result`, `tools`, `size`, `tokens`, `unset` (secret names with
  *                      no value here, left out). Refused unless `confirm` is true. No value is ever in the answer.
  *
+ *   POST /api/hosts/preview  Body `{"name": "...", "ssh": "user@host", "from": null | "<host>"}`: the host file `/api/hosts/init` would write, as
+ *                      `{path, before, after}` (`before` is empty: the file is new). Nothing is written or run. 409 `stale` for a host that exists.
  *   POST /api/hosts/init  Body `{"name": "...", "ssh": "user@host", "from": null | "<host>", "confirm": true}`. Not a held edit: writes
  *                      `hosts/<name>.yaml` and runs the real `fleet init <name>` as a child process, relaying its output lines as `init`
  *                      events and its end as `initend`, and answers when it has ended (`ok`, `code`, `exit`, `messages`, `removed`,
@@ -219,6 +221,15 @@ export function routes(deps: ApiDeps): Route[] {
       method: "POST",
       path: "/api/plan",
       handle: async (req) => ({ status: 200, body: { ok: true, ...plan(deps.configDir, deps.home, heldOps(await req.json())) } }),
+    },
+    {
+      method: "POST",
+      path: "/api/hosts/preview",
+      handle: async (req) => {
+        const out = previewHost(deps.configDir, hostFields(await req.json()));
+        if ("refused" in out) return refused(out.refused.status, out.refused.code, out.refused.message);
+        return { status: 200, body: { ok: true, ...out.doc } };
+      },
     },
     {
       method: "POST",

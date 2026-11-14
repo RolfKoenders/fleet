@@ -25,16 +25,30 @@ const SSH = /^[A-Za-z0-9_][A-Za-z0-9._@:%+[\]-]*$/;
 
 export type HostRequest = { name: string; ssh: string; from: string | null };
 
-/** The request body, checked: the host name with the loader's rule, the ssh destination strictly, and the confirmation. */
-export function hostRequest(body: unknown): HostRequest {
+/** The name, the ssh destination and the host to copy from a request body, checked: the loader's rule for the name, a strict one for ssh. */
+export function hostFields(body: unknown): HostRequest {
   if (typeof body !== "object" || body === null || Array.isArray(body)) throw new BadRequest("the body must be a JSON object");
-  const { name, ssh, from, confirm } = body as Record<string, unknown>;
+  const { name, ssh, from } = body as Record<string, unknown>;
   if (typeof name !== "string" || !NAME.test(name) || name.length > 64) throw new BadRequest("name must be letters, digits, '.', '_' or '-', and start with a letter or digit");
   if (typeof ssh !== "string" || ssh.length > 255 || !SSH.test(ssh)) throw new BadRequest("ssh must be a destination such as user@host: no spaces, and not starting with '-'");
   if (from !== undefined && from !== null && (typeof from !== "string" || !NAME.test(from))) throw new BadRequest("from must be the name of a host");
-  // The page asks first, naming what will run on the other machine; a call that did not is refused.
-  if (confirm !== true) throw new BadRequest("setting up a host runs commands on it over ssh: it must be confirmed");
   return { name, ssh, from: typeof from === "string" ? from : null };
+}
+
+/** The request body for setting a host up: its fields, and the confirmation. */
+export function hostRequest(body: unknown): HostRequest {
+  const request = hostFields(body);
+  // The page asks first, naming what will run on the other machine; a call that did not is refused.
+  if ((body as Record<string, unknown>).confirm !== true) throw new BadRequest("setting up a host runs commands on it over ssh: it must be confirmed");
+  return request;
+}
+
+/** The host file `addHost` would write, from the files as they are now. Nothing is written and nothing is run. */
+export function previewHost(configDir: string, req: HostRequest): { refused: Refusal } | { doc: { path: string; before: string; after: string } } {
+  const made = applyOps(readFiles(configDir), [{ op: "addHost", host: req.name, ssh: req.ssh, from: req.from }]);
+  if (made.dropped.length > 0) return { refused: { status: 409, code: "stale", message: made.dropped[0]!.reason } };
+  const path = hostFile(req.name);
+  return { doc: { path, before: "", after: made.files[path]! } };
 }
 
 export type InitDoc = { ok: boolean; code: string; exit: number | null; messages: string[]; written: string; removed: boolean; kept: boolean; output: string[] };

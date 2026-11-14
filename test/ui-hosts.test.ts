@@ -79,6 +79,30 @@ test("a bad name, an ssh destination that ssh would read as an option or that ha
   });
 });
 
+test("the host file is previewed before anything is confirmed: the same text init writes it from, nothing written, nothing run", async () => {
+  await withServer(async (s, w) => {
+    const head = git(w.clone, "rev-parse", "HEAD");
+    const preview = (body: unknown) => fetch(`${base(s)}/api/hosts/preview`, { method: "POST", headers: { "x-fleet-token": s.token, origin: base(s), "content-type": "application/json" }, body: JSON.stringify(body) });
+    // No confirmation is needed: it runs nothing.
+    const plain = (await (await preview({ name: "mini", ssh: "bob@mini", from: null })).json()) as any;
+    assert.deepEqual(plain, { ok: true, path: "hosts/mini.yaml", before: "", after: 'ssh: bob@mini\nage: ""\n' });
+    const copied = (await (await preview({ name: "mini", ssh: "bob@mini", from: "box" })).json()) as any;
+    assert.match(copied.after, /^ssh: bob@mini\nage: ""\n/);
+    assert.match(copied.after, /bundles: \[extra, more\]/);
+    assert.match(copied.after, /include: \[tracker\]  # for builds/);
+    assert.doesNotMatch(copied.after, /alice@server|files:/);
+    // The checks of the real request apply, and a host that is there is a conflict.
+    assert.equal((await preview({ name: "../x", ssh: "bob@mini" })).status, 400);
+    assert.equal((await preview({ name: "mini", ssh: "-oProxyCommand=x" })).status, 400);
+    const exists = await preview({ name: "box", ssh: "bob@mini" });
+    assert.equal(exists.status, 409);
+    assert.match(((await exists.json()) as any).messages[0], /hosts\/box\.yaml already exists/);
+    assert.equal(existsSync(join(w.clone, "hosts/mini.yaml")), false);
+    assert.equal(git(w.clone, "rev-parse", "HEAD"), head);
+    assert.deepEqual(w.sshCalls(), []);
+  });
+});
+
 test("a host from the defaults: the file is written, the real init sets it up over ssh and commits and pushes, and its output is streamed", async () => {
   await withServer(async (s, w) => {
     const { state, done } = watch(s);
