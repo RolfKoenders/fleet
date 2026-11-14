@@ -60,6 +60,8 @@ export function createClient(token, fetcher = (...args) => fetch(...args)) {
     setSecret: (name, value, files, ops) => send("/api/secrets/set", setBody(name, value, files, ops)),
     /** @param {unknown[]} ops @param {string} [show] a host file to show whether or not the edits change it */
     preview: (ops, show) => send("/api/preview", show ? { ops, show } : { ops }),
+    /** The file an item is written in, as on disk: `{path, text}`. @param {"server" | "source" | "bundle" | "host"} kind @param {string} name */
+    yaml: (kind, name) => send("/api/yaml", { kind, name }),
     /** @param {unknown[]} ops */
     plan: (ops) => send("/api/plan", { ops }),
     /** Writes the edited files, commits them and runs the push. @param {unknown[]} ops @param {string} message */

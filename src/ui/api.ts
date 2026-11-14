@@ -15,6 +15,7 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { findSkills, sourceDir } from "../sources.ts";
 import { RealPusher } from "../tui/pusher.ts";
+import { yamlOf, yamlRequest } from "./yamlview.ts";
 import { addHost, hostFields, hostRequest, previewHost } from "./hostinit.ts";
 import type { FleetEvent } from "../events.ts";
 import type { PushEnd } from "../pushrun.ts";
@@ -37,6 +38,8 @@ import type { PushEnd } from "../pushrun.ts";
  *                      `files` (every changed file, before and after), `shown` (the file asked for), `dropped` (edits that no
  *                      longer apply, with the reason), `matrix` (the config after the edits), `checks` (per host: does the
  *                      config load, and what its picks change) and `outside`. Nothing is written.
+ *   POST /api/yaml     Body `{"kind": "server" | "source" | "bundle" | "host", "name": "..."}`. The file that item is written in, as it is on disk:
+ *                      `{path, text}`. A path is never taken from the page, only a kind and a name; a host that is not there is 404.
  *   POST /api/plan     Body `{"ops": [...]}`. This host's full plan: `fleet diff` against the edited config, nothing written.
  *   POST /api/write    Body `{"ops": [...], "message": "..."}`. Writes the edited files, commits them, then runs the real
  *                      `fleet push` as `POST /api/push` does. Refuses, writing nothing, when a push is running (409 `locked`),
@@ -215,6 +218,14 @@ export function routes(deps: ApiDeps): Route[] {
         const p = preview(deps.configDir, readHostName(deps.home), heldOps(body), showOf(body));
         const { before: _before, after, edited, ...rest } = p;
         return { status: 200, body: { ok: true, ...rest, matrix: matrixDoc(after), secrets: secretsTable(deps.configDir, after, edited), outside: outside() } };
+      },
+    },
+    {
+      method: "POST",
+      path: "/api/yaml",
+      handle: async (req) => {
+        const file = yamlOf(deps.configDir, yamlRequest(await req.json()));
+        return file === null ? refused(404, "not-found", "there is no such host") : { status: 200, body: { ok: true, ...file } };
       },
     },
     {
