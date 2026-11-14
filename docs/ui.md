@@ -8,7 +8,14 @@ fleet ui --port 8765      # a fixed port
 fleet ui --no-open        # print the URL and do not open a browser
 ```
 
-It stops on ctrl-c, or by itself after 10 minutes with no page open.
+It stops on ctrl-c, or by itself after 10 minutes with no page open. A push or a host set-up that is running when you press ctrl-c is its own process and finishes without the page; the terminal says so and points at `fleet status`. For a host set-up it also says that nothing will remove the host file if init fails.
+
+### Reload, and when the server goes away
+
+- **Reload is safe.** The token is kept in `sessionStorage`, which belongs to that tab alone (it is never in the address or the history after the page loads, and no other tab sees it). So F5 keeps the page working. The To push list is kept there too and comes back after a reload: it holds only edits, and an edit never holds a plain secret value (a value goes to the server once, in its own request, and the edit is sops ciphertext). While a push or a host set-up runs, the browser asks before the tab is closed or reloaded.
+- **A tab that joins mid-run catches up.** The server tells every new page which jobs run (a push, `fleet init` of a host, a clone, a check, a secret being encrypted) and replays the last events of the running push or init, so a second tab or a reload shows the lanes and log so far, and labels the job correctly (a host set-up is not shown as a push). The header names every running job.
+- **Not answering.** If `fleet ui` stopped, was restarted, or this machine slept, the header says `not answering` and a banner says what to do: run `fleet ui` again and open the new URL in the same tab. Push, Add and Set value are off meanwhile, and the page keeps trying.
+- **Token no longer valid.** If the server answers but refuses the page's token, it was started again. The page stops retrying (a refused token never becomes valid), says so, and the To push list is restored when you open the new URL in the same tab. A new tab without the URL cannot do anything, as before.
 
 ## What is on the page
 
@@ -48,7 +55,7 @@ One card per host: how it is reached, and what it gets. **+ Add host**, in the h
 
 - A name (the loader's rule for a host name), an ssh destination and where it starts from: the defaults only, or a copy of another host. ssh is required, because `fleet init` refuses a host without it; for a machine fleet cannot reach over ssh the form links [setting up machines](setting-up-machines.md). A destination that starts with `-`, or has a space or another symbol, is refused.
 - A copy takes `bundles`, `exclude`, `mcp`, `settings` and `vars` of the other host, with the comments inside them, and not its `ssh`, `age` or `files`.
-- This is not a change to push. After you confirm (the page names the machine and what will run there), the server takes the push lock, writes `hosts/<name>.yaml` with the edit engine and runs the real `fleet init <name>` as a child process, so it commits and pushes itself (the host file, `.sops.yaml` and the re-encrypted secrets), exactly as from the CLI. Its output is streamed into the page as it comes.
+- This is not a change to push. After you confirm (the page names the machine and what will run there), the server takes the push lock, writes `hosts/<name>.yaml` with the edit engine and runs the real `fleet init <name>` as a child process, so it commits and pushes itself (the host file, `.sops.yaml` and the re-encrypted secrets), exactly as from the CLI. Its output is streamed into the page as it comes: one line when each step starts and one when it ends, under a running clock (the page sets `FLEET_INIT_PROGRESS=1` for the child; run from a terminal, `fleet init` prints its report at the end as always, and `--json` is unchanged).
 - It refuses while there are changes to push (the page asks you to push or discard them first, so init's commit does not sweep them in), while a push runs, while the config repo has changes the page did not make, and for a host that already exists.
 - When init fails before it committed anything, the host file is deleted and the files init rewrote are restored, so the repo is as it was. When init had already committed and pushed (for example the timer step failed on the host), the host file stays, because that commit is published; the page says so, and `fleet init <name>` finishes the rest when run again.
 - Retiring a host is not here.
@@ -98,14 +105,14 @@ Every route is JSON under `/api/` and sits behind the checks below. Request bodi
 | `POST /api/hosts/init` | `{name, ssh, from?, confirm: true}`: writes `hosts/<name>.yaml` and runs the real `fleet init`, streaming its output as `init` events and answering when it ends; 409 `locked`, `outside-changes` or `exists`, 422 `invalid` |
 | `POST /api/write` | `{ops, message}`: writes, commits, then pushes; 409 `locked`, `outside-changes` or `stale`, 422 `invalid` |
 | `POST /api/push` | runs `fleet push` with what is already committed |
-| `GET /api/events` | the stream of live push events, and of `init` output |
+| `GET /api/events` | the stream of live push events, and of `init` output. It starts with `hello` (`pushing`, and `jobs`: what runs, each `{kind, name?}` with kind `push`, `init`, `clone`, `check` or `secret`), then replays the events of a running push or init (the last 400), then sends `jobs` whenever the list changes |
 
 ## Who can reach it
 
 The page can change your config and push, so nothing but you may reach it.
 
 - It listens on `127.0.0.1` only. There is no option to listen elsewhere.
-- The URL is `http://127.0.0.1:<port>/#t=<token>`: a random port and a random token. The page reads the token from the part after `#` (which a browser never sends to the server), keeps it in memory and sends it as a header on every call. There is no cookie. Opening the URL without the token shows a page that cannot do anything.
+- The URL is `http://127.0.0.1:<port>/#t=<token>`: a random port and a random token. The page reads the token from the part after `#` (which a browser never sends to the server), keeps it in memory (and in `sessionStorage` of that tab, so a reload works) and sends it as a header on every call. There is no cookie. Opening the URL without the token shows a page that cannot do anything.
 - A request whose `Host` is not `127.0.0.1:<port>` is refused, so a web page on another site cannot reach the server by pointing its own name at your machine (DNS rebinding). A write whose `Origin` is not the page itself is refused too.
 - The server sends no CORS header, so no other page can read an answer.
 - The one call that cannot carry a header is the stream of live updates (a browser's `EventSource` cannot), so that call takes the token in its query instead. Nothing logs a URL.
