@@ -49,7 +49,8 @@ code { font: inherit; color: var(--sub); }
 .side a:hover { background: var(--surface); color: var(--text); }
 .side a.on { background: var(--raised); border-color: var(--border); color: var(--text); }
 .side a.on .ic { color: var(--bright); }
-.side .ic { width: 20px; text-align: center; font-weight: 700; font-size: 13px; color: var(--brand); }
+.side .ic { width: 20px; display: inline-flex; justify-content: center; color: var(--brand); }
+.side .ic svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .side .count { margin-left: auto; font-size: 11.5px; color: var(--muted); }
 .side hr { border: 0; border-top: 1px solid var(--soft); margin: 10px 4px; width: calc(100% - 8px); }
 .side .foot { margin-top: auto; font-size: 11.5px; line-height: 1.6; color: var(--faint); padding: 8px 12px; }
@@ -140,12 +141,20 @@ dd.ok { color: var(--bright); } dd.warn { color: var(--warn); }
 .matrix tbody th small { display: block; color: var(--muted); font-size: 11.5px; overflow-wrap: anywhere; }
 .matrix .grp th { background: none; color: var(--muted); font-size: 11px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; padding-top: 18px; }
 .matrix .skill th { color: var(--muted); font-size: 12px; padding: 3px 10px 3px 28px; border-bottom: 0; }
-.hostbtn, .twist { background: none; border: 0; padding: 0; cursor: pointer; font-weight: 700; color: var(--text); }
+.twist { background: none; border: 0; padding: 0; cursor: pointer; font-weight: 700; color: var(--text); }
+.hostbtn { display: inline-flex; align-items: center; gap: 5px; background: var(--surface); border: 1px solid var(--border); padding: 3px 8px; cursor: pointer; font-weight: 700; color: var(--text); transition: border-color var(--ease), color var(--ease); }
+.hostbtn svg { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; color: var(--muted); }
+.hostbtn:hover { border-color: var(--muted); }
+.matrix thead th.focus .hostbtn { border-color: rgba(63,185,80,.6); background: var(--brand-wash); }
+.matrix thead th.focus .hostbtn svg { color: var(--brand); }
 .twist { font-weight: 400; text-align: left; }
 .twist:hover, .hostbtn:hover { color: var(--bright); }
 .twist, .hostbtn { border-radius: var(--radius-sm); }
-.cell { width: 100%; min-width: 64px; border: 1px solid transparent; border-radius: var(--radius); transition: border-color var(--ease), background var(--ease); padding: 5px 6px; cursor: pointer; background: none; font-size: 12px; display: flex; flex-direction: column; align-items: center; gap: 0; }
+.cell { width: 100%; min-width: 64px; border: 1px solid var(--soft); border-radius: var(--radius); transition: border-color var(--ease), background var(--ease); padding: 5px 6px; cursor: pointer; background: none; font-size: 12px; display: flex; flex-direction: column; align-items: center; gap: 0; }
 .cell:hover { border-color: var(--border); background: var(--surface); }
+.cell .act { display: none; color: var(--bright); }
+.cell:hover .w, .cell:focus-visible .w { display: none; }
+.cell:hover .act, .cell:focus-visible .act { display: inline; }
 .cell:focus-visible { outline: 2px solid var(--info); outline-offset: 1px; }
 .cell:active { background: var(--raised); }
 .matrix tbody tr:not(.grp):not(.skill):hover > th { color: var(--bright); }
