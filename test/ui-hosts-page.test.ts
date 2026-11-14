@@ -31,8 +31,8 @@ test("a name that is not the loader's, or that exists, and an ssh destination ss
 
 test("held edits and a new host do not mix: while any are held the page asks to push or discard them first", () => {
   assert.equal(heldProblem([]), null);
-  assert.match(heldProblem([{}])!, /1 edit is held.*push or discard them first/);
-  assert.match(heldProblem([{}, {}])!, /2 edits are held/);
+  assert.match(heldProblem([{}])!, /1 edit to push.*push or discard them first/);
+  assert.match(heldProblem([{}, {}])!, /2 edits to push/);
 });
 
 test("the confirmation names the file, the machine, and what runs there", () => {

@@ -50,7 +50,7 @@ export function hostDraft(form, existing) {
  * @param {unknown[]} ops
  */
 export const heldProblem = (ops) =>
-  ops.length === 0 ? null : `${ops.length} edit${ops.length === 1 ? " is" : "s are"} held. fleet init commits and pushes by itself, so push or discard them first.`;
+  ops.length === 0 ? null : `${ops.length} edit${ops.length === 1 ? "" : "s"} to push. fleet init commits and pushes by itself, so push or discard them first.`;
 
 /**
  * What the confirmation says before anything runs.

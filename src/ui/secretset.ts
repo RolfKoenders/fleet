@@ -69,7 +69,7 @@ export function setSecret(configDir: string, home: string, req: SetRequest): Set
   const disk = readFiles(configDir);
   const replayed = applyOps(disk, req.ops);
   const stale = replayed.dropped.filter((d) => d.op.op === "setSecret" && targets.some((t) => t.path === (d.op as { file: string }).file));
-  if (stale.length > 0) return refuse(409, "stale", "an edit already held for this file no longer applies to what is on disk: forget it first", { dropped: replayed.dropped });
+  if (stale.length > 0) return refuse(409, "stale", "an edit already waiting to push for this file no longer applies to what is on disk: forget it first", { dropped: replayed.dropped });
 
   let sops: string;
   try {

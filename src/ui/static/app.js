@@ -48,9 +48,9 @@ const client = token === null ? null : createClient(token);
 /** @type {Record<string, [string, string]>} */
 const SCREENS = {
   matrix: ["Matrix", "What each host gets: every skill bundle and MCP server against every host. Click a cell to give it to a host or take it away. Fleet writes the smallest change: an item the defaults give is taken away with exclude, not by editing the defaults."],
-  catalog: ["Catalog", "The MCP servers, skill sources and skill bundles your hosts can pick from. Adding one here gives it to no host yet: pick it in the Matrix. An addition is held like any edit, and written when you push."],
+  catalog: ["Catalog", "The MCP servers, skill sources and skill bundles your hosts can pick from. Adding one here gives it to no host yet: pick it in the Matrix. An addition is a change to push like any edit, and written when you push."],
   hosts: ["Hosts", "The hosts in this config, and how each is reached. Add a host here and fleet sets it up over ssh: it writes its host file, then runs the real fleet init."],
-  secrets: ["Secrets", "Names only. fleet ui never reads a value back, never shows one, and never writes one to disk unencrypted: a value you type goes straight to sops. Set a value and the encrypted file is held like any edit, and written when you push."],
+  secrets: ["Secrets", "Names only. fleet ui never reads a value back, never shows one, and never writes one to disk unencrypted: a value you type goes straight to sops. Set a value and the encrypted file is a change to push like any edit, and written when you push."],
 };
 
 /** The screen drawn last: drawing the same one again keeps its scroll. */
@@ -165,7 +165,7 @@ function matrixScreen() {
         kind === "bundles"
           ? h("button", { class: "twist", "aria-expanded": String(open), title: open ? "Hide its skills" : "Show its skills", onclick: () => { open ? model.expanded.delete(row.name) : model.expanded.add(row.name); render(); } }, open ? "▾ " : "▸ ", row.name)
           : row.name,
-        h("small", {}, baseRow === undefined ? `${small} · new, held` : small),
+        h("small", {}, baseRow === undefined ? `${small} · new, to push` : small),
       ),
       ...hosts.map((/** @type {any} */ host) => {
         const state = cellState(row.cells[host.name]);
@@ -178,8 +178,8 @@ function matrixScreen() {
             "button",
             {
               class: `cell ${state} ${staged ? "staged" : ""} ${host.name === focus ? "focus" : ""}`,
-              title: `${row.name} on ${host.name}: ${word}${staged ? " (held)" : ""}`,
-              "aria-label": `${row.name} on ${host.name}: ${word}${staged ? ", held" : ""}`,
+              title: `${row.name} on ${host.name}: ${word}${staged ? " (to push)" : ""}`,
+              "aria-label": `${row.name} on ${host.name}: ${word}${staged ? ", to push" : ""}`,
               onclick: () => click(host.name, kind, row.name),
             },
             h("span", { class: "mk" }, mark),
@@ -231,10 +231,10 @@ function matrixScreen() {
       ...(/** @type {const} */ (["defaults", "added", "excluded", "off"])).map((st) =>
         h("span", {}, h("b", { class: "mk " + st }, WORDS[st][0]), { defaults: "from _defaults.yaml", added: "added by the host", excluded: "excluded", off: "not on this host" }[st]),
       ),
-      h("span", {}, h("b", { class: "mk staged" }, "▢"), "held, not written yet"),
+      h("span", {}, h("b", { class: "mk staged" }, "▢"), "to push, not written yet"),
     ),
     model.ops.length > 0
-      ? h("div", { class: "row heldbar" }, h("span", { class: "tag ok" }, `${model.ops.length} held`), h("a", { class: "btn primary", href: "#/review" }, "Review & push"), h("button", { class: "btn ghost", onclick: discardAll }, "Discard all"))
+      ? h("div", { class: "row heldbar" }, h("span", { class: "tag ok" }, `${model.ops.length} to push`), h("a", { class: "btn primary", href: "#/review" }, "Review & push"), h("button", { class: "btn ghost", onclick: discardAll }, "Discard all"))
       : null,
   );
 }
@@ -598,7 +598,7 @@ function addForm() {
 const addCard = (kind, label) => h("button", { type: "button", class: "panel card add", onclick: () => openForm(kind) }, label);
 
 /** The button that takes back a held addition. @param {Op | undefined} op */
-const heldTag = (op) => (op ? h("span", { class: "tag ok" }, "held") : null);
+const heldTag = (op) => (op ? h("span", { class: "tag ok" }, "to push") : null);
 const takeBackBtn = (/** @type {Op | undefined} */ op) => (op ? h("button", { type: "button", class: "btn ghost small", onclick: () => unstage(op) }, "Take back") : null);
 
 /** @param {string} kind @param {string} name @returns {Op | undefined} */
@@ -655,7 +655,7 @@ function catalogScreen() {
       addCard("bundle", "+ Add a bundle"),
     ),
     where("bundle"),
-    model.ops.length > 0 ? h("div", { class: "row heldbar" }, h("span", { class: "tag ok" }, `${model.ops.length} held`), h("a", { class: "btn primary", href: "#/review" }, "Review & push")) : null,
+    model.ops.length > 0 ? h("div", { class: "row heldbar" }, h("span", { class: "tag ok" }, `${model.ops.length} to push`), h("a", { class: "btn primary", href: "#/review" }, "Review & push")) : null,
   );
 }
 
@@ -687,7 +687,7 @@ function addHostPanel() {
   const held = heldProblem(model.ops);
   const outside = model.base?.outside ?? [];
   if (held !== null) {
-    return h("div", { class: "notice", id: "hostheld" }, h("b", {}, held), h("div", { class: "row", style: "margin-top:10px" }, h("a", { class: "btn primary", href: "#/review" }, "Review & push"), h("button", { type: "button", class: "btn", onclick: discardAll }, "Discard held edits")));
+    return h("div", { class: "notice", id: "hostheld" }, h("b", {}, held), h("div", { class: "row", style: "margin-top:10px" }, h("a", { class: "btn primary", href: "#/review" }, "Review & push"), h("button", { type: "button", class: "btn", onclick: discardAll }, "Discard changes to push")));
   }
   const names = model.base.hosts.map((/** @type {any} */ x) => x.name);
   const f = model.hostForm;
@@ -785,7 +785,7 @@ function secretsScreen() {
                 h("td", { class: "muted" }, row.usedBy.join(", ") || "-"),
                 ...table.hosts.map((x) => {
                   const v = cellView(row.cells[x.name], row.name, x.name, model.ops);
-                  return h("td", { class: v.tone, title: `${row.name} on ${x.name}: ${v.word}${v.held ? " (held)" : ""}` }, v.mark === "" ? v.word : `${v.mark} ${v.word}`, v.held ? h("span", { class: "held" }, "held") : null);
+                  return h("td", { class: v.tone, title: `${row.name} on ${x.name}: ${v.word}${v.held ? " (to push)" : ""}` }, v.mark === "" ? v.word : `${v.mark} ${v.word}`, v.held ? h("span", { class: "held" }, "to push") : null);
                 }),
                 h("td", { class: "act" }, h("button", { type: "button", class: "btn" + (action.missing.length > 0 ? "" : " ghost") + " small", onclick: () => openSecretDialog(row, table) }, action.label)),
               );
@@ -793,7 +793,7 @@ function secretsScreen() {
           ),
         ),
     held.length > 0
-      ? h("div", { class: "row heldbar" }, h("span", { class: "tag ok" }, `${held.length} secret${held.length === 1 ? "" : "s"} held, encrypted`), h("a", { class: "btn primary", href: "#/review" }, "Review & push"), h("button", { class: "btn ghost", onclick: discardAll }, "Discard all"))
+      ? h("div", { class: "row heldbar" }, h("span", { class: "tag ok" }, `${held.length} secret${held.length === 1 ? "" : "s"} to push, encrypted`), h("a", { class: "btn primary", href: "#/review" }, "Review & push"), h("button", { class: "btn ghost", onclick: discardAll }, "Discard all"))
       : null,
   );
 }
@@ -892,7 +892,7 @@ function reviewScreen() {
     dropped.length > 0
       ? h("div", { class: "notice" }, h("b", {}, "Some edits no longer apply to the files on disk:"), h("ul", {}, ...dropped.map((/** @type {any} */ d) => h("li", {}, `${opLabel(d.op)}: ${d.reason}`))), h("button", { class: "btn", onclick: forgetDropped }, "Forget them"))
       : null,
-    !editing ? h("div", { class: "panel empty" }, "Nothing is held. Click a cell in the Matrix to give or take away a pick, or add to the Catalog.") : h("h2", {}, "Checks"),
+    !editing ? h("div", { class: "panel empty" }, "Nothing to push. Click a cell in the Matrix to give or take away a pick, or add to the Catalog.") : h("h2", {}, "Checks"),
     editing ? h("div", { class: "checks" }, ...checks.map(checkCard)) : null,
     model.ops.flatMap(opWarnings).length > 0 ? h("div", { class: "notice inline" }, h("b", {}, "Worth a look before you push:"), h("ul", {}, ...model.ops.flatMap(opWarnings).map((w) => h("li", {}, w)))) : null,
     editing ? planPanel() : null,
