@@ -64,6 +64,8 @@ export function createClient(token, fetcher = (...args) => fetch(...args)) {
     plan: (ops) => send("/api/plan", { ops }),
     /** Writes the edited files, commits them and runs the push. @param {unknown[]} ops @param {string} message */
     write: (ops, message) => send("/api/write", { ops, message }),
+    /** The host file that adding this host would write, as `{path, before, after}`. Nothing is written. @param {{ name: string, ssh: string, from: string | null }} body */
+    previewHost: (body) => send("/api/hosts/preview", body),
     /** Writes hosts/<name>.yaml and runs the real fleet init, answering when it has ended; its output arrives on the stream. @param {{ name: string, ssh: string, from: string | null }} body */
     initHost: (body) => send("/api/hosts/init", { ...body, confirm: true }),
     /** @param {string} [message] */

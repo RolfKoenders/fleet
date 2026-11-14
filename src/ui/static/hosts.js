@@ -1,4 +1,4 @@
-// What the Add-a-host form needs that is not drawing: the checks on what is typed, the request it makes, the words of the
+// What the Add-a-host dialog needs that is not drawing: the checks on what is typed, the request it makes, the words of the
 // confirmation, and the state of the init output that is streamed in. Pure: `node --test` runs it. The server checks
 // every field again, with the loader's rule for a name and a stricter one for the ssh destination.
 
@@ -15,9 +15,6 @@ const SSH = /^[A-Za-z0-9_][A-Za-z0-9._@:%+[\]-]*$/;
 
 /** Where to send a person whose machine fleet cannot reach over ssh. */
 export const SETUP_DOC = "https://github.com/RolfKoenders/fleet/blob/main/docs/setting-up-machines.md";
-
-/** What `fleet init` takes from the host it copies. Never `ssh`, `age` or `files`. */
-export const COPIED = ["bundles", "exclude", "mcp", "settings", "vars"];
 
 /** @returns {HostForm} */
 export const blankHost = () => ({ name: "", ssh: "", from: "" });
@@ -58,9 +55,6 @@ export const heldProblem = (ops) =>
  */
 export const confirmInit = (body) =>
   `This writes hosts/${body.name}.yaml${body.from === null ? "" : ` as a copy of ${body.from}`}, then runs fleet init ${body.name}: it connects to ${body.ssh} over ssh, installs fleet there, makes its age key, re-encrypts your secrets for it, commits and pushes this repo, and installs its timer.`;
-
-/** What the host file will start with, shown beside the form. @param {HostBody} body */
-export const fileLines = (body) => [`ssh: ${body.ssh}`, 'age: ""', ...(body.from === null ? [] : COPIED.map((k) => `${k}: (as in ${body.from}, if it has one)`))];
 
 /**
  * @typedef {{ running: boolean, name: string | null, lines: string[], end: { ok: boolean, code: string, messages: string[], removed: boolean, kept: boolean } | null }} InitState
