@@ -293,3 +293,11 @@ html.modal main { overflow: hidden; }
   .adlg-foot .spacer { display: none; }
   .adlg-foot .btn { flex: 1 1 auto; }
 }
+
+/* The YAML toggle of a card: the item's lines in the repo file, or their diff when an edit waits to be pushed */
+.yamlbtn[aria-pressed="true"] { color: var(--bright); border-color: var(--brand); background: var(--brand-wash); }
+.card.yamlopen { grid-column: 1 / -1; }
+.card .yamlbox { margin: 8px -16px -14px; border-top: 1px solid var(--soft); min-width: 0; }
+.yamlbox .ph .path { overflow-wrap: anywhere; color: var(--text); }
+.pageact { display: flex; gap: var(--space-2); flex-wrap: wrap; justify-content: flex-end; }
+.card dl + .row { margin-top: 10px; }

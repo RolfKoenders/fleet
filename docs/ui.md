@@ -38,6 +38,10 @@ Each choice opens a dialog (a native modal `<dialog>`): focus goes to its first 
 - **A skill source.** A name, a repo (a URL, an scp-style address or a path on this machine), a path and an optional branch. Look at the repo clones it shallowly into a temp directory, lists its skills and reads its head commit. A pinned source (the default) is written with that commit, `track` for the branch and `review: true`; a followed one with its `branch`. The temp clone is deleted when you close the dialog, when a newer one replaces it and when the server stops.
 - **A bundle.** A name and its skills, picked from the sources fleet has cloned and from a source you hold, or typed in.
 
+### YAML
+
+Every MCP server, skill source and skill bundle on the Catalog, and every host on Hosts, has a **YAML** button (a toggle: `aria-pressed`, reachable and operable by keyboard). On, the card opens to show how the item is written in the config repo: its own lines in `catalog/mcp.yaml` or `catalog/skills.yaml`, with the comments right above it, or for a host the whole of `hosts/<name>.yaml`, under the file's path and in the same code style as the diffs. It is read-only and shows only what is literally in the file, so a secret is `secret:NAME` and never a value. When the item has an edit on To push (an addition, or a host file changed by a pick in the Matrix), the panel shows the diff of its lines against the repo instead, tagged `to push: +N -M`. **Show all YAML** in the header opens or closes every card of the screen at once. A screen reads the files again whenever it is opened.
+
 ### Hosts
 
 One card per host: how it is reached, and what it gets. **+ Add host**, in the header and as the tile after the cards, opens a dialog that sets up a new machine from the page. Like the Catalog's, it is modal, takes focus, closes on Esc or Cancel with nothing written, and shows the host file that will be written (`hosts/<name>.yaml`, a new file) as a diff while you type, or what is still missing. Esc and Cancel are off while `fleet init` runs, because the run goes on without the page; after it ends, a failure keeps the form to try again and a success is closed with Done.
@@ -88,6 +92,7 @@ Every route is JSON under `/api/` and sits behind the checks below. Request bodi
 | `POST /api/catalog/discard` | `{id}`: deletes that temp clone |
 | `POST /api/catalog/probe` | `{name, entry, confirm: true}`: doctor's probe on one entry that is not on disk, on this machine; refused unless `confirm` is true. Answers `result`, `tools`, `tokens` and `unset` (secret names with no value here), never a value |
 | `POST /api/preview` | `{ops, show?}`: the files the edits change (before and after), dropped edits, the matrix after, a check per host |
+| `POST /api/yaml` | `{kind, name}` with kind `server`, `source`, `bundle` or `host`: the file that item is written in, as on disk, as `{path, text}` (the catalog file, or `hosts/<name>.yaml`). It takes a kind and a name, never a path; a bad name is 400, a host that is not there 404. Secrets files are not reachable, and the files hold only `secret:NAME`, never a value |
 | `POST /api/plan` | `{ops}`: this host's plan from `fleet diff` on the edited config |
 | `POST /api/hosts/preview` | `{name, ssh, from?}`: the host file `/api/hosts/init` would write, as `{path, before, after}`; needs no confirmation, writes and runs nothing; 400 `invalid`, 409 `stale` for a host that exists |
 | `POST /api/hosts/init` | `{name, ssh, from?, confirm: true}`: writes `hosts/<name>.yaml` and runs the real `fleet init`, streaming its output as `init` events and answering when it ends; 409 `locked`, `outside-changes` or `exists`, 422 `invalid` |

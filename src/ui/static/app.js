@@ -7,6 +7,7 @@ import { bundleDraft, checkLines, cloneKey, confirmText, opWarnings, secretOf, s
 import { blockers, cellState, clickCell, opLabel, suggestMessage, summaryLine, WORDS } from "./matrix.js";
 import { confirmInit, heldProblem, hostDraft, idleInit, initEnd, initLine, SETUP_DOC, startInit } from "./hosts.js";
 import { actionOf, afterSet, cellView, dialogTargets, heldNames, missingCount, valueProblem } from "./secrets.js";
+import { itemYaml, yamlPath, yamlTag } from "./yamlview.js";
 import { heldFiles, idlePush, pushEnd, pushEvent, routeOf, statusView, tokenOf } from "./state.js";
 
 /** @typedef {import("./state.js").Held} Held */
@@ -32,7 +33,8 @@ $("local").textContent = `${location.host} · only this machine`;
  *   message: string, messageEdited: boolean, secrets: any, secretsError: string | null,
  *   push: PushState, pushError: string | null, link: "connecting" | "live" | "reconnecting",
  *   skills: { name: string, source: string, bundle: string | null }[], stagedSkills: Record<string, string[]>,
- *   form: import("./adding.js").AddState | null, menu: boolean, init: import("./hosts.js").InitState, initError: string | null
+ *   form: import("./adding.js").AddState | null, menu: boolean, init: import("./hosts.js").InitState, initError: string | null,
+ *   yaml: Record<string, string>, yamlErrors: Record<string, string>, yamlOpen: Set<string>
  * }}
  */
 const model = {
@@ -42,6 +44,7 @@ const model = {
   push: idlePush(), pushError: null, link: "connecting",
   skills: [], stagedSkills: {}, form: null, menu: false,
   init: idleInit(), initError: null,
+  yaml: {}, yamlErrors: {}, yamlOpen: new Set(),
 };
 
 const client = token === null ? null : createClient(token);
@@ -815,8 +818,71 @@ const takeBackBtn = (/** @type {Op | undefined} */ op) => (op ? h("button", { ty
 /** @param {string} kind @param {string} name @returns {Op | undefined} */
 const heldOp = (kind, name) => model.ops.find((o) => o.op === kind && "name" in o && o.name === name);
 
-/** A page title with the button that adds to it on the right. @param {string} title @param {string} about @param {Node} action */
-const pageHead = (title, about, action) => h("div", { class: "pagehead" }, h("div", {}, h("h1", {}, title), h("p", { class: "sub" }, about)), h("div", { class: "pageact" }, action));
+/** A page title with the buttons that act on it on the right. @param {string} title @param {string} about @param {...Node} actions */
+const pageHead = (title, about, ...actions) => h("div", { class: "pagehead" }, h("div", {}, h("h1", {}, title), h("p", { class: "sub" }, about)), h("div", { class: "pageact" }, ...actions));
+
+// ---- YAML toggles: how an item is written in the config repo
+
+/** @typedef {{ kind: import("./adding.js").AddKind, name: string }} Item */
+
+const yamlKey = (/** @type {Item} */ i) => `${i.kind}:${i.name}`;
+
+/** Reads the file of each of these items that this page has not read yet. One read per file. @param {Item[]} items */
+async function readYaml(items) {
+  if (client === null) return;
+  const asked = new Set();
+  for (const { kind, name } of items) {
+    const path = yamlPath(kind, name);
+    if (path in model.yaml || asked.has(path)) continue;
+    asked.add(path);
+    try {
+      model.yaml[path] = (await client.yaml(kind, name)).text;
+      delete model.yamlErrors[path];
+    } catch (e) {
+      model.yamlErrors[path] = said(e, "the file could not be read");
+    }
+  }
+  render();
+}
+
+/** What is written is read again whenever a screen is opened, so it is never older than the file. */
+function refreshYaml() {
+  model.yaml = {};
+  readYaml([...model.yamlOpen].map((k) => ({ kind: /** @type {Item["kind"]} */ (k.slice(0, k.indexOf(":"))), name: k.slice(k.indexOf(":") + 1) })));
+}
+
+/** @param {Item[]} items @param {boolean} on */
+function setYaml(items, on) {
+  for (const i of items) (on ? model.yamlOpen.add(yamlKey(i)) : model.yamlOpen.delete(yamlKey(i)));
+  render();
+  if (on) readYaml(items);
+}
+
+/** The toggle of one item: a button, and when it is on, the panel that goes in the card. @param {Item} item */
+function yamlToggle(item) {
+  const open = model.yamlOpen.has(yamlKey(item));
+  const button = h("button", { type: "button", id: `yaml-${item.kind}-${item.name}`, class: "btn ghost small yamlbtn", "aria-pressed": String(open), title: open ? "Hide how it is written" : "Show how it is written in the config repo", onclick: () => setYaml([item], !open) }, "YAML");
+  return { button, panel: open ? yamlPanel(item) : null };
+}
+
+/** The lines of the item in its repo file, or their diff when an edit to push touches them. @param {Item} item */
+function yamlPanel(item) {
+  const path = yamlPath(item.kind, item.name);
+  const head = (/** @type {string} */ tag, tone = "") => h("div", { class: "ph" }, h("span", { class: "path" }, path), h("span", { class: "spacer" }), h("span", { class: "tag " + tone }, tag));
+  const failed = model.yamlErrors[path];
+  if (failed !== undefined) return h("div", { class: "yamlbox" }, head("not read", "bad"), h("div", { class: "notice bad inset" }, failed));
+  const disk = model.yaml[path];
+  if (disk === undefined) return h("div", { class: "yamlbox" }, head("reading"), h("div", { class: "hint" }, "Reading the file..."));
+  const y = itemYaml(item.kind, item.name, disk, model.held[path]?.after ?? disk);
+  if (y.state === "absent") return h("div", { class: "yamlbox" }, head(yamlTag(y)), h("div", { class: "hint" }, `${item.name} is not written in ${path}.`));
+  return h("div", { class: "yamlbox" }, head(yamlTag(y), y.state === "plain" ? "" : "ok"), diffBody(y.lines));
+}
+
+/** The header button that opens or closes the YAML of every item on the screen. @param {Item[]} items */
+function yamlAll(items) {
+  const all = items.length > 0 && items.every((i) => model.yamlOpen.has(yamlKey(i)));
+  return h("button", { type: "button", id: "yaml-all", class: "btn ghost yamlbtn", "aria-pressed": String(all), onclick: () => setYaml(items, !all) }, "Show all YAML");
+}
 
 function catalogScreen() {
   const [title, about] = SCREENS.catalog;
@@ -826,16 +892,19 @@ function catalogScreen() {
   const uses = (/** @type {any} */ row) => hosts.filter((/** @type {any} */ x) => row.cells[x.name]?.on).length;
   const onHosts = (/** @type {any} */ row) => h("span", { class: "tag " + (uses(row) > 0 ? "ok" : "") }, `on ${uses(row)} of ${hosts.length} host${hosts.length === 1 ? "" : "s"}`);
   const sources = view.sources ?? [];
+  /** @type {Item[]} */
+  const items = [...view.servers.map((/** @type {any} */ x) => ({ kind: "server", name: x.name })), ...sources.map((/** @type {any} */ x) => ({ kind: "source", name: x.name })), ...view.bundles.map((/** @type {any} */ x) => ({ kind: "bundle", name: x.name }))];
   const skillsOf = (/** @type {string} */ name) => [...new Set([...model.skills.filter((k) => k.source === name).map((k) => k.name), ...(model.stagedSkills[name] ?? [])])];
   return h(
     "div",
     {},
-    pageHead(title, about, addMenu()),
+    pageHead(title, about, yamlAll(items), addMenu()),
     h("h2", {}, "MCP servers"),
     h("div", { class: "cards" },
       ...view.servers.map((/** @type {any} */ sv) => {
         const op = heldOp("addServer", sv.name);
-        return h("div", { class: "panel card" }, h("h3", {}, sv.name, h("span", { class: "tag" }, sv.server?.kind ?? ""), heldTag(op)), h("p", {}, serverLine(sv)), h("div", { class: "row" }, onHosts(sv), takeBackBtn(op)));
+        const y = yamlToggle({ kind: "server", name: sv.name });
+        return h("div", { class: "panel card" + (y.panel ? " yamlopen" : "") }, h("h3", {}, sv.name, h("span", { class: "tag" }, sv.server?.kind ?? ""), heldTag(op)), h("p", {}, serverLine(sv)), h("div", { class: "row" }, onHosts(sv), takeBackBtn(op), y.button), y.panel);
       }),
       addCard("server", "+ Add an MCP server"),
     ),
@@ -844,13 +913,15 @@ function catalogScreen() {
       ...sources.map((/** @type {any} */ src) => {
         const op = heldOp("addSource", src.name);
         const skills = skillsOf(src.name);
+        const y = yamlToggle({ kind: "source", name: src.name });
         return h(
           "div",
-          { class: "panel card" },
+          { class: "panel card" + (y.panel ? " yamlopen" : "") },
           h("h3", {}, src.name, h("span", { class: "tag " + (src.commit ? "info" : "ok") }, src.commit ? "pinned" : "followed"), src.review ? h("span", { class: "tag warn" }, "review") : null, heldTag(op)),
           h("p", {}, [src.repo, src.commit ? src.commit.slice(0, 7) : null, src.commit ? `tracks ${src.track}` : src.branch].filter((x) => x).join(" · ")),
           skills.length > 0 ? h("div", { class: "row" }, ...skills.slice(0, 12).map((/** @type {string} */ sk) => h("span", { class: "tag" }, sk)), skills.length > 12 ? h("span", { class: "muted" }, `+${skills.length - 12}`) : null) : null,
-          takeBackBtn(op),
+          h("div", { class: "row" }, takeBackBtn(op), y.button),
+          y.panel,
         );
       }),
       addCard("source", "+ Add a skill source"),
@@ -859,7 +930,8 @@ function catalogScreen() {
     h("div", { class: "cards" },
       ...view.bundles.map((/** @type {any} */ b) => {
         const op = heldOp("addBundle", b.name);
-        return h("div", { class: "panel card" }, h("h3", {}, b.name, heldTag(op)), h("div", { class: "row" }, ...b.skills.map((/** @type {string} */ sk) => h("span", { class: "tag" }, sk))), h("p", {}, ""), h("div", { class: "row" }, onHosts(b), takeBackBtn(op)));
+        const y = yamlToggle({ kind: "bundle", name: b.name });
+        return h("div", { class: "panel card" + (y.panel ? " yamlopen" : "") }, h("h3", {}, b.name, heldTag(op)), h("div", { class: "row" }, ...b.skills.map((/** @type {string} */ sk) => h("span", { class: "tag" }, sk))), h("p", {}, ""), h("div", { class: "row" }, onHosts(b), takeBackBtn(op), y.button), y.panel);
       }),
       addCard("bundle", "+ Add a skill bundle"),
     ),
@@ -870,19 +942,24 @@ function catalogScreen() {
 function hostsScreen() {
   const [title, about] = SCREENS.hosts;
   if (model.base === null) return loadingOrError(title, model.matrixError);
+  /** @type {Item[]} */
+  const items = model.base.hosts.map((/** @type {any} */ x) => ({ kind: "host", name: x.name }));
   return h(
     "div",
     {},
-    pageHead(title, about, h("button", { type: "button", class: "btn primary", id: "add-host", onclick: () => openAdd("host") }, "+ Add host")),
+    pageHead(title, about, yamlAll(items), h("button", { type: "button", class: "btn primary", id: "add-host", onclick: () => openAdd("host") }, "+ Add host")),
     h("div", { class: "cards" },
       ...model.base.hosts.map((/** @type {any} */ host) => {
         const bundles = model.base.bundles.filter((/** @type {any} */ b) => b.cells[host.name]?.on).map((/** @type {any} */ b) => b.name);
         const servers = model.base.servers.filter((/** @type {any} */ sv) => sv.cells[host.name]?.on).map((/** @type {any} */ sv) => sv.name);
+        const y = yamlToggle({ kind: "host", name: host.name });
         return h(
           "div",
-          { class: "panel card" },
+          { class: "panel card" + (y.panel ? " yamlopen" : "") },
           h("h3", {}, host.name, host.self ? h("span", { class: "tag ok" }, "this host") : null),
           h("dl", { class: "facts small" }, h("dt", {}, "reached"), h("dd", {}, host.self ? "local" : host.ssh ? `ssh ${host.ssh}` : "on its own timer"), h("dt", {}, "bundles"), h("dd", {}, bundles.join(", ") || "none"), h("dt", {}, "servers"), h("dd", {}, servers.join(", ") || "none")),
+          h("div", { class: "row" }, y.button),
+          y.panel,
         );
       }),
       addCard("host", "+ Add a host"),
@@ -1156,6 +1233,7 @@ async function loadMatrix() {
   }
   render();
   refreshPreview();
+  refreshYaml();
 }
 
 /** This host's plan for the held edits, once per set of edits. */
