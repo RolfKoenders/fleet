@@ -234,7 +234,7 @@ function matrixScreen() {
       h("span", {}, h("b", { class: "mk staged" }, "▢"), "to push, not written yet"),
     ),
     model.ops.length > 0
-      ? h("div", { class: "row heldbar" }, h("span", { class: "tag ok" }, `${model.ops.length} to push`), h("a", { class: "btn primary", href: "#/review" }, "Review & push"), h("button", { class: "btn ghost", onclick: discardAll }, "Discard all"))
+      ? h("div", { class: "row heldbar" }, h("span", { class: "tag ok" }, `${model.ops.length} to push`), h("a", { class: "btn primary", href: "#/review" }, "Review & push"), h("button", { class: "btn ghost danger", onclick: discardAll }, "Discard all"))
       : null,
   );
 }
@@ -687,7 +687,7 @@ function addHostPanel() {
   const held = heldProblem(model.ops);
   const outside = model.base?.outside ?? [];
   if (held !== null) {
-    return h("div", { class: "notice", id: "hostheld" }, h("b", {}, held), h("div", { class: "row", style: "margin-top:10px" }, h("a", { class: "btn primary", href: "#/review" }, "Review & push"), h("button", { type: "button", class: "btn", onclick: discardAll }, "Discard changes to push")));
+    return h("div", { class: "notice", id: "hostheld" }, h("b", {}, held), h("div", { class: "row", style: "margin-top:10px" }, h("a", { class: "btn primary", href: "#/review" }, "Review & push"), h("button", { type: "button", class: "btn danger", onclick: discardAll }, "Discard changes to push")));
   }
   const names = model.base.hosts.map((/** @type {any} */ x) => x.name);
   const f = model.hostForm;
@@ -793,7 +793,7 @@ function secretsScreen() {
           ),
         ),
     held.length > 0
-      ? h("div", { class: "row heldbar" }, h("span", { class: "tag ok" }, `${held.length} secret${held.length === 1 ? "" : "s"} to push, encrypted`), h("a", { class: "btn primary", href: "#/review" }, "Review & push"), h("button", { class: "btn ghost", onclick: discardAll }, "Discard all"))
+      ? h("div", { class: "row heldbar" }, h("span", { class: "tag ok" }, `${held.length} secret${held.length === 1 ? "" : "s"} to push, encrypted`), h("a", { class: "btn primary", href: "#/review" }, "Review & push"), h("button", { class: "btn ghost danger", onclick: discardAll }, "Discard all"))
       : null,
   );
 }
@@ -814,7 +814,7 @@ function openSecretDialog(row, table) {
   });
   const boxes = targets.map((t) => h("input", { type: "checkbox", id: `st-${t.file}`, checked: t.checked, disabled: t.disabled }));
   const err = h("div", { class: "err", role: "alert" });
-  const encrypt = h("button", { type: "submit", class: "btn primary" }, "Encrypt and hold");
+  const encrypt = h("button", { type: "submit", class: "btn primary" }, "Encrypt for push");
   const cancel = h("button", { type: "button", class: "btn ghost" }, "Cancel");
   const dialog = h(
     "dialog",
@@ -864,7 +864,7 @@ function openSecretDialog(row, table) {
     } catch (error) {
       value = "";
       for (const el of [encrypt, cancel, input, ...boxes]) /** @type {HTMLButtonElement | HTMLInputElement} */ (el).disabled = false;
-      encrypt.textContent = "Encrypt and hold";
+      encrypt.textContent = "Encrypt for push";
       err.textContent = `${said(error, "the value could not be encrypted")} Type the value again.`;
       input.focus();
     }
@@ -902,7 +902,7 @@ function reviewScreen() {
     h(
       "div",
       { class: "panel" },
-      h("div", { class: "pushbox" }, message, go, editing ? h("button", { class: "btn ghost", disabled: model.push.running, onclick: discardAll }, "Discard all") : null),
+      h("div", { class: "pushbox" }, message, go, editing ? h("button", { class: "btn ghost danger", disabled: model.push.running, onclick: discardAll }, "Discard all") : null),
       stop.length > 0 && !model.push.running ? h("div", { class: "notice bad inset" }, stop.join("; ")) : null,
       pushPanel(),
     ),
