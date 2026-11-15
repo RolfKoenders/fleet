@@ -10,7 +10,8 @@
  * @typedef {{ name: string, repo: string, path: string, branch: string, mode: "pin" | "follow", review: boolean }} SourceForm
  * @typedef {{ name: string, picked: string[], extra: string }} BundleForm
  * @typedef {{ key: string, repo: string, path: string, branch: string | null, commit: string, skills: string[], problem: string | null, id: string, headBranch: string | null }} Cloned
- * @typedef {{ op: Op | null, problems: string[], warnings: string[] }} Draft
+ * @typedef {{ op: Op | null, problems: string[], warnings: string[], unchanged?: boolean }} Draft
+ * `unchanged`: an edit form that holds exactly what the file holds, so there is nothing to push.
  */
 
 /** The loader's message for a secret in a command (`src/mcp.ts`), without its `catalog/mcp.yaml: server 'x':` prefix. */
@@ -176,20 +177,58 @@ export const secretOf = (row) => (row.value.trim() !== "" ? row.value.trim() : E
 /** Rows that have something in them. @param {Row[]} rows */
 const filled = (rows) => rows.filter((r) => r.key.trim() !== "" || r.value.trim() !== "");
 
+/** The fields of a server entry that the form holds. */
+export const SERVER_FIELDS = ["command", "transport", "url", "env", "headers", "only"];
+
+/** Two values are the same: maps without regard to the order of their keys, lists in order. @param {any} a @param {any} b @returns {boolean} */
+export function sameValue(a, b) {
+  if (Array.isArray(a) || Array.isArray(b)) return Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((x, i) => sameValue(x, b[i]));
+  if (typeof a === "object" && a !== null && typeof b === "object" && b !== null) {
+    const ka = Object.keys(a);
+    return ka.length === Object.keys(b).length && ka.every((k) => k in b && sameValue(a[k], b[k]));
+  }
+  return a === b;
+}
+
 /**
- * The edit a server form holds, or why it cannot yet.
+ * The changes from `base` to `entry` in the fields named by `keys`, as the engine's edits hold them: what the key held (null when it
+ * was not there) and what it should hold (null to take it out). A key that is the same is no change.
+ * @param {Record<string, any>} base @param {Record<string, any>} entry @param {string[]} keys
+ * @returns {{ key: string, from: any, to: any }[]}
+ */
+export const entryChanges = (base, entry, keys) =>
+  keys.map((key) => ({ key, from: base[key] ?? null, to: entry[key] ?? null })).filter((c) => !sameValue(c.from, c.to));
+
+/**
+ * The entry after `changes`: a key whose `to` is null is gone. @param {Record<string, any>} base @param {{ key: string, to: any }[]} changes
+ * @returns {Record<string, any>}
+ */
+export function applyChanges(base, changes) {
+  const out = { ...base };
+  for (const c of changes) {
+    if (c.to === null) delete out[c.key];
+    else out[c.key] = c.to;
+  }
+  return out;
+}
+
+/**
+ * The edit a server form holds, or why it cannot yet. Given `base` (the entry as it is in the file) the form is an edit of that
+ * entry: the name is not checked, a field that is as it is in the file is not checked or warned about again, and the edit holds only
+ * the fields that changed.
  * @param {ServerForm} f
  * @param {string[]} taken names already in the catalog (and held)
  * @param {string[]} [held] the names already added to To push
+ * @param {Record<string, any> | null} [base]
  * @returns {Draft}
  */
-export function serverDraft(f, taken, held = []) {
+export function serverDraft(f, taken, held = [], base = null) {
   /** @type {string[]} */
   const problems = [];
   /** @type {string[]} */
   const warnings = [];
   const name = f.name.trim();
-  const bad = nameProblem(name, taken, held, SERVER_NAME, "name");
+  const bad = base === null ? nameProblem(name, taken, held, SERVER_NAME, "name") : null;
   if (bad !== null) problems.push(bad);
   /** @type {Record<string, any>} */
   const entry = {};
@@ -200,12 +239,12 @@ export function serverDraft(f, taken, held = []) {
     else if (command.some((a) => secretNamesIn(a).length > 0)) problems.push(COMMAND_SECRET);
     else {
       entry.command = command;
-      const warning = unpinned(command);
+      const warning = base !== null && sameValue(command, base.command) ? null : unpinned(command);
       if (warning !== null) warnings.push(warning);
     }
   } else {
     const url = f.url.trim();
-    const bad = urlProblem(url);
+    const bad = base !== null && url === base.url ? null : urlProblem(url);
     if (bad !== null) problems.push(bad);
     else {
       entry.transport = f.kind;
@@ -217,7 +256,10 @@ export function serverDraft(f, taken, held = []) {
   for (const row of filled(f.rows)) {
     const key = row.key.trim();
     const label = f.kind === "command" ? "environment variable" : "header";
-    if (key === "") problems.push(`give it a name (this row has a value but no ${label} name)`);
+    const stored = row.mode === "secret" ? (secretOf(row) === "" ? "" : `secret:${secretOf(row)}`) : row.value;
+    // A row as the file has it is not held to a rule the file may have been written without.
+    if (base !== null && key !== "" && !(key in vars) && stored !== "" && (base[f.kind === "command" ? "env" : "headers"] ?? {})[key] === stored) vars[key] = stored;
+    else if (key === "") problems.push(`give it a name (this row has a value but no ${label} name)`);
     else if (!(f.kind === "command" ? ENV_NAME : HEADER_NAME).test(key)) problems.push(`'${key}' is not a valid ${label} name`);
     else if (key in vars) problems.push(`${key} is set twice`);
     else if (row.mode === "secret") {
@@ -230,7 +272,9 @@ export function serverDraft(f, taken, held = []) {
   if (Object.keys(vars).length > 0) entry[f.kind === "command" ? "env" : "headers"] = vars;
   if (!f.claude && !f.opencode) problems.push("pick at least one agent");
   else if (!(f.claude && f.opencode)) entry.only = [f.claude ? "claude" : "opencode"];
-  return { op: problems.length === 0 ? { op: "addServer", name, entry } : null, problems, warnings };
+  if (base === null) return { op: problems.length === 0 ? { op: "addServer", name, entry } : null, problems, warnings };
+  const changes = entryChanges(base, entry, SERVER_FIELDS);
+  return { op: problems.length === 0 && changes.length > 0 ? { op: "editServer", name, changes } : null, problems, warnings, unchanged: problems.length === 0 && changes.length === 0 };
 }
 
 /** The secrets a draft's entry names. @param {Op | null} op */
@@ -284,6 +328,52 @@ export function sourceDraft(f, taken, clone, held = []) {
   return { op: { op: "addSource", name, entry }, problems, warnings: [] };
 }
 
+/** The fields of a source entry that an edit may change. The repo is not one: a changed repo breaks the clones machines already have. */
+export const SOURCE_FIELDS = ["commit", "track", "branch", "path", "review"];
+
+/**
+ * Whether an edit of a source needs the repo looked at (cloned): when the branch or the way it is kept changes, so that the pin can move to the
+ * head of the branch and the branch is known to be there. A change of the path or of review alone leaves the pin where it is.
+ * @param {SourceForm} f @param {Record<string, any>} base
+ */
+export const needsLook = (f, base) => (f.mode === "pin") !== (base.commit !== undefined) || f.branch.trim() !== (base.track ?? base.branch ?? "");
+
+/**
+ * The edit a skill source form holds, as an edit of `base` (the entry as it is in the file): only the fields that change. When the branch or
+ * the mode changes the source is looked at first, and a pin is moved to the head commit of the branch; otherwise the pin stays.
+ * @param {SourceForm} f
+ * @param {Record<string, any>} base
+ * @param {Cloned | null} clone
+ * @returns {Draft}
+ */
+export function sourceEditDraft(f, base, clone) {
+  /** @type {string[]} */
+  const problems = [];
+  const typed = sourceInputs(f);
+  problems.push(.../** @type {string[]} */ ([typed.branch, typed.path].filter((p) => p !== null)));
+  const pinned = base.commit !== undefined;
+  const oldBranch = base.track ?? base.branch ?? "";
+  const look = needsLook(f, base);
+  const fresh = clone !== null && clone.key === cloneKey(f);
+  const none = { op: null, problems, warnings: [] };
+  if (problems.length > 0) return none;
+  if (look && !fresh) return { ...none, problems: ["look at the repo first: it is cloned shallowly to list its skills and read its head commit"] };
+  if (look && clone !== null && clone.problem !== null) return { ...none, problems: [clone.problem] };
+  if (look && clone !== null && clone.skills.length === 0) return { ...none, problems: ["no skill (a directory with a SKILL.md) was found under that path"] };
+  const branch = look ? f.branch.trim() || clone?.headBranch || "" : oldBranch;
+  if (branch === "") return { ...none, problems: [f.mode === "pin" ? "the repo is on a detached head: say which branch to track" : "say which branch to follow"] };
+  // An empty branch that turns out to be the one the source has already is no move.
+  const moved = (f.mode === "pin") !== pinned || branch !== oldBranch;
+  const path = f.path.trim() || ".";
+  // A review: false the file already has stays as it is.
+  const review = f.review ? true : base.review === false ? false : null;
+  /** @type {Record<string, any>} */
+  const entry = f.mode === "pin" ? { repo: base.repo, commit: moved && clone !== null ? clone.commit : base.commit, track: branch, path, review } : { repo: base.repo, branch, path };
+  if (entry.review === null) delete entry.review;
+  const changes = entryChanges(base, entry, SOURCE_FIELDS);
+  return { op: changes.length > 0 ? { op: "editSource", name: f.name, changes } : null, problems, warnings: [], unchanged: changes.length === 0 };
+}
+
 /**
  * @typedef {{ name: string, source: string, bundle: string | null }} Known
  * A skill that exists in a source, and the bundle that already holds it.
@@ -301,10 +391,17 @@ export function skillChoices(known, ops, stagedSkills) {
   /** @type {Map<string, string>} */
   const owner = new Map();
   for (const k of known) if (k.bundle !== null) owner.set(k.name, k.bundle);
-  for (const o of ops) if (o.op === "addBundle") for (const s of o.skills) owner.set(s, o.name);
+  for (const o of ops) {
+    if (o.op === "addBundle") for (const s of o.skills) owner.set(s, o.name);
+    // An edit that takes a skill out of a bundle frees it, and one that puts it in holds it.
+    if (o.op === "editBundle") {
+      for (const s of o.from) if (owner.get(s) === o.name) owner.delete(s);
+      for (const s of o.to) owner.set(s, o.name);
+    }
+  }
   /** @type {Map<string, Known>} */
   const all = new Map(known.map((k) => [k.name, k]));
-  for (const o of ops) if (o.op === "addSource") for (const s of stagedSkills[o.name] ?? []) if (!all.has(s)) all.set(s, { name: s, source: o.name, bundle: null });
+  for (const o of ops) if (o.op === "addSource" || o.op === "editSource") for (const s of stagedSkills[o.name] ?? []) if (!all.has(s)) all.set(s, { name: s, source: o.name, bundle: null });
   return [...all.values()].map((k) => ({ ...k, bundle: owner.get(k.name) ?? null })).sort((a, b) => a.name.localeCompare(b.name));
 }
 
@@ -317,13 +414,14 @@ export const typedSkills = (text) => text.split(/[\s,]+/).filter((s) => s !== ""
  * @param {string[]} taken bundle names already there
  * @param {Known[]} choices what skillChoices says
  * @param {string[]} [held] the bundle names already added to To push
+ * @param {string[] | null} [base] the skills the bundle has in the file: the form is an edit of that bundle
  * @returns {Draft}
  */
-export function bundleDraft(f, taken, choices, held = []) {
+export function bundleDraft(f, taken, choices, held = [], base = null) {
   /** @type {string[]} */
   const problems = [];
   const name = f.name.trim();
-  const bad = nameProblem(name, taken, held);
+  const bad = base === null ? nameProblem(name, taken, held) : null;
   if (bad !== null) problems.push(bad);
   const skills = [...new Set([...f.picked, ...typedSkills(f.extra)])];
   if (skills.length === 0) problems.push("pick at least one skill");
@@ -331,11 +429,13 @@ export function bundleDraft(f, taken, choices, held = []) {
     const holder = choices.find((c) => c.name === skill)?.bundle;
     if (!NAME.test(skill)) problems.push(`'${skill}' is not a skill name`);
     else if (RESERVED.includes(skill)) problems.push(`'${skill}' is a reserved name, fleet never links it from a source`);
-    else if (holder) problems.push(`skill '${skill}' is already in bundle '${holder}': a skill is in only one bundle`);
+    else if (holder && !(base !== null && holder === name)) problems.push(`skill '${skill}' is already in bundle '${holder}': a skill is in only one bundle`);
   }
   /** @type {string[]} */
   const warnings = skills.filter((s) => !choices.some((c) => c.name === s)).map((s) => `${s} is in none of the sources fleet knows: the push fails unless a source has it`);
-  return { op: problems.length === 0 ? { op: "addBundle", name, skills } : null, problems, warnings };
+  if (base === null) return { op: problems.length === 0 ? { op: "addBundle", name, skills } : null, problems, warnings };
+  const same = sameValue(base, skills);
+  return { op: problems.length === 0 && !same ? { op: "editBundle", name, from: base, to: skills } : null, problems, warnings, unchanged: problems.length === 0 && same };
 }
 
 /**
@@ -344,8 +444,9 @@ export function bundleDraft(f, taken, choices, held = []) {
  * @returns {string[]}
  */
 export function opWarnings(op) {
-  if (op.op !== "addServer") return [];
-  const warning = Array.isArray(op.entry.command) ? unpinned(op.entry.command) : null;
+  const command = op.op === "addServer" ? op.entry.command : op.op === "editServer" ? op.changes.find((c) => c.key === "command")?.to : null;
+  if (op.op !== "addServer" && op.op !== "editServer") return [];
+  const warning = Array.isArray(command) ? unpinned(command) : null;
   return warning === null ? [] : [`${op.name}: ${warning}`];
 }
 

@@ -143,6 +143,11 @@ test("the API client sends the token as a header and turns a refusal into an Api
   assert.equal(seen[1].init.body, JSON.stringify({ message: "msg" }));
   await ok.push();
   assert.equal(seen[2].init.body, "{}");
+  // A write carries the skills the page staged, so the server runs the same check of the bundles as the preview did.
+  await ok.write([], "msg", { local: ["review"] });
+  assert.equal(seen[3].init.body, JSON.stringify({ ops: [], message: "msg", staged: { local: ["review"] } }));
+  await ok.write([], "msg", {});
+  assert.equal(seen[4].init.body, JSON.stringify({ ops: [], message: "msg" }));
   const locked = createClient("tok", answer(409, { ok: false, code: "locked", messages: ["a push is already running (pid 7)"] }));
   await assert.rejects(locked.push(), (e: unknown) => e instanceof ApiError && e.code === "locked" && e.messages[0] === "a push is already running (pid 7)" && e.status === 409);
   const down = createClient("tok", async () => { throw new TypeError("fetch failed"); });

@@ -7,7 +7,7 @@ import { hostTargets } from "../targets.ts";
 import { isObject, isStringList, parseFile } from "../yamlfile.ts";
 import type { Obj, Overlay } from "../yamlfile.ts";
 
-export type HostInfo = { name: string; ssh: string | null; self: boolean };
+export type HostInfo = { name: string; ssh: string | null; self: boolean; /** The host file says `admin: true`. */ admin?: boolean };
 
 /** Which file did it: the defaults, the host's own file, or both. */
 export type Origin = "defaults" | "host" | "both";
@@ -70,7 +70,7 @@ export function loadModel(configDir: string, self: string | null, held?: Readonl
   const servers = parseMcpCatalog(configDir, problems, overlay);
 
   // This host first, then the others by name.
-  const hosts: HostInfo[] = targets.map((t) => ({ name: t.host, ssh: t.ssh, self: t.host === self })).sort((a, b) => Number(b.self) - Number(a.self));
+  const hosts: HostInfo[] = targets.map((t) => ({ name: t.host, ssh: t.ssh, self: t.host === self, admin: docs.get(t.host)?.admin === true })).sort((a, b) => Number(b.self) - Number(a.self));
   const rowOf = (kind: Row["kind"], name: string, skills: string[], listKey: "bundles" | "mcp", extra: Partial<Row> = {}): Row => {
     const cells: Record<string, Cell> = {};
     for (const h of hosts) {

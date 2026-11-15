@@ -1,9 +1,12 @@
-import { addEntry, entryNames } from "./entries.ts";
+import { addEntry, entryNames, KEY_ORDER } from "./entries.ts";
+import { editFields, editProblem, readValue } from "./fields.ts";
+import type { Change } from "./fields.ts";
 import type { Section, Value } from "./entries.ts";
 import { addToList, readList, removeFromList } from "./lists.ts";
+import { removeEntry } from "./remove.ts";
 import type { ListPath } from "./lists.ts";
 import { newHostFile } from "./hostfile.ts";
-import { CannotEdit } from "./yamltext.ts";
+import { CannotEdit, Stale } from "./yamltext.ts";
 import { ciphertextProblem, fingerprint, parseSopsText, SECRETS_PATH } from "./secretfile.ts";
 
 /** What a host picks from: skill bundles, or MCP servers. */
@@ -30,6 +33,25 @@ export type EditOp =
   | { op: "addBundle"; name: string; skills: string[] }
   /** A new host file, reached over `ssh`, with nothing picked yet or a copy of what `from` picks and sets. */
   | { op: "addHost"; host: string; ssh: string; from: string | null }
+  /**
+   * Changes to some fields of a server or source already in the catalog. `from` of each change is what the file held when the edit was
+   * made, and `to` what it should hold (`null` is not there): a file that says something else now makes the edit stale.
+   */
+  | { op: "editServer"; name: string; changes: Change[] }
+  | { op: "editSource"; name: string; changes: Change[] }
+  /** The server is gone from `catalog/mcp.yaml`, and from every `mcp.include` and `mcp.exclude` of the defaults and the hosts. */
+  | { op: "removeServer"; name: string }
+  /** The bundle is gone from `catalog/skills.yaml`, and from every `bundles` and `exclude` of the defaults and the hosts. */
+  | { op: "removeBundle"; name: string }
+  /**
+   * The skill source is gone from `catalog/skills.yaml`, and `skills` (the ones only it provides, as the page knew them) are taken out of every bundle that
+   * lists them. A bundle left with no skill stays, as `[]`. A clone of the source on a machine is not touched.
+   */
+  | { op: "removeSource"; name: string; skills: string[] }
+  /** A bundle's skills, from what the file held to what it should hold. */
+  | { op: "editBundle"; name: string; from: string[]; to: string[] }
+  /** A host's ssh destination (`null` from: the file had none). */
+  | { op: "editHost"; host: string; from: string | null; to: string }
   /**
    * One secrets file, already encrypted by sops (see `src/ui/secretset.ts`): `content` is its whole new text and `names` the
    * secrets it sets or replaces. `base` is the digest of the file this was made from (`fingerprint`), so it is only written over
@@ -58,8 +80,6 @@ export const CATALOG_FILES = { servers: "catalog/mcp.yaml", sources: "catalog/sk
 
 const INCLUDE: Record<PickKind, ListPath> = { bundles: ["bundles"], mcp: ["mcp", "include"] };
 const EXCLUDE: Record<PickKind, ListPath> = { bundles: ["exclude"], mcp: ["mcp", "exclude"] };
-
-class Stale extends Error {}
 
 /**
  * Replays `ops`, in order, on `files`. Each is spliced into the text so that everything outside its
@@ -120,9 +140,90 @@ function run(files: Files, op: EditOp): void {
       files[hostFile(op.host)] = newHostFile(op.ssh, source ?? null);
       return;
     }
+    case "removeServer":
+      return removeCatalog(files, "servers", op.name, MCP_LISTS);
+    case "removeBundle":
+      return removeCatalog(files, "bundles", op.name, BUNDLE_LISTS);
+    case "removeSource":
+      return removeSource(files, op.name, op.skills);
+    case "editServer":
+      return editCatalog(files, "servers", op.name, op.changes);
+    case "editSource":
+      return editCatalog(files, "sources", op.name, op.changes);
+    case "editBundle":
+      return editCatalog(files, "bundles", op.name, [{ key: op.name, from: op.from, to: op.to }]);
+    case "editHost": {
+      if (!HOST_NAME.test(op.host)) throw new Stale(`'${op.host}' is not a host name`);
+      const text = files[hostFile(op.host)];
+      if (text === undefined) throw new Stale(`${hostFile(op.host)} does not exist`);
+      files[hostFile(op.host)] = editFields(text, [], [{ key: "ssh", from: op.from, to: op.to }], ["ssh"]);
+      return;
+    }
     case "setSecret":
       return setSecret(files, op);
   }
+}
+
+/** What can be edited in place: the catalog's three kinds of entry and a host's file. */
+export type EditKind = "server" | "source" | "bundle" | "host";
+
+const SECTION: Record<Exclude<EditKind, "host">, Section> = { server: "servers", source: "sources", bundle: "bundles" };
+
+/**
+ * What the item holds in `files`, for an edit dialog to start from: the entry as written (a bundle's list, a host's `{ ssh }`), or `null` when it is not there.
+ * A secret in it is `secret:NAME`, never a value.
+ */
+export function entryValue(files: Files, kind: EditKind, name: string): Value | null {
+  if (kind === "host") {
+    const text = files[hostFile(name)];
+    if (text === undefined) return null;
+    const ssh = readValue(text, ["ssh"]);
+    return typeof ssh === "string" ? { ssh } : {};
+  }
+  return readValue(files[CATALOG_FILES[SECTION[kind]]] ?? "", [SECTION[kind], name]) ?? null;
+}
+
+/** Why `entryValue` of the item cannot be edited by this engine (a shape it refuses, with the reason), or `null` when it can. */
+export function entryProblem(files: Files, kind: EditKind, name: string): string | null {
+  if (kind === "host") return editProblem(files[hostFile(name)] ?? "", [], ["ssh"]);
+  return editProblem(files[CATALOG_FILES[SECTION[kind]]] ?? "", [SECTION[kind], name]);
+}
+
+function editCatalog(files: Files, section: Section, name: string, changes: Change[]): void {
+  const path = CATALOG_FILES[section];
+  const text = files[path] ?? "";
+  if (!entryNames(text, section).includes(name)) throw new Stale(`'${name}' is not in ${path}`);
+  files[path] = section === "bundles" ? editFields(text, ["bundles"], changes, []) : editFields(text, [section, name], changes, KEY_ORDER[section]);
+}
+
+const MCP_LISTS: ListPath[] = [INCLUDE.mcp, EXCLUDE.mcp];
+const BUNDLE_LISTS: ListPath[] = [INCLUDE.bundles, EXCLUDE.bundles];
+
+/** The defaults and every host file there is: the files that pick bundles and servers. */
+const pickingFiles = (files: Files): string[] => Object.keys(files).filter((p) => p === DEFAULTS_FILE || /^hosts\/[^/]+\.yaml$/.test(p)).sort();
+
+/** Takes the entry out of its catalog file, and its name out of `lists` in every file that picks. */
+function removeCatalog(files: Files, section: Section, name: string, lists: ListPath[]): void {
+  const path = CATALOG_FILES[section];
+  const text = files[path] ?? "";
+  if (!entryNames(text, section).includes(name)) throw new Stale(`'${name}' is not in ${path}`);
+  files[path] = removeEntry(text, section, name);
+  for (const file of pickingFiles(files)) {
+    let next = files[file]!;
+    for (const list of lists) next = removeFromList(next, list, name);
+    files[file] = next;
+  }
+}
+
+function removeSource(files: Files, name: string, skills: string[]): void {
+  const path = CATALOG_FILES.sources;
+  if (!entryNames(files[path] ?? "", "sources").includes(name)) throw new Stale(`'${name}' is not in ${path}`);
+  const bundles = (readValue(files[path]!, ["bundles"]) ?? {}) as Record<string, string[]>;
+  for (const [bundle, listed] of Object.entries(bundles)) {
+    const kept = listed.filter((s) => !skills.includes(s));
+    if (kept.length !== listed.length) editCatalog(files, "bundles", bundle, [{ key: bundle, from: listed, to: kept }]);
+  }
+  files[path] = removeEntry(files[path]!, "sources", name);
 }
 
 function setSecret(files: Files, op: Extract<EditOp, { op: "setSecret" }>): void {

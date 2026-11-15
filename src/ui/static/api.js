@@ -61,14 +61,29 @@ export function createClient(token, fetcher = (...args) => fetch(...args), hooks
      * @param {string} name @param {string} value @param {string[]} files @param {unknown[]} ops
      */
     setSecret: (name, value, files, ops) => send("/api/secrets/set", setBody(name, value, files, ops)),
-    /** @param {unknown[]} ops @param {string} [show] a host file to show whether or not the edits change it */
-    preview: (ops, show) => send("/api/preview", show ? { ops, show } : { ops }),
+    /**
+     * @param {unknown[]} ops @param {string} [show] a host file to show whether or not the edits change it
+     * @param {Record<string, string[]>} [staged] the skills of the sources added and not pushed, which the check of the bundles needs
+     */
+    preview: (ops, show, staged) => send("/api/preview", { ops, ...(show ? { show } : {}), ...(staged !== undefined && Object.keys(staged).length > 0 ? { staged } : {}) }),
     /** The file an item is written in, as on disk: `{path, text}`. @param {"server" | "source" | "bundle" | "host"} kind @param {string} name */
     yaml: (kind, name) => send("/api/yaml", { kind, name }),
+    /**
+     * An item as it would be after the held `ops` (pass those without the item's own, to start an edit from the file): its entry, whether it can be edited in
+     * place and why not, and the file it is in. @param {unknown[]} ops @param {"server" | "source" | "bundle" | "host"} kind @param {string} name
+     */
+    entry: (ops, kind, name) => send("/api/entry", { ops, kind, name }),
+    /** What removing a host changes: its files, the secrets files rekeyed, and the names of the secrets it could read. 409 for the host this page runs on and the only admin. @param {string} name */
+    previewRemoveHost: (name) => send("/api/hosts/remove/preview", { name }),
+    /** Deletes the host's files, runs the real fleet secrets rekey, commits and pushes, answering when it has ended; its output arrives on the stream. @param {string} name */
+    removeHost: (name) => send("/api/hosts/remove", { name, confirm: true }),
     /** @param {unknown[]} ops */
     plan: (ops) => send("/api/plan", { ops }),
-    /** Writes the edited files, commits them and runs the push. @param {unknown[]} ops @param {string} message */
-    write: (ops, message) => send("/api/write", { ops, message }),
+    /**
+     * Writes the edited files, commits them and runs the push. @param {unknown[]} ops @param {string} message
+     * @param {Record<string, string[]>} [staged] as for preview: the check of the bundles runs again before anything is written
+     */
+    write: (ops, message, staged) => send("/api/write", { ops, message, ...(staged !== undefined && Object.keys(staged).length > 0 ? { staged } : {}) }),
     /** The host file that adding this host would write, as `{path, before, after}`. Nothing is written. @param {{ name: string, ssh: string, from: string | null }} body */
     previewHost: (body) => send("/api/hosts/preview", body),
     /** Writes hosts/<name>.yaml and runs the real fleet init, answering when it has ended; its output arrives on the stream. @param {{ name: string, ssh: string, from: string | null }} body */
@@ -120,7 +135,7 @@ export function openStream(token, handlers, deps = {}) {
       handlers.onLink("live");
       handlers.onHello(parse(/** @type {MessageEvent} */ (e).data));
     });
-    for (const name of ["push", "pushend", "init", "initend", "jobs"]) {
+    for (const name of ["push", "pushend", "init", "initend", "remove", "removeend", "jobs"]) {
       stream.addEventListener(name, (e) => handlers.onEvent(name, parse(/** @type {MessageEvent} */ (e).data)));
     }
     stream.onerror = () => {

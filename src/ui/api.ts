@@ -2,7 +2,8 @@ import { readHostName } from "../host.ts";
 import { LockedError, acquirePushLock } from "../lock.ts";
 import { loadModel } from "../tui/model.ts";
 import { readSecrets } from "../tui/reads.ts";
-import { outsideChanges, plan, preview, readFiles, secretOpProblem, WriteRefused, writeAndCommit } from "./edits.ts";
+import { entryOf, outsideChanges, plan, preview, readFiles, secretOpProblem, WriteRefused, writeAndCommit } from "./edits.ts";
+import type { StagedSkills } from "./edits.ts";
 import { secretsTable } from "./secretsview.ts";
 import { setRequest, setSecret } from "./secretset.ts";
 import { status } from "../status.ts";
@@ -17,6 +18,7 @@ import { findSkills, sourceDir } from "../sources.ts";
 import { RealPusher } from "../tui/pusher.ts";
 import { yamlOf, yamlRequest } from "./yamlview.ts";
 import { addHost, hostFields, hostRequest, previewHost } from "./hostinit.ts";
+import { previewRemove, removeFields, removeHost, removeRefusal, removeRequest } from "./hostremove.ts";
 import type { FleetEvent } from "../events.ts";
 import type { PushEnd } from "../pushrun.ts";
 import type { Job } from "./jobs.ts";
@@ -41,11 +43,14 @@ import type { Job } from "./jobs.ts";
  *                      config load, and what its picks change) and `outside`. Nothing is written.
  *   POST /api/yaml     Body `{"kind": "server" | "source" | "bundle" | "host", "name": "..."}`. The file that item is written in, as it is on disk:
  *                      `{path, text}`. A path is never taken from the page, only a kind and a name; a host that is not there is 404.
+ *   POST /api/entry    Body `{"ops": [...], "kind": "server" | "source" | "bundle" | "host", "name": "..."}`. What that item is after the held `ops`, for an
+ *                      Edit dialog: `value` (the entry as written: a bundle's skills, a host's `{ssh}`; secrets as `secret:NAME`, never a value), `path`,
+ *                      `found`, `editable` and, when it is not, `reason`, and `text`: the file it is in, as it would be after `ops`.
  *   POST /api/plan     Body `{"ops": [...]}`. This host's full plan: `fleet diff` against the edited config, nothing written.
- *   POST /api/write    Body `{"ops": [...], "message": "..."}`. Writes the edited files, commits them, then runs the real
+ *   POST /api/write    Body `{"ops": [...], "message": "...", "staged": {...}}` (`staged` as for preview). Writes the edited files, commits them, then runs the real
  *                      `fleet push` as `POST /api/push` does. Refuses, writing nothing, when a push is running (409 `locked`),
  *                      when the config repo has changes of its own (409 `outside-changes`), when an edit is stale (409 `stale`)
- *                      or when a host would not load (422 `invalid`).
+ *                      or when a host would not load, the preview's skill check included (422 `invalid`).
  *   GET  /api/events   Server-Sent Events (served by the server itself, not here): `hello`, `push` (a fleet event) and
  *                      `pushend` (the end document). EventSource cannot send headers, so this one route also takes the
  *                      token as `?token=`.
@@ -69,6 +74,17 @@ import type { Job } from "./jobs.ts";
  *                      `locked`), when the config repo has changes of its own (409 `outside-changes`) or when a host would not load
  *                      (422 `invalid`). When init fails before it committed anything, the host file is removed again.
  *
+ *   POST /api/hosts/remove/preview  Body `{"name": "..."}`: what removing the host would change: `files` (each as `{path, before, after}`: its host
+ *                      file, its own secrets file by names only, and `.sops.yaml` as rekey will write it), `rekeyed` (the secrets files that
+ *                      stop naming its key), and `readable` (the NAMES of the secrets the host could read, `shared` and `own`; never a value).
+ *                      Nothing is written or run. 409 `self` for the host the page runs on, `admin` for the only admin host, `stale` for a host that is not there.
+ *   POST /api/hosts/remove  Body `{"name": "...", "confirm": true}`. Not a held edit: deletes `hosts/<name>.yaml` and `secrets/<name>.enc.yaml`, runs the
+ *                      real `fleet secrets rekey` as a child process, then commits and pushes the config repo, relaying the output lines as
+ *                      `remove` events and the end as `removeend`, and answers when it has ended (`ok`, `code`, `exit`, `messages`, `removed`,
+ *                      `restored`, `kept`). Refused, writing nothing, without `confirm`, for the refusals above, while a push or an init runs (409
+ *                      `locked`) or when the config repo has changes of its own (409 `outside-changes`). When rekey or the commit fails, every
+ *                      file is put back. When only the push fails, the commit stays (`kept`).
+ *
  *   POST /api/secrets/set  Body `{"name": "TRACKER_API_KEY", "value": "...", "files": ["box", "shared"], "ops": [...held]}`. Encrypts one
  *                      value into the secrets file of each of `files` (`shared` or a host) with sops, in a private temp dir, and
  *                      answers the held edits that now carry those files: `{"ops": [{"op": "setSecret", ...}], "replaces": [paths]}`.
@@ -76,8 +92,9 @@ import type { Job } from "./jobs.ts";
  *                      value is never in an answer, an error, a log or the stream: a failure is one of a few fixed messages (422
  *                      `no-recipient`, `needs-secret`, `sops-failed`, `recipients`, `invalid`; 409 `stale`).
  *
- * Edits are operations (`EditOp`) held by the page and replayed here: `add` and `remove` of a bundle or server for a host, and the
- * catalog additions `addServer`, `addSource` and `addBundle`, and `setSecret`, a secrets file already encrypted. Each is checked by `opsOf`, with the loader's own rules.
+ * Edits are operations (`EditOp`) held by the page and replayed here: `add` and `remove` of a bundle or server for a host, the
+ * catalog additions `addServer`, `addSource` and `addBundle`, the field changes `editServer`, `editSource`, `editBundle` and `editHost`
+ * (each remembers what it changed from, so a file that moved on makes it stale), and `setSecret`, a secrets file already encrypted. Each is checked by `opsOf`, with the loader's own rules.
  */
 
 export type ApiResponse = { status: number; body: unknown };
@@ -216,7 +233,7 @@ export function routes(deps: ApiDeps): Route[] {
       path: "/api/preview",
       handle: async (req) => {
         const body = await req.json();
-        const p = preview(deps.configDir, readHostName(deps.home), heldOps(body), showOf(body));
+        const p = preview(deps.configDir, readHostName(deps.home), heldOps(body), showOf(body), { home: deps.home, staged: stagedOf(body) });
         const { before: _before, after, edited, ...rest } = p;
         return { status: 200, body: { ok: true, ...rest, matrix: matrixDoc(after), secrets: secretsTable(deps.configDir, after, edited), outside: outside() } };
       },
@@ -227,6 +244,16 @@ export function routes(deps: ApiDeps): Route[] {
       handle: async (req) => {
         const file = yamlOf(deps.configDir, yamlRequest(await req.json()));
         return file === null ? refused(404, "not-found", "there is no such host") : { status: 200, body: { ok: true, ...file } };
+      },
+    },
+    {
+      method: "POST",
+      path: "/api/entry",
+      handle: async (req) => {
+        const body = await req.json();
+        const { kind, name } = yamlRequest(body);
+        const doc = entryOf(deps.configDir, heldOps(body), kind, name);
+        return { status: 200, body: { ok: true, ...doc } };
       },
     },
     {
@@ -262,6 +289,44 @@ export function routes(deps: ApiDeps): Route[] {
             const out = await addHost(deps.configDir, deps.toolDir, deps.home, request, (text) => deps.broadcast("init", { text }));
             if ("refused" in out) return refused(out.refused.status, out.refused.code, out.refused.message, out.refused.extra);
             deps.broadcast("initend", out.doc);
+            return { status: out.doc.exit === null ? 500 : 200, body: out.doc };
+          } finally {
+            release();
+          }
+        } finally {
+          done();
+        }
+      },
+    },
+    {
+      method: "POST",
+      path: "/api/hosts/remove/preview",
+      handle: async (req) => {
+        const { name } = removeFields(await req.json());
+        const no = removeRefusal(deps.configDir, readHostName(deps.home), name);
+        if (no !== null) return refused(no.status, no.code, no.message);
+        return { status: 200, body: { ok: true, ...previewRemove(deps.configDir, name) } };
+      },
+    },
+    {
+      method: "POST",
+      path: "/api/hosts/remove",
+      handle: async (req) => {
+        const request = removeRequest(await req.json());
+        const done = deps.busy({ kind: "remove", name: request.name });
+        try {
+          // The lock is held for the whole removal: rekey does not take it, and a push must not run under it.
+          let release: () => void;
+          try {
+            release = acquirePushLock(deps.home);
+          } catch (error) {
+            if (error instanceof LockedError) return refused(409, "locked", error.message);
+            throw error;
+          }
+          try {
+            const out = await removeHost(deps.configDir, deps.toolDir, deps.home, readHostName(deps.home), request, (text) => deps.broadcast("remove", { text }));
+            if ("refused" in out) return refused(out.refused.status, out.refused.code, out.refused.message, out.refused.extra);
+            deps.broadcast("removeend", out.doc);
             return { status: out.doc.exit === null ? 500 : 200, body: out.doc };
           } finally {
             release();
@@ -311,7 +376,7 @@ export function routes(deps: ApiDeps): Route[] {
           try {
             const found = outside();
             if (found.length > 0) return refused(409, "outside-changes", "the config repo has changes the page did not make: commit or discard them first", { outside: found });
-            written = writeAndCommit(deps.configDir, ops, message.trim());
+            written = writeAndCommit(deps.configDir, ops, message.trim(), { home: deps.home, staged: stagedOf(body) });
           } catch (error) {
             if (error instanceof WriteRefused) return refused(error.code === "invalid" ? 422 : error.code === "failed" ? 500 : 409, error.code, error.message, error.extra);
             throw error;
@@ -356,6 +421,15 @@ function showOf(body: unknown): string | null {
   if (show === undefined) return null;
   if (typeof show !== "string" || !/^hosts\/[A-Za-z0-9][A-Za-z0-9._-]*\.yaml$/.test(show)) throw new BadRequest("show must be a host file such as hosts/box.yaml");
   return show;
+}
+
+/** The skills of the sources the page added and has not pushed, by source: what it saw when it looked at them. Names only, a bounded amount. */
+function stagedOf(body: unknown): StagedSkills {
+  const raw = (body as Record<string, unknown>).staged;
+  if (raw === undefined) return {};
+  const ok = typeof raw === "object" && raw !== null && !Array.isArray(raw) && Object.keys(raw).length <= 50 && Object.entries(raw).every(([k, v]) => /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(k) && Array.isArray(v) && v.length <= 1000 && v.every((s) => typeof s === "string" && s.length <= 200));
+  if (!ok) throw new BadRequest("staged must be a map of source names to lists of skill names");
+  return raw as StagedSkills;
 }
 
 function messageOf(body: unknown): string | undefined {

@@ -4,12 +4,12 @@
 import { idlePush } from "./state.js";
 import { idleInit } from "./hosts.js";
 
-/** @typedef {{ kind: "push" | "init" | "clone" | "check" | "secret", name?: string }} Job */
+/** @typedef {{ kind: "push" | "init" | "remove" | "clone" | "check" | "secret", name?: string }} Job */
 
 /** The jobs in a `hello` or `jobs` document: only well-formed ones. @param {any} doc @returns {Job[]} */
 export function jobsOf(doc) {
   const list = Array.isArray(doc?.jobs) ? doc.jobs : [];
-  return list.filter((/** @type {any} */ j) => j !== null && typeof j === "object" && ["push", "init", "clone", "check", "secret"].includes(j.kind)).map((/** @type {any} */ j) => (typeof j.name === "string" ? { kind: j.kind, name: j.name } : { kind: j.kind }));
+  return list.filter((/** @type {any} */ j) => j !== null && typeof j === "object" && ["push", "init", "remove", "clone", "check", "secret"].includes(j.kind)).map((/** @type {any} */ j) => (typeof j.name === "string" ? { kind: j.kind, name: j.name } : { kind: j.kind }));
 }
 
 /** One job in words. @param {Job} job */
@@ -19,6 +19,8 @@ export function jobLabel(job) {
       return "a push is running";
     case "init":
       return `fleet init of ${job.name ?? "a host"} is running`;
+    case "remove":
+      return `removing ${job.name ?? "a host"} is running`;
     case "clone":
       return "a skill source is being cloned";
     case "check":
@@ -33,7 +35,8 @@ export function jobLabel(job) {
  * push or init that runs is started afresh (the server replays its events next, so they are not counted twice), one that does
  * not is over. A later `jobs` event only ends what it saw end (`before` had it, `now` does not), so a run this page just
  * started, which the server has not counted yet, is left alone, and one it is already showing is not started again.
- * @template {{ push: import("./state.js").PushState, init: import("./hosts.js").InitState }} S
+ * A removal of a host (`removal`, when the page keeps one) follows the same rules as an init.
+ * @template {{ push: import("./state.js").PushState, init: import("./hosts.js").InitState, removal?: import("./hosts.js").InitState }} S
  * @param {S} state @param {Job[]} now @param {Job[] | null} before null for a `hello`
  * @returns {S}
  */
@@ -46,8 +49,14 @@ export function withJobs(state, now, before) {
   else if (!push && state.push.running && (before === null || was("push"))) next = { ...next, push: { ...state.push, running: false } };
   if (init && (before === null || !state.init.running)) next = { ...next, init: { ...idleInit(), running: true, name: init.name ?? null } };
   else if (!init && state.init.running && (before === null || was("init"))) next = { ...next, init: { ...state.init, running: false } };
+  const removing = now.find((j) => j.kind === "remove");
+  if (state.removal !== undefined) {
+    const removal = state.removal;
+    if (removing && (before === null || !removal.running)) next = { ...next, removal: { ...idleInit(), running: true, name: removing.name ?? null } };
+    else if (!removing && removal.running && (before === null || was("remove"))) next = { ...next, removal: { ...removal, running: false } };
+  }
   return next;
 }
 
-/** The jobs that are neither a push nor an init, which have no pane of their own. @param {Job[]} jobs */
-export const otherJobs = (jobs) => jobs.filter((j) => j.kind !== "push" && j.kind !== "init");
+/** The jobs that are neither a push, an init nor a removal, which have no pane of their own. @param {Job[]} jobs */
+export const otherJobs = (jobs) => jobs.filter((j) => j.kind !== "push" && j.kind !== "init" && j.kind !== "remove");

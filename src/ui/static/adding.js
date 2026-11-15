@@ -117,10 +117,10 @@ export const addable = (pane) => pane.state !== "refused" && pane.broken === nul
 
 /**
  * Whether Esc and Cancel may close the dialog. Not while a host is being set up: the run goes on without the page, and its
- * output is the only way to see how it ends.
- * @param {AddKind} kind @param {{ running: boolean }} init
+ * output is the only way to see how it ends. An Edit dialog never runs anything and always closes.
+ * @param {AddKind} kind @param {{ running: boolean }} init @param {boolean} [editing]
  */
-export const closable = (kind, init) => !(kind === "host" && init.running);
+export const closable = (kind, init, editing = false) => editing || !(kind === "host" && init.running);
 
 /**
  * What a dialog holds while it is open: the form of its kind, the server's answer for the file (`live`), the check that
@@ -129,7 +129,9 @@ export const closable = (kind, init) => !(kind === "host" && init.running);
  *   kind: AddKind, server: import("./catalog.js").ServerForm, source: import("./catalog.js").SourceForm, bundle: import("./catalog.js").BundleForm,
  *   host: import("./hosts.js").HostForm, live: { key: string, doc: any, error: string | null } | null, confirm: boolean, check: any,
  *   clone: { state: string, doc: any, error: string | null },
+ *   edit: import("./editing.js").EditState | null,
  * }} AddState
+ * `edit` is set when the dialog edits an item that is there: the form is prefilled from it and its name stays.
  */
 
 /** @param {AddKind} kind @returns {AddState} */
@@ -143,4 +145,5 @@ export const freshAdd = (kind) => ({
   confirm: false,
   check: null,
   clone: { state: "idle", doc: null, error: null },
+  edit: null,
 });

@@ -9,6 +9,9 @@ import type { Pair, Scalar, YAMLMap, YAMLSeq } from "../../vendor/yaml/index.js"
 /** The text has a shape that cannot be spliced safely. The message says which. */
 export class CannotEdit extends Error {}
 
+/** The text no longer says what an edit was made from: the edit has nothing safe to do. The message says which field. */
+export class Stale extends Error {}
+
 export type Parsed = { text: string; map: YAMLMap | null };
 
 /** Parses `text` for splicing. Anything exotic (anchors, aliases, tags, CRLF, several documents) is refused. */
