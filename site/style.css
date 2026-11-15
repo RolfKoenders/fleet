@@ -404,3 +404,8 @@ footer a:hover { color: var(--text); }
 .filters button { font: 500 13px var(--mono); padding: 6px 12px; border-radius: 999px; border: 1px solid var(--border); background: var(--surface); color: var(--sub); cursor: pointer; }
 .filters button.on { background: var(--brand); color: #04120a; border-color: var(--brand); }
 @media (max-width: 900px) { .clpage { grid-template-columns: minmax(0, 1fr); } }
+
+/* fleet ui: screenshots in a window, switched by its tabs. */
+.ui-shot { display: block; width: 100%; height: auto; }
+.ui-shot[hidden] { display: none; }
+.ui-strip { margin-top: 28px; }

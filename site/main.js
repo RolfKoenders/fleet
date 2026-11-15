@@ -259,7 +259,7 @@
     screenNow = screen;
     for (const c of Object.values(clips)) c.player.reset();
     // Tabs and chips show the same selection, whichever of tab, chip or key chose it.
-    document.querySelectorAll(".tabs button").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.screen === screen)));
+    document.querySelectorAll("#bridge .tabs button").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.screen === screen)));
     document.querySelectorAll(".keys button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.screen === screen)));
     caption.textContent = CAPTIONS[screen];
     paint(clips[screen] ? clips[screen].frames[0] : F.screens[screen]);
@@ -274,7 +274,7 @@
     clearTimeout(wake);
     clips[screenNow]?.player.pause();
   });
-  document.querySelectorAll(".tabs button, .keys button").forEach((b) => b.addEventListener("click", () => show(b.dataset.screen)));
+  document.querySelectorAll("#bridge .tabs button, .keys button").forEach((b) => b.addEventListener("click", () => show(b.dataset.screen)));
   // The hero's link still scrolls to the window; it also picks the clip it names.
   document.querySelectorAll("[data-play]").forEach((a) => a.addEventListener("click", () => show(a.dataset.play)));
   addEventListener("resize", () => current && fit(current));
@@ -308,4 +308,20 @@
   }
   for (const el of [bar.closest(".window"), document.getElementById("keys")]) el.addEventListener("keydown", onKey);
   document.fonts.ready.then(() => { measure(); show("home"); paintWatch(); });
+})();
+
+// fleet ui: the tabs switch between the screenshots and their captions.
+(() => {
+  const CAPTIONS = {
+    matrix: "Click a cell to give a host a bundle or a server, or take it away. The pane shows the change to its host file.",
+    edit: "Edit opens the same dialog as Add, filled in. Only the line you change is written; the comments around it stay.",
+  };
+  const caption = document.getElementById("ui-caption");
+  const tabs = document.querySelectorAll(".ui-tabs button");
+  tabs.forEach((t) => t.addEventListener("click", () => {
+    const shot = t.dataset.shot;
+    tabs.forEach((b) => b.setAttribute("aria-selected", String(b === t)));
+    document.querySelectorAll("img.ui-shot").forEach((img) => { img.hidden = img.dataset.shot !== shot; });
+    caption.textContent = CAPTIONS[shot];
+  }));
 })();
