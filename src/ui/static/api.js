@@ -65,6 +65,11 @@ export function createClient(token, fetcher = (...args) => fetch(...args), hooks
     preview: (ops, show) => send("/api/preview", show ? { ops, show } : { ops }),
     /** The file an item is written in, as on disk: `{path, text}`. @param {"server" | "source" | "bundle" | "host"} kind @param {string} name */
     yaml: (kind, name) => send("/api/yaml", { kind, name }),
+    /**
+     * An item as it would be after the held `ops` (pass those without the item's own, to start an edit from the file): its entry, whether it can be edited in
+     * place and why not, and the file it is in. @param {unknown[]} ops @param {"server" | "source" | "bundle" | "host"} kind @param {string} name
+     */
+    entry: (ops, kind, name) => send("/api/entry", { ops, kind, name }),
     /** @param {unknown[]} ops */
     plan: (ops) => send("/api/plan", { ops }),
     /** Writes the edited files, commits them and runs the push. @param {unknown[]} ops @param {string} message */

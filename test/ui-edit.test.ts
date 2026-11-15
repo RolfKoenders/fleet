@@ -60,21 +60,22 @@ const read = (w: { clone: string }, rel: string) => readFileSync(join(w.clone, r
 const entry = (s: UiServer, kind: string, name: string, ops: unknown[] = []) => postJson(s, "/api/entry", { kind, name, ops });
 const file = (p: any, path: string) => p.files.find((f: any) => f.path === path);
 
-test("entry: each kind is read as written, a secret stays a name, and a missing item is 404", async () => {
+test("entry: each kind is read as written, a secret stays a name, and a missing item is not found", async () => {
   await withServer(async (s) => {
     const docs = await entry(s, "server", "docs");
     assert.equal(docs.ok, true);
     assert.equal(docs.path, "catalog/mcp.yaml");
     assert.deepEqual(docs.value, { command: ["npx", "-y", "@example/docs-mcp@1.0.0"], env: { DOCS_TOKEN: "secret:DOCS_TOKEN", REGION: "eu" } });
-    assert.deepEqual([docs.editable, docs.reason, docs.text], [true, null, null]);
+    assert.deepEqual([docs.found, docs.editable, docs.reason, docs.text], [true, true, null, MCP]);
     const src = await entry(s, "source", "local");
     assert.equal(src.value.review, true);
     assert.equal(src.value.track, "main");
     assert.deepEqual((await entry(s, "bundle", "core")).value, ["review", "debug"]);
     assert.deepEqual((await entry(s, "host", "remote")).value, { ssh: "alice@remote" });
     assert.deepEqual((await entry(s, "host", "laptop")).value, {});
-    const res = await post(s, "/api/entry", { kind: "server", name: "nope", ops: [] });
-    assert.equal(res.status, 404);
+    const gone = await entry(s, "server", "nope");
+    assert.deepEqual([gone.found, gone.value, gone.editable, gone.path], [false, null, false, "catalog/mcp.yaml"]);
+    assert.equal((await entry(s, "host", "nobody")).found, false);
   });
 });
 
@@ -82,7 +83,8 @@ test("entry: it is the item after the held edits, so an Edit of an unpushed add 
   await withServer(async (s) => {
     const add = { op: "addServer", name: "fresh", entry: { command: ["node", "x.js"], only: ["claude"] } };
     assert.deepEqual((await entry(s, "server", "fresh", [add])).value, { command: ["node", "x.js"], only: ["claude"] });
-    assert.equal((await post(s, "/api/entry", { kind: "server", name: "fresh", ops: [] })).status, 404);
+    assert.equal((await entry(s, "server", "fresh")).found, false);
+    assert.ok((await entry(s, "server", "fresh", [add])).text.includes("  fresh:\n"), "the text is the file after the held edits");
     const edit = { op: "editServer", name: "docs", changes: [{ key: "env", from: { DOCS_TOKEN: "secret:DOCS_TOKEN", REGION: "eu" }, to: null }] };
     assert.equal((await entry(s, "server", "docs", [edit])).value.env, undefined);
   });

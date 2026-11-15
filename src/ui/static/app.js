@@ -6,7 +6,8 @@ import { jobLabel, jobsOf, withJobs } from "./jobs.js";
 import { changed, counts, lineDiff, splitLines, tokenize } from "./diff.js";
 import { fill, h } from "./dom.js";
 import { ADD, addable, CATALOG_KINDS, closable, confirmLabel, fileOf, freshAdd, hostAsDraft, paneView } from "./adding.js";
-import { bundleDraft, checkLines, cloneKey, confirmText, opWarnings, secretOf, secretsOf, serverDraft, skillChoices, sourceDraft, sourceInputs, takeBack } from "./catalog.js";
+import { bundleDraft, checkLines, cloneKey, confirmText, needsLook, opWarnings, secretOf, secretsOf, serverDraft, skillChoices, sourceDraft, sourceEditDraft, sourceInputs, takeBack } from "./catalog.js";
+import { bundleFormOf, EDIT, EDIT_LABEL, editPaneView, freshEdit, hostEditDraft, hostFormOf, isAddition, ownOp, readOnlyLines, serverAsAdded, serverFormOf, sourceFormOf, startOf, withEdit } from "./editing.js";
 import { blockers, cellAction, DROPPED_BLOCKER, cellState, clickCell, opLabel, suggestMessage, summaryLine, WORDS } from "./matrix.js";
 import { confirmInit, elapsed, heldProblem, hostDraft, idleInit, initEnd, initLine, SETUP_DOC, startInit } from "./hosts.js";
 import { actionOf, afterSet, cellView, dialogTargets, heldNames, missingCount, retryText, valueProblem } from "./secrets.js";
@@ -334,6 +335,7 @@ const hostNames = () => (model.base?.hosts ?? []).map((/** @type {any} */ x) => 
 
 /** What the open dialog would hold (a catalog edit, or a host request), or why it cannot yet. @param {import("./adding.js").AddState} f @returns {any} */
 function draftOf(f) {
+  if (f.edit !== null) return editDraftOf(f);
   const view = shownMatrix();
   const held = (/** @type {string} */ op) => model.ops.filter((/** @type {any} */ o) => o.op === op).map((/** @type {any} */ o) => o.name);
   if (f.kind === "server") return serverDraft(f.server, view.servers.map((/** @type {any} */ r) => r.name), held("addServer"));
@@ -341,6 +343,19 @@ function draftOf(f) {
   if (f.kind === "host") return hostAsDraft(f.host, hostNames());
   return bundleDraft(f.bundle, view.bundles.map((/** @type {any} */ r) => r.name), skillOptions(), held("addBundle"));
 }
+
+/** What an Edit dialog holds: an edit of the item as it is in the file, or nothing while it is not read yet. @param {import("./adding.js").AddState} f @returns {any} */
+function editDraftOf(f) {
+  const e = /** @type {import("./editing.js").EditState} */ (f.edit);
+  if (e.state !== "ready") return { op: null, problems: [], warnings: [] };
+  if (f.kind === "server") return serverDraft(f.server, [], [], e.base);
+  if (f.kind === "source") return sourceEditDraft(f.source, e.base, f.clone.doc);
+  if (f.kind === "host") return hostEditDraft(f.host, e.base);
+  return bundleDraft(f.bundle, [], skillOptions(), [], e.base);
+}
+
+/** The held edits as they would be with the open Edit dialog's edit in them, and the op that went in. @param {import("./adding.js").AddState} f @param {any} d */
+const editedOps = (f, d) => withEdit(model.ops, ownOp(model.ops, f.kind, /** @type {import("./editing.js").EditState} */ (f.edit).name), d.op, /** @type {import("./editing.js").EditState} */ (f.edit).base);
 
 /** The dialog element while one is open, and the control that opened it (focus goes back there). @type {HTMLDialogElement | null} */
 let dialogEl = null;
@@ -353,18 +368,32 @@ let openerId = "";
  * @param {import("./adding.js").AddKind} kind @param {string} [opener] the id of what gets the focus back, when it is not what has it now
  */
 function openAdd(kind, opener = "") {
-  if (client === null || !usable() || model.form !== null || model.base === null) return;
+  openForm(freshAdd(kind), opener);
+}
+
+/**
+ * Opens the dialog that edits an item that is there: the Add dialog of its kind, prefilled from the file once it is read. The name stays.
+ * @param {import("./adding.js").AddKind} kind @param {string} name @param {string} [opener]
+ */
+function openEdit(kind, name, opener = "") {
+  if (openForm(freshEdit(kind, name), opener)) loadEdit();
+}
+
+/** @param {import("./adding.js").AddState} form @param {string} opener @returns {boolean} whether it opened */
+function openForm(form, opener) {
+  if (client === null || !usable() || model.form !== null || model.base === null) return false;
+  const kind = form.kind;
   openerId = opener !== "" ? opener : document.activeElement instanceof HTMLElement ? document.activeElement.id : "";
-  if (kind === "host") {
+  if (kind === "host" && form.edit === null) {
     if (!model.init.running) model.init = idleInit();
     model.initError = null;
   }
-  model.form = freshAdd(kind);
+  model.form = form;
   const dialog = h("dialog", { class: "adlg", "aria-labelledby": "adlg-title" });
   dialogEl = dialog;
   // Esc: the browser closes the dialog. While a host is being set up it must not, the run goes on without the page.
   dialog.addEventListener("cancel", (e) => {
-    if (!closable(kind, model.init)) e.preventDefault();
+    if (!closable(kind, model.init, form.edit !== null)) e.preventDefault();
   });
   // Tab wraps inside the dialog: from its last control to its first, and back.
   dialog.addEventListener("keydown", (e) => {
@@ -383,7 +412,7 @@ function openAdd(kind, opener = "") {
   });
   dialog.addEventListener("close", () => {
     // A second Esc can slip past the cancel event; a dialog that may not close is shown again.
-    if (model.form !== null && !closable(kind, model.init)) return void dialog.showModal();
+    if (model.form !== null && !closable(kind, model.init, form.edit !== null)) return void dialog.showModal();
     dropDialog(dialog);
   });
   document.body.append(dialog);
@@ -392,9 +421,38 @@ function openAdd(kind, opener = "") {
   dialog.showModal();
   firstField();
   if (kind !== "host") {
-    loadSkills();
+    // An Edit dialog reads the skills itself: it needs them to tell the ticked skills from the typed ones.
+    if (form.edit === null) loadSkills();
     loadSecrets();
   }
+  scheduleLive();
+  return true;
+}
+
+/** Reads the item the dialog edits and fills the form from it: the item as the file has it, with the held edit of it on top. */
+async function loadEdit() {
+  const f = model.form;
+  if (f === null || f.edit === null || client === null) return;
+  const name = f.edit.name;
+  const own = ownOp(model.ops, f.kind, name);
+  try {
+    // The file is read as it would be without this item's own edit: the dialog's edit replaces it.
+    const [doc] = await Promise.all([client.entry(model.ops.filter((o) => o !== own), f.kind, name), f.kind === "bundle" ? loadSkills() : null]);
+    if (model.form !== f) return;
+    const s = startOf(f.kind, name, doc, own);
+    f.edit = { ...f.edit, state: s.state, error: s.error, reason: s.reason, path: doc.path, text: doc.text ?? "", base: s.base };
+    if (s.state === "ready") {
+      if (f.kind === "server") f.server = serverFormOf(name, s.value);
+      else if (f.kind === "source") f.source = sourceFormOf(name, s.value);
+      else if (f.kind === "host") f.host = hostFormOf(name, s.value);
+      else f.bundle = bundleFormOf(name, s.value, skillOptions());
+    }
+  } catch (e) {
+    if (model.form !== f) return;
+    f.edit = { ...f.edit, state: "error", error: said(e, "the item could not be read") };
+  }
+  renderDialog();
+  firstField();
   scheduleLive();
 }
 
@@ -463,6 +521,20 @@ function addToPush(f, op) {
   refreshPreview();
 }
 
+/** The edit goes onto To push, in place of the item's own edit or unpushed addition, and the dialog is closed. @param {import("./adding.js").AddState} f @param {any} d */
+function saveEdit(f, d) {
+  const e = f.edit;
+  if (e === null || e.state !== "ready") return;
+  const own = ownOp(model.ops, f.kind, e.name);
+  if (d.op === null && !(d.unchanged && own !== undefined && !isAddition(own))) return;
+  const { ops, sent } = editedOps(f, d);
+  if (sent !== null && (sent.op === "addSource" || sent.op === "editSource") && f.clone.doc) model.stagedSkills[sent.name] = f.clone.doc.skills;
+  model.ops = ops;
+  model.messageEdited = false;
+  closeAdd();
+  refreshPreview();
+}
+
 /** Takes an addition back off To push, with the picks of it. @param {Op} op */
 function removeFromPush(op) {
   model.ops = takeBack(model.ops, op);
@@ -490,7 +562,7 @@ async function loadLive() {
   const key = JSON.stringify(d.op);
   const seq = ++liveSeq;
   try {
-    const doc = await (f.kind === "host" ? client.previewHost(d.op) : client.preview([...model.ops, d.op]));
+    const doc = await (f.kind === "host" && f.edit === null ? client.previewHost(d.op) : client.preview(f.edit !== null ? editedOps(f, d).ops : [...model.ops, d.op]));
     if (seq !== liveSeq || model.form !== f) return;
     f.live = { key, doc, error: null };
   } catch (e) {
@@ -536,13 +608,14 @@ async function lookAtRepo() {
 async function runCheck() {
   const f = model.form;
   const d = f === null ? null : draftOf(f);
-  if (f === null || client === null || d === null || d.op === null || d.op.op !== "addServer") return;
-  const key = JSON.stringify(d.op);
+  const full = f === null || d === null ? null : serverAsAdded(d, f.edit?.base ?? null, f.server.name.trim());
+  if (f === null || client === null || full === null || full.op !== "addServer") return;
+  const key = JSON.stringify(full);
   f.confirm = false;
   f.check = { key, state: "running" };
   renderDialog();
   try {
-    const doc = await client.probe(d.op.name, d.op.entry);
+    const doc = await client.probe(full.name, full.entry);
     if (f.check?.key === key) f.check = { key, state: "done", doc };
   } catch (e) {
     if (f.check?.key === key) f.check = { key, state: "error", error: said(e, "the check could not run") };
@@ -577,6 +650,11 @@ function submitAdd() {
   const f = model.form;
   if (f === null) return;
   const d = draftOf(f);
+  if (f.edit !== null) {
+    if (f.edit.state !== "ready") return;
+    if (f.kind === "source" && d.op === null && needsLook(f.source, f.edit.base) && !(f.clone.doc !== null && f.clone.doc.key === cloneKey(f.source))) return void lookAtRepo();
+    return saveEdit(f, d);
+  }
   if (f.kind === "host") {
     const end = model.init.end;
     if (d.op !== null && !f.confirm && !model.init.running && !end?.ok && heldProblem(model.ops) === null && (model.base?.outside ?? []).length === 0) {
@@ -622,7 +700,7 @@ function serverFields(f) {
   const d = draftOf(f);
   const commandProblem = !net && d.problems.find((/** @type {string} */ p) => p.includes("'command'"));
   return [
-    field("f-name", "Name", textInput("f-name", s.name, (v) => (s.name = v)), ["How host files pick it: ", h("code", {}, `mcp.include: [${s.name.trim() || "name"}]`)]),
+    field("f-name", "Name", textInput("f-name", s.name, (v) => (s.name = v), f.edit !== null ? { disabled: true } : {}), ["How host files pick it: ", h("code", {}, `mcp.include: [${s.name.trim() || "name"}]`), f.edit !== null ? ". The name stays: a rename would leave the host files that pick it pointing at nothing." : ""]),
     field("f-kind", "It runs", seg("f-kind", ["on the machine (command)", "at a URL (http)", "at a URL (sse)"], ["command", "http", "sse"], s.kind, (v) => (s.kind = v))),
     net
       ? field("f-url", "URL", textInput("f-url", s.url, (v) => (s.url = v), { placeholder: "where the server listens: https, then the address" }))
@@ -656,9 +734,13 @@ function sourceFields(f) {
   const fresh = c.doc !== null && c.doc.key === cloneKey(s);
   const typed = sourceInputs(s);
   const wrong = (/** @type {string | null} */ p, /** @type {any} */ help) => (p === null ? help : h("span", { class: "bad" }, p));
+  const edit = f.edit !== null;
+  const base = edit ? f.edit.base : null;
+  const look = edit && needsLook(s, base);
+  const moved = edit && fresh && c.doc.problem === null && (s.mode === "pin") && (look && (s.mode === "pin") !== (base.commit !== undefined) || (s.branch.trim() || c.doc.headBranch || "") !== (base.track ?? base.branch ?? ""));
   return [
-    field("s-name", "Name", textInput("s-name", s.name, (v) => (s.name = v)), "What bundles and messages call it."),
-    field("s-repo", "Repo", textInput("s-repo", s.repo, (v) => (s.repo = v), { placeholder: "the repo URL, or a path on this machine" }), wrong(typed.repo, "A URL, or a path on this machine. It is cloned shallowly into a temp directory to list its skills, and the clone is deleted when you close this dialog.")),
+    field("s-name", "Name", textInput("s-name", s.name, (v) => (s.name = v), edit ? { disabled: true } : {}), edit ? "What bundles and messages call it. It stays." : "What bundles and messages call it."),
+    field("s-repo", "Repo", textInput("s-repo", s.repo, (v) => (s.repo = v), edit ? { disabled: true } : { placeholder: "the repo URL, or a path on this machine" }), edit ? "The repo stays: your machines keep each source's clone under its name, so a different repo would break them. For another repo, add another source." : wrong(typed.repo, "A URL, or a path on this machine. It is cloned shallowly into a temp directory to list its skills, and the clone is deleted when you close this dialog.")),
     field("s-path", "Path in the repo", textInput("s-path", s.path, (v) => (s.path = v), { placeholder: "." }), wrong(typed.path, "Where to look for skills: directories with a SKILL.md, at any depth. Use . for the whole repo.")),
     field("s-branch", "Branch", textInput("s-branch", s.branch, (v) => (s.branch = v), { placeholder: "the repo's default" }), typed.branch === null ? null : h("span", { class: "bad" }, typed.branch)),
     field("s-mode", "Keep it", seg("s-mode", ["pinned to a commit", "following the branch"], ["pin", "follow"], s.mode, (v) => (s.mode = v)), s.mode === "pin" ? "A pinned source moves only when you run fleet skills update, so a change upstream cannot reach your machines unreviewed." : "A followed source is on the newest commit of its branch at every apply. Use it for skills you write."),
@@ -670,8 +752,8 @@ function sourceFields(f) {
     ),
     c.state === "error" ? h("div", { class: "notice bad inline cloneerr", role: "alert" }, c.error) : null,
     fresh && c.doc.problem === null
-      ? h("div", { class: "found" }, h("div", { class: "muted" }, `${c.doc.skills.length} skill${c.doc.skills.length === 1 ? "" : "s"} found at ${c.doc.path}; head ${c.doc.commit.slice(0, 7)}${c.doc.headBranch ? ` on ${c.doc.headBranch}` : ""}`), h("div", { class: "row" }, ...c.doc.skills.slice(0, 40).map((/** @type {string} */ sk) => h("span", { class: "tag" }, sk))))
-      : null,
+      ? h("div", { class: "found" }, h("div", { class: "muted" }, `${c.doc.skills.length} skill${c.doc.skills.length === 1 ? "" : "s"} found at ${c.doc.path}; head ${c.doc.commit.slice(0, 7)}${c.doc.headBranch ? ` on ${c.doc.headBranch}` : ""}`), moved ? h("div", { class: "muted" }, `The pin moves to ${c.doc.commit.slice(0, 7)}, the head of ${s.branch.trim() || c.doc.headBranch}.`) : null, h("div", { class: "row" }, ...c.doc.skills.slice(0, 40).map((/** @type {string} */ sk) => h("span", { class: "tag" }, sk))))
+      : edit && !look ? h("div", { class: "help" }, "The pin stays where it is. A different branch, or keeping it another way, needs a look at the repo first: the pin then moves to the head of the branch.") : null,
   ];
 }
 
@@ -680,14 +762,14 @@ function bundleFields(f) {
   const b = f.bundle;
   const options = skillOptions();
   return [
-    field("b-name", "Name", textInput("b-name", b.name, (v) => (b.name = v)), ["How host files pick it: ", h("code", {}, `bundles: [${b.name.trim() || "name"}]`)]),
+    field("b-name", "Name", textInput("b-name", b.name, (v) => (b.name = v), f.edit !== null ? { disabled: true } : {}), ["How host files pick it: ", h("code", {}, `bundles: [${b.name.trim() || "name"}]`), f.edit !== null ? ". The name stays: a rename would leave the host files that pick it pointing at nothing." : ""]),
     h(
       "div",
       { class: "field" },
       h("label", {}, "Skills"),
       options.length === 0
         ? h("div", { class: "help" }, "No source has been cloned here yet, so no skill is listed. Add a skill source first, or type the names below.")
-        : h("div", { class: "skills" }, ...options.map((k, i) => check(`b-s${i}`, `${k.name}${k.bundle ? ` (in ${k.bundle})` : ""}`, b.picked.includes(k.name), (v) => (b.picked = v ? [...b.picked, k.name] : b.picked.filter((/** @type {string} */ x) => x !== k.name)), k.bundle !== null))),
+        : h("div", { class: "skills" }, ...options.map((k, i) => check(`b-s${i}`, `${k.name}${k.bundle ? ` (in ${k.bundle})` : ""}`, b.picked.includes(k.name), (v) => (b.picked = v ? [...b.picked, k.name] : b.picked.filter((/** @type {string} */ x) => x !== k.name)), k.bundle !== null && k.bundle !== b.name))),
     ),
     field("b-extra", "Other skill names", textInput("b-extra", b.extra, (v) => (b.extra = v), { placeholder: "names, separated by commas" }), "For a skill in a source that is not cloned here."),
   ];
@@ -721,6 +803,15 @@ function hostFields(f) {
   ];
 }
 
+/** The fields of the Edit-a-host dialog: the ssh destination, and nothing else of the host. @param {any} f */
+function hostEditFields(f) {
+  const d = hostEditDraft(f.host, f.edit.base);
+  return [
+    field("host-name", "Name", textInput("host-name", f.host.name, () => {}, { disabled: true }), "The name stays: it is the host's file, its secrets file and the name fleet init wrote on the machine."),
+    field("host-ssh", "Reach it over ssh", textInput("host-ssh", f.host.ssh, (v) => (f.host.ssh = v), { placeholder: "me@mini.local" }), d.problems.length === 0 ? "How fleet reaches this host to apply a push. Its bundles and servers stay on the Matrix; admin, age, vars, settings and files stay hand-written in the host's file." : h("span", { class: "bad" }, d.problems[0])),
+  ];
+}
+
 /** What fills the dialog for a host while edits are to push: the reason, and the way out. */
 function hostBlocked() {
   return h(
@@ -731,13 +822,13 @@ function hostBlocked() {
 }
 
 /** What the pane beside the form shows for the form as it is now. @param {any} f @param {any} d */
-const paneOf = (f, d) => paneView(f.kind, d, f.live, f.kind === "host" ? null : (model.held[fileOf(f.kind)]?.after ?? null), f.host.name);
+const paneOf = (f, d) => (f.edit !== null ? editPaneView(d, f.live, f.edit.path, f.edit.text, d.op === null ? null : editedOps(f, d).sent) : paneView(f.kind, d, f.live, f.kind === "host" ? null : (model.held[fileOf(f.kind)]?.after ?? null), f.host.name));
 
 /** The pane beside the form: the file as a diff, or what is missing. @param {any} f @param {any} d */
 function filePane(f, d) {
   const pane = paneOf(f, d);
   const head = h("div", { class: "ph" }, h("span", { class: "path" }, pane.path), h("span", { class: "spacer" }), h("span", { class: "tag " + pane.tone }, pane.tag));
-  if (pane.state === "missing") return h("div", { class: "pane-file", id: "pane" }, head, h("div", { class: "hint" }, "To add it:", h("ul", {}, ...pane.problems.map((p) => h("li", {}, p)))));
+  if (pane.state === "missing") return h("div", { class: "pane-file", id: "pane" }, head, h("div", { class: "hint" }, f.edit !== null ? "To save it:" : "To add it:", h("ul", {}, ...pane.problems.map((p) => h("li", {}, p)))));
   if (pane.state === "reading") return h("div", { class: "pane-file", id: "pane" }, head, h("div", { class: "hint" }, "Reading the file..."));
   if (pane.state === "refused") return h("div", { class: "pane-file", id: "pane" }, head, h("div", { class: "notice bad inset" }, pane.message));
   return h("div", { class: "pane-file", id: "pane" }, head, diffBody(pane.lines), pane.broken === null ? null : h("div", { class: "notice bad inset" }, pane.broken));
@@ -746,16 +837,17 @@ function filePane(f, d) {
 /** What "Check it starts" says: first the question, then the answer. @param {any} f @param {any} d */
 function probeBox(f, d) {
   if (f.kind !== "server") return null;
-  if (f.confirm && d.op !== null) {
+  const full = serverAsAdded(d, f.edit?.base ?? null, f.server.name.trim());
+  if (f.confirm && full !== null) {
     return h(
       "div",
       { class: "probe confirm", role: "alertdialog", "aria-label": "Confirm the check" },
-      h("div", {}, confirmText(d.op)),
+      h("div", {}, confirmText(full)),
       h("div", { class: "row" }, h("button", { type: "button", id: "probe-run", class: "btn primary", onclick: runCheck }, "Run the check"), h("button", { type: "button", id: "probe-cancel", class: "btn ghost", onclick: () => { f.confirm = false; renderDialog(); } }, "Cancel")),
     );
   }
   const c = f.check;
-  if (c !== null && d.op !== null && c.key === JSON.stringify(d.op)) {
+  if (c !== null && full !== null && c.key === JSON.stringify(full)) {
     if (c.state === "running") return h("div", { class: "probe" }, h("span", { class: "muted" }, "Starting it and asking for its tools..."));
     if (c.state === "error") return h("div", { class: "probe" }, h("span", { class: "bad" }, c.error));
     const r = checkLines(c.doc);
@@ -778,22 +870,49 @@ function initPane(d) {
   );
 }
 
+/**
+ * What fills the form of an Edit dialog: the item is being read, could not be read, cannot be changed by fleet (the reason, and where to edit it by
+ * hand), or is the Add form of its kind with the values the file has.
+ * @param {import("./adding.js").AddState} f
+ */
+function editFields(f) {
+  const e = /** @type {import("./editing.js").EditState} */ (f.edit);
+  if (e.state === "loading") return [h("div", { class: "hint" }, "Reading the file...")];
+  if (e.state === "error") return [h("div", { class: "notice bad", role: "alert" }, e.error)];
+  if (e.state === "readonly") {
+    return [
+      h("div", { class: "notice", id: "readonly" }, h("b", {}, `Fleet cannot change ${e.name} safely: ${e.reason}.`), h("div", { class: "help" }, "Nothing is guessed at, so Edit here would risk your comments and layout. Edit it by hand in the config repo, then push:"), h("div", { class: "row" }, h("code", { class: "m" }, e.path))),
+    ];
+  }
+  return f.kind === "server" ? serverFields(f) : f.kind === "source" ? sourceFields(f) : f.kind === "bundle" ? bundleFields(f) : hostEditFields(f);
+}
+
+/** The item's lines, as they are in the file, for an item that cannot be edited here. @param {import("./adding.js").AddState} f */
+function readOnlyPane(f) {
+  const e = /** @type {import("./editing.js").EditState} */ (f.edit);
+  const lines = /** @type {[string, string][]} */ (readOnlyLines(e.text, f.kind, e.name).map((l) => [" ", l]));
+  return h("div", { class: "pane-file", id: "pane" }, h("div", { class: "ph" }, h("span", { class: "path" }, e.path), h("span", { class: "spacer" }), h("span", { class: "tag" }, "read-only")), diffBody(lines));
+}
+
 /** The whole content of the dialog. @param {import("./adding.js").AddState} f */
 function dialogContent(f) {
   const d = draftOf(f);
-  const host = f.kind === "host";
+  const edit = f.edit;
+  const host = f.kind === "host" && edit === null;
   const blocked = host && heldProblem(model.ops) !== null;
   const running = host && model.init.running;
   const done = host && model.init.end?.ok === true;
-  const fields = f.kind === "server" ? serverFields(f) : f.kind === "source" ? sourceFields(f) : f.kind === "bundle" ? bundleFields(f) : blocked ? [] : hostFields(f);
+  const fields = edit !== null ? editFields(f) : f.kind === "server" ? serverFields(f) : f.kind === "source" ? sourceFields(f) : f.kind === "bundle" ? bundleFields(f) : blocked ? [] : hostFields(f);
   const warnings = f.kind === "bundle" ? d.warnings.map((/** @type {string} */ w) => h("div", { class: "notice inline" }, w)) : [];
   const outside = (model.base?.outside ?? []).length > 0;
   const pane = paneOf(f, d);
   // Not while the pane says the server refuses it, it does not apply, or the config would not load with it.
-  const ready = d.op !== null && addable(pane) && (!host || (!outside && !running));
+  const own = edit === null ? undefined : ownOp(model.ops, f.kind, edit.name);
+  const ready = edit !== null ? edit.state === "ready" && addable(pane) && (d.op !== null || (d.unchanged === true && own !== undefined && !isAddition(own))) : d.op !== null && addable(pane) && (!host || (!outside && !running));
+  const full = f.kind === "server" ? serverAsAdded(d, edit?.base ?? null, f.server.name.trim()) : null;
   const primary = done
     ? h("button", { type: "button", id: "add-done", class: "btn primary", onclick: closeAdd }, "Done")
-    : h("button", { type: "submit", id: "add-confirm", class: "btn primary", disabled: !ready || !usable() || (host && f.confirm), "aria-describedby": "pane" }, running ? "Setting up..." : confirmLabel(f.kind));
+    : h("button", { type: "submit", id: "add-confirm", class: "btn primary", disabled: !ready || !usable() || (host && f.confirm), "aria-describedby": "pane" }, running ? "Setting up..." : edit !== null ? EDIT_LABEL : confirmLabel(f.kind));
   return h(
     "form",
     { class: "adlg-form", autocomplete: "off", novalidate: true, onsubmit: (e) => { e.preventDefault(); submitAdd(); }, onkeydown: (/** @type {any} */ e) => {
@@ -803,20 +922,20 @@ function dialogContent(f) {
         submitAdd();
       }
     } },
-    h("div", { class: "adlg-head" }, h("h3", { id: "adlg-title" }, ADD[f.kind].title), h("span", { class: "muted" }, host ? "writes hosts/<name>.yaml, then runs fleet init from here" : "goes to To push; written when you push")),
+    h("div", { class: "adlg-head" }, h("h3", { id: "adlg-title" }, edit !== null ? `${EDIT[f.kind]}: ${edit.name}` : ADD[f.kind].title), h("span", { class: "muted" }, host ? "writes hosts/<name>.yaml, then runs fleet init from here" : "goes to To push; written when you push")),
     h(
       "div",
       { class: "adlg-body" },
       blocked ? hostBlocked() : h("div", { class: "form" }, ...fields),
-      h("div", { class: "formright" }, blocked || done ? null : filePane(f, d), ...warnings, probeBox(f, d), host && !blocked ? initPane(d) : null),
+      h("div", { class: "formright" }, ...(edit !== null && edit.state !== "ready" ? [edit.state === "readonly" ? readOnlyPane(f) : null] : [blocked || done ? null : filePane(f, d), ...warnings, probeBox(f, d), host && !blocked ? initPane(d) : null])),
     ),
     h(
       "div",
       { class: "adlg-foot" },
-      f.kind === "server" ? h("button", { type: "button", id: "add-check", class: "btn", disabled: d.op === null || !usable() || f.confirm || f.check?.state === "running", onclick: () => { f.confirm = true; renderDialog(); /** @type {HTMLElement | null | undefined} */ (dialogEl?.querySelector("#probe-run"))?.focus(); } }, "Check it starts") : null,
+      f.kind === "server" ? h("button", { type: "button", id: "add-check", class: "btn", disabled: full === null || !usable() || f.confirm || f.check?.state === "running" || (edit !== null && edit.state !== "ready"), onclick: () => { f.confirm = true; renderDialog(); /** @type {HTMLElement | null | undefined} */ (dialogEl?.querySelector("#probe-run"))?.focus(); } }, "Check it starts") : null,
       h("span", { class: "spacer" }),
-      done ? null : h("button", { type: "button", id: "add-cancel", class: "btn ghost", disabled: !closable(f.kind, model.init), onclick: closeAdd }, "Cancel"),
-      blocked ? null : primary,
+      done ? null : h("button", { type: "button", id: "add-cancel", class: "btn ghost", disabled: !closable(f.kind, model.init, edit !== null), onclick: closeAdd }, edit !== null && edit.state !== "ready" ? "Close" : "Cancel"),
+      blocked || (edit !== null && edit.state !== "ready") ? null : primary,
     ),
   );
 }
@@ -884,12 +1003,15 @@ for (const type of ["click", "focusin"]) document.addEventListener(type, (e) => 
 /** @param {import("./adding.js").AddKind} kind @param {string} label */
 const addCard = (kind, label) => h("button", { type: "button", id: `tile-${kind}`, class: "panel card add", ...(usable() ? {} : { disabled: true }), onclick: () => openAdd(kind) }, label);
 
+/** The Edit button of a card, next to its YAML toggle. @param {import("./adding.js").AddKind} kind @param {string} name */
+const editBtn = (kind, name) => h("button", { type: "button", id: `edit-${kind}-${name}`, class: "btn ghost small", ...(usable() ? {} : { disabled: true, title: "fleet ui is not answering" }), "aria-label": `Edit ${name}`, onclick: () => openEdit(kind, name, `edit-${kind}-${name}`) }, "Edit");
+
 /** The button that takes an addition back off To push. @param {Op | undefined} op */
 const heldTag = (op) => (op ? h("span", { class: "tag ok" }, "to push") : null);
 const takeBackBtn = (/** @type {Op | undefined} */ op) => (op ? h("button", { type: "button", class: "btn ghost small", onclick: () => removeFromPush(op) }, "Remove from push") : null);
 
-/** @param {string} kind @param {string} name @returns {Op | undefined} */
-const heldOp = (kind, name) => model.ops.find((o) => o.op === kind && "name" in o && o.name === name);
+/** The addition or edit of an item that is on To push. @param {import("./adding.js").AddKind} kind @param {string} name @returns {Op | undefined} */
+const heldOp = (kind, name) => ownOp(model.ops, kind, name);
 
 /** A page title with the buttons that act on it on the right. @param {string} title @param {string} about @param {...Node} actions */
 const pageHead = (title, about, ...actions) => h("div", { class: "pagehead" }, h("div", {}, h("h1", {}, title), h("p", { class: "sub" }, about)), h("div", { class: "pageact" }, ...actions));
@@ -975,16 +1097,16 @@ function catalogScreen() {
     h("h2", {}, "MCP servers"),
     h("div", { class: "cards" },
       ...view.servers.map((/** @type {any} */ sv) => {
-        const op = heldOp("addServer", sv.name);
+        const op = heldOp("server", sv.name);
         const y = yamlToggle({ kind: "server", name: sv.name });
-        return h("div", { class: "panel card" + (y.panel ? " yamlopen" : "") }, h("h3", {}, sv.name, h("span", { class: "tag" }, sv.server?.kind ?? ""), heldTag(op)), h("p", {}, serverLine(sv)), h("div", { class: "row" }, onHosts(sv), takeBackBtn(op), y.button), y.panel);
+        return h("div", { class: "panel card" + (y.panel ? " yamlopen" : "") }, h("h3", {}, sv.name, h("span", { class: "tag" }, sv.server?.kind ?? ""), heldTag(op)), h("p", {}, serverLine(sv)), h("div", { class: "row" }, onHosts(sv), takeBackBtn(op), editBtn("server", sv.name), y.button), y.panel);
       }),
       addCard("server", "+ Add an MCP server"),
     ),
     h("h2", {}, "Skill sources"),
     h("div", { class: "cards" },
       ...sources.map((/** @type {any} */ src) => {
-        const op = heldOp("addSource", src.name);
+        const op = heldOp("source", src.name);
         const skills = skillsOf(src.name);
         const y = yamlToggle({ kind: "source", name: src.name });
         return h(
@@ -993,7 +1115,7 @@ function catalogScreen() {
           h("h3", {}, src.name, h("span", { class: "tag " + (src.commit ? "info" : "ok") }, src.commit ? "pinned" : "followed"), src.review ? h("span", { class: "tag warn" }, "review") : null, heldTag(op)),
           h("p", {}, [src.repo, src.commit ? src.commit.slice(0, 7) : null, src.commit ? `tracks ${src.track}` : src.branch].filter((x) => x).join(" · ")),
           skills.length > 0 ? h("div", { class: "row" }, ...skills.slice(0, 12).map((/** @type {string} */ sk) => h("span", { class: "tag" }, sk)), skills.length > 12 ? h("span", { class: "muted" }, `+${skills.length - 12}`) : null) : null,
-          h("div", { class: "row" }, takeBackBtn(op), y.button),
+          h("div", { class: "row" }, takeBackBtn(op), editBtn("source", src.name), y.button),
           y.panel,
         );
       }),
@@ -1002,9 +1124,9 @@ function catalogScreen() {
     h("h2", {}, "Skill bundles"),
     h("div", { class: "cards" },
       ...view.bundles.map((/** @type {any} */ b) => {
-        const op = heldOp("addBundle", b.name);
+        const op = heldOp("bundle", b.name);
         const y = yamlToggle({ kind: "bundle", name: b.name });
-        return h("div", { class: "panel card" + (y.panel ? " yamlopen" : "") }, h("h3", {}, b.name, heldTag(op)), h("div", { class: "row" }, ...b.skills.map((/** @type {string} */ sk) => h("span", { class: "tag" }, sk))), h("p", {}, ""), h("div", { class: "row" }, onHosts(b), takeBackBtn(op), y.button), y.panel);
+        return h("div", { class: "panel card" + (y.panel ? " yamlopen" : "") }, h("h3", {}, b.name, heldTag(op)), h("div", { class: "row" }, ...b.skills.map((/** @type {string} */ sk) => h("span", { class: "tag" }, sk))), h("p", {}, ""), h("div", { class: "row" }, onHosts(b), takeBackBtn(op), editBtn("bundle", b.name), y.button), y.panel);
       }),
       addCard("bundle", "+ Add a skill bundle"),
     ),
@@ -1015,23 +1137,26 @@ function catalogScreen() {
 function hostsScreen() {
   const [title, about] = SCREENS.hosts;
   if (model.base === null) return loadingOrError(title, model.matrixError);
+  // The hosts as they would be after the edits to push: an edited ssh destination shows at once.
+  const hosts = shownMatrix().hosts;
   /** @type {Item[]} */
-  const items = model.base.hosts.map((/** @type {any} */ x) => ({ kind: "host", name: x.name }));
+  const items = hosts.map((/** @type {any} */ x) => ({ kind: "host", name: x.name }));
   return h(
     "div",
     {},
     pageHead(title, about, yamlAll(items), h("button", { type: "button", class: "btn primary", id: "add-host", ...(usable() ? {} : { disabled: true, title: "fleet ui is not answering" }), onclick: () => openAdd("host") }, "+ Add host")),
     h("div", { class: "cards" },
-      ...model.base.hosts.map((/** @type {any} */ host) => {
+      ...hosts.map((/** @type {any} */ host) => {
         const bundles = model.base.bundles.filter((/** @type {any} */ b) => b.cells[host.name]?.on).map((/** @type {any} */ b) => b.name);
         const servers = model.base.servers.filter((/** @type {any} */ sv) => sv.cells[host.name]?.on).map((/** @type {any} */ sv) => sv.name);
         const y = yamlToggle({ kind: "host", name: host.name });
+        const op = heldOp("host", host.name);
         return h(
           "div",
           { class: "panel card" + (y.panel ? " yamlopen" : "") },
-          h("h3", {}, host.name, host.self ? h("span", { class: "tag ok" }, "this host") : null),
+          h("h3", {}, host.name, host.self ? h("span", { class: "tag ok" }, "this host") : null, heldTag(op)),
           h("dl", { class: "facts small" }, h("dt", {}, "reached"), h("dd", {}, host.self ? "local" : host.ssh ? `ssh ${host.ssh}` : "on its own timer"), h("dt", {}, "bundles"), h("dd", {}, bundles.join(", ") || "none"), h("dt", {}, "servers"), h("dd", {}, servers.join(", ") || "none")),
-          h("div", { class: "row" }, y.button),
+          h("div", { class: "row" }, takeBackBtn(op), editBtn("host", host.name), y.button),
           y.panel,
         );
       }),

@@ -34,15 +34,15 @@ export function readFiles(configDir: string): Files {
 
 /**
  * What an item is as the files would have it after `ops`, for an Edit dialog to start from: the entry as written (`secret:NAME` stays a
- * name, no value is ever here), and whether the engine can change it in place. When it cannot, `reason` says why and `text` is the file,
- * for the page to show read-only. `found` is false for an item that is not there.
+ * name, no value is ever here), and whether the engine can change it in place. When it cannot, `reason` says why. `text` is the file the item
+ * is in as it would be (for the page to show read-only, and to diff an edit against). `found` is false for an item that is not there.
  */
 export function entryOf(configDir: string, ops: readonly EditOp[], kind: EditKind, name: string) {
   const edited = applyOps(readFiles(configDir), ops).files;
   const path = kind === "host" ? hostFile(name) : CATALOG_FILES[kind === "server" ? "servers" : kind === "source" ? "sources" : "bundles"];
   const value: Value | null = entryValue(edited, kind, name);
   const reason = value === null ? null : entryProblem(edited, kind, name);
-  return { kind, name, path, found: value !== null, value, editable: value !== null && reason === null, reason, text: reason === null ? null : (edited[path] ?? "") };
+  return { kind, name, path, found: value !== null, value, editable: value !== null && reason === null, reason, text: edited[path] ?? "" };
 }
 
 /** What one host gets more or less of, by name. */

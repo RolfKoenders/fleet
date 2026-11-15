@@ -43,7 +43,7 @@ import type { Job } from "./jobs.ts";
  *                      `{path, text}`. A path is never taken from the page, only a kind and a name; a host that is not there is 404.
  *   POST /api/entry    Body `{"ops": [...], "kind": "server" | "source" | "bundle" | "host", "name": "..."}`. What that item is after the held `ops`, for an
  *                      Edit dialog: `value` (the entry as written: a bundle's skills, a host's `{ssh}`; secrets as `secret:NAME`, never a value), `path`,
- *                      `editable`, and when it is not, `reason` and `text` (the file, to show read-only). 404 `not-found` for an item that is not there.
+ *                      `found`, `editable` and, when it is not, `reason`, and `text`: the file it is in, as it would be after `ops`.
  *   POST /api/plan     Body `{"ops": [...]}`. This host's full plan: `fleet diff` against the edited config, nothing written.
  *   POST /api/write    Body `{"ops": [...], "message": "..."}`. Writes the edited files, commits them, then runs the real
  *                      `fleet push` as `POST /api/push` does. Refuses, writing nothing, when a push is running (409 `locked`),
@@ -240,7 +240,7 @@ export function routes(deps: ApiDeps): Route[] {
         const body = await req.json();
         const { kind, name } = yamlRequest(body);
         const doc = entryOf(deps.configDir, heldOps(body), kind, name);
-        return doc.found ? { status: 200, body: { ok: true, ...doc } } : refused(404, "not-found", `${name} is not there`);
+        return { status: 200, body: { ok: true, ...doc } };
       },
     },
     {
