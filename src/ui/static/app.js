@@ -12,6 +12,7 @@ import { bundleLosses, EMPTY_BUNDLE, goLabel, heldForHost, hostKeeps, hostRefusa
 import { blockers, cellAction, DROPPED_BLOCKER, cellState, clickCell, opLabel, suggestMessage, summaryLine, WORDS } from "./matrix.js";
 import { confirmInit, elapsed, heldProblem, hostDraft, idleInit, initEnd, initLine, SETUP_DOC, startInit } from "./hosts.js";
 import { actionOf, afterSet, cellView, dialogTargets, heldNames, missingCount, retryText, valueProblem } from "./secrets.js";
+import { escapeAction, filterRows, hashWithQuery, hiddenWithChanges, nameMatches, queryOf, skillHits, slashFocuses } from "./filter.js";
 import { itemYaml, yamlPath, yamlTag } from "./yamlview.js";
 import { heldFiles, idlePush, plain, pushEnd, pushEvent, routeOf, statusView, tokenOf, writtenNotice } from "./state.js";
 
@@ -216,13 +217,15 @@ function matrixScreen() {
   const [title, about] = SCREENS.matrix;
   if (model.base === null || model.matrixError !== null) return loadingOrError(title, model.matrixError);
   const base = model.base;
-  const view = shownMatrix();
+  const q = query();
+  const whole = shownMatrix();
+  const view = { ...whole, bundles: filterRows(whole.bundles, q, (/** @type {any} */ b) => b.skills), servers: filterRows(whole.servers, q) };
   const hosts = view.hosts;
   if (hosts.length === 0) return h("div", {}, h("h1", {}, title), h("div", { class: "panel empty" }, "No hosts yet."));
   const focus = model.focus !== null && hostOf(view, model.focus) ? model.focus : hosts[0].name;
 
-  /** @param {"bundles" | "mcp"} kind @param {any} row @param {string} small @param {boolean} [skill] */
-  const rowOf = (kind, row, small, skill = false) => {
+  /** @param {"bundles" | "mcp"} kind @param {any} row @param {string} small @param {string[] | null} [skill] the skills of a bundle that hold the filter, when its name does not */
+  const rowOf = (kind, row, small, skill = null) => {
     const baseRow = (kind === "bundles" ? base.bundles : base.servers).find((/** @type {any} */ r) => r.name === row.name);
     const open = model.expanded.has(row.name);
     return h(
@@ -234,7 +237,7 @@ function matrixScreen() {
         kind === "bundles"
           ? h("button", { class: "twist", "aria-expanded": String(open), title: open ? "Hide its skills" : "Show its skills", onclick: () => { open ? model.expanded.delete(row.name) : model.expanded.add(row.name); render(); } }, open ? "▾ " : "▸ ", row.name)
           : row.name,
-        h("small", {}, baseRow === undefined ? `${small} · new, to push` : small),
+        h("small", {}, baseRow === undefined ? `${small} · new, to push` : small, skill ? ` · skill ${skillHits(skill, q).join(", ")}` : ""),
       ),
       ...hosts.map((/** @type {any} */ host) => {
         const state = cellState(row.cells[host.name]);
@@ -272,8 +275,9 @@ function matrixScreen() {
   const body = [];
   if (view.bundles.length > 0) body.push(h("tr", { class: "grp" }, h("th", { colspan: String(hosts.length + 1) }, "Skill bundles")));
   for (const b of view.bundles) {
-    body.push(rowOf("bundles", b, `${b.skills.length} skill${b.skills.length === 1 ? "" : "s"}`));
-    if (model.expanded.has(b.name)) for (const skill of b.skills) body.push(h("tr", { class: "skill" }, h("th", { colspan: String(hosts.length + 1) }, `└ ${skill}`)));
+    const viaSkill = nameMatches(b.name, q) || skillHits(b.skills, q).length === 0 ? null : b.skills;
+    body.push(rowOf("bundles", b, `${b.skills.length} skill${b.skills.length === 1 ? "" : "s"}`, viaSkill));
+    if (model.expanded.has(b.name)) for (const skill of b.skills) body.push(h("tr", { class: "skill" + (skillHits([skill], q).length > 0 ? " hit" : "") }, h("th", { colspan: String(hosts.length + 1) }, `└ ${skill}`)));
   }
   if (view.servers.length > 0) body.push(h("tr", { class: "grp" }, h("th", { colspan: String(hosts.length + 1) }, "MCP servers")));
   for (const sv of view.servers) body.push(rowOf("mcp", sv, serverLine(sv)));
@@ -287,12 +291,13 @@ function matrixScreen() {
     "div",
     {},
     pageHead(title, about, addMenu([...CATALOG_KINDS, "host"])),
+    filterBar(rowIds(whole), rowIds(view), "Filter bundles, skills and servers by name"),
     outsideNotice(),
     model.base.problems.length > 0 ? h("div", { class: "notice" }, "Config problem: " + model.base.problems[0]) : null,
     h(
       "div",
       { class: "split" },
-      h("div", { class: "panel scroll" }, h("table", { class: "matrix" }, h("thead", {}, head), h("tbody", {}, ...body))),
+      body.length === 0 ? noMatch(q) : h("div", { class: "panel scroll" }, h("table", { class: "matrix" }, h("thead", {}, head), h("tbody", {}, ...body))),
       h("div", { class: "pane" }, pane, h("div", { class: "hint" }, "The file as it will be written, comments and layout kept. Click a cell, or a host's name, to see its file.")),
     ),
     h(
@@ -1295,6 +1300,67 @@ function renderRemove() {
   }
 }
 
+// ---- Search: the field at the top of the Matrix and the Catalog. The filter lives in the address (`#/matrix?q=git`), so a reload keeps it.
+
+/** The filter typed on this screen, as typed. */
+const query = () => queryOf(location.hash);
+
+/** @param {string} q */
+function setQuery(q) {
+  history.replaceState(null, "", location.pathname + location.search + hashWithQuery(location.hash, q));
+  render();
+}
+
+/** @param {any} doc @returns {import("./filter.js").RowId[]} */
+const rowIds = (doc) => [...doc.bundles.map((/** @type {any} */ b) => ({ kind: "bundles", name: b.name })), ...doc.servers.map((/** @type {any} */ s) => ({ kind: "mcp", name: s.name }))];
+/** @param {any} doc @returns {import("./filter.js").RowId[]} */
+const catalogIds = (doc) => [...rowIds(doc), ...(doc.sources ?? []).map((/** @type {any} */ s) => ({ kind: "source", name: s.name }))];
+
+/**
+ * The search field, and what the filter hides. Edits on To push are never filtered: when the filter hides rows that have one, it says so.
+ * @param {import("./filter.js").RowId[]} all every row of the screen @param {import("./filter.js").RowId[]} kept the rows that are shown @param {string} label
+ */
+function filterBar(all, kept, label) {
+  const q = query();
+  const on = q.trim() !== "";
+  const shown = new Set(kept.map((r) => `${r.kind}:${r.name}`));
+  const hidden = all.filter((r) => !shown.has(`${r.kind}:${r.name}`));
+  const changed = hiddenWithChanges(hidden, model.ops);
+  const input = h("input", {
+    type: "text", id: "filter", class: "filter", role: "searchbox", autocomplete: "off", spellcheck: "false", placeholder: "Filter by name (press / to search)", "aria-label": label, value: q,
+    oninput: (/** @type {any} */ e) => setQuery(e.target.value),
+    onkeydown: (/** @type {any} */ e) => {
+      if (e.key !== "Escape") return;
+      e.preventDefault();
+      const field = /** @type {HTMLInputElement} */ (e.target);
+      if (escapeAction(field.value) === "clear") setQuery("");
+      else field.blur();
+    },
+  });
+  input.value = q;
+  return h(
+    "div",
+    { class: "filterbar" },
+    input,
+    on ? h("span", { class: "muted", id: "filter-count" }, `${kept.length} of ${all.length} shown`) : null,
+    changed.length > 0 ? h("span", { class: "tag warn", id: "filter-hidden", role: "status", title: `On To push, not shown: ${changed.join(", ")}` }, `${changed.length} hidden with changes`) : null,
+    on ? h("button", { type: "button", class: "btn ghost small", id: "filter-clear", onclick: () => { setQuery(""); document.getElementById("filter")?.focus(); } }, "Clear") : null,
+  );
+}
+
+/** What a filter that matches nothing shows. @param {string} q */
+const noMatch = (q) => h("div", { class: "panel empty", id: "nomatch" }, h("div", {}, `Nothing is named like "${q.trim()}".`), h("div", { class: "row", style: "justify-content:center;margin-top:12px" }, h("button", { type: "button", class: "btn", id: "nomatch-clear", onclick: () => { setQuery(""); document.getElementById("filter")?.focus(); } }, "Clear the filter")));
+
+// `/` goes to the search field, but never from another field or while a dialog is open.
+document.addEventListener("keydown", (e) => {
+  const t = /** @type {Element | null} */ (e.target);
+  if (!slashFocuses(e, t?.closest("input, textarea, select, [contenteditable]") != null, document.querySelector("dialog[open]") !== null)) return;
+  const field = document.getElementById("filter");
+  if (field === null) return;
+  e.preventDefault();
+  field.focus();
+});
+
 // ---- YAML toggles: how an item is written in the config repo
 
 /** @typedef {{ kind: import("./adding.js").AddKind, name: string }} Item */
@@ -1358,21 +1424,27 @@ function yamlAll(items) {
   return h("button", { type: "button", id: "yaml-all", class: "btn ghost yamlbtn", "aria-pressed": String(all), onclick: () => setYaml(items, !all) }, "Show all YAML");
 }
 
+const CATALOG_FILTER = "Filter servers, sources, bundles and skills by name";
+
 function catalogScreen() {
   const [title, about] = SCREENS.catalog;
   if (model.base === null) return loadingOrError(title, model.matrixError);
-  const view = shownMatrix();
+  const q = query();
+  const whole = shownMatrix();
+  const skillsOf = (/** @type {string} */ name) => [...new Set([...model.skills.filter((k) => k.source === name).map((k) => k.name), ...(model.stagedSkills[name] ?? [])])];
+  const view = { ...whole, servers: filterRows(whole.servers, q), sources: filterRows(whole.sources ?? [], q, (/** @type {any} */ src) => skillsOf(src.name)), bundles: filterRows(whole.bundles, q, (/** @type {any} */ b) => b.skills) };
   const hosts = view.hosts;
   const uses = (/** @type {any} */ row) => hosts.filter((/** @type {any} */ x) => row.cells[x.name]?.on).length;
   const onHosts = (/** @type {any} */ row) => h("span", { class: "tag " + (uses(row) > 0 ? "ok" : "") }, `on ${uses(row)} of ${hosts.length} host${hosts.length === 1 ? "" : "s"}`);
   const sources = view.sources ?? [];
   /** @type {Item[]} */
   const items = [...view.servers.map((/** @type {any} */ x) => ({ kind: "server", name: x.name })), ...sources.map((/** @type {any} */ x) => ({ kind: "source", name: x.name })), ...view.bundles.map((/** @type {any} */ x) => ({ kind: "bundle", name: x.name }))];
-  const skillsOf = (/** @type {string} */ name) => [...new Set([...model.skills.filter((k) => k.source === name).map((k) => k.name), ...(model.stagedSkills[name] ?? [])])];
+  if (items.length === 0 && q.trim() !== "") return h("div", {}, pageHead(title, about, addMenu()), filterBar(catalogIds(whole), [], CATALOG_FILTER), noMatch(q));
   return h(
     "div",
     {},
     pageHead(title, about, yamlAll(items), addMenu()),
+    filterBar(catalogIds(whole), catalogIds(view), CATALOG_FILTER),
     h("h2", {}, "MCP servers"),
     h("div", { class: "cards" },
       ...view.servers.map((/** @type {any} */ sv) => {

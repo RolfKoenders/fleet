@@ -6,7 +6,7 @@ export const ROUTES = ["matrix", "catalog", "hosts", "secrets", "status", "revie
 
 /** The screen a location hash names (`#/hosts`), `matrix` for none or an unknown one. @param {string} hash */
 export function routeOf(hash) {
-  const name = hash.replace(/^#\/?/, "");
+  const name = hash.replace(/^#\/?/, "").split("?")[0];
   return ROUTES.find((r) => r === name) ?? "matrix";
 }
 

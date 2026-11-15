@@ -34,6 +34,15 @@ The first screen, named like the bridge's Matrix screen and read the same way. O
 
 Clicking a cell makes the smallest edit to that host's file, as a change to push: an item the defaults give is taken away with `exclude` in the host's file (the defaults are not edited), an item the host added is taken out of its list, an exclude is taken back. Clicking the same cell again takes that edit back. Hovering a cell says what a click will do: `give`, `take away` or `undo`. A host's name is a button that shows its file in the pane beside the table, as it will be written, with comments, blank lines and list style kept; nothing is on disk yet. The **+ Add** button in the header offers what the Catalog's does, plus a host. A server, skill source or bundle you add is a row of the Matrix at once, off for every host, held like any edit.
 
+### Search
+
+The Matrix and the Catalog each start with a search field that filters their rows (or cards) by name as you type, without regard to case. A bundle also matches when one of its skills does (a source matches by the skills fleet has read from it too): on the Matrix its row says `skill review` when that is why it is shown, and its matching skills are highlighted when it is open.
+
+- `/` goes to the field, unless you are typing in another field or a dialog is open. Esc clears the field, and blurs it when it is already empty.
+- The filter is part of the page address, as a query of the screen (`#/matrix?q=git`), so a reload keeps it and the address can be copied. The token is handled as before. Opening another screen from the menu starts without a filter.
+- It only hides rows. To push and Review & push are never filtered. When the filter hides rows that have an edit on To push, the field says so (`2 hidden with changes`, with their names as its tooltip).
+- A filter that matches nothing says so and has a **Clear the filter** button.
+
 ### Catalog
 
 The MCP servers, skill sources and skill bundles your hosts can pick from. The **+ Add** button in the header offers an MCP server, a skill source or a skill bundle, and so does the dashed tile at the end of each section. Adding one gives it to no host: pick it in the Matrix. An addition is a change to push, so it shows in Review & push like a pick does, and one that is on To push has a Remove from push button (which takes back the picks of it too).
