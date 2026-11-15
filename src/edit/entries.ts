@@ -23,7 +23,7 @@ export function entryNames(text: string, section: Section): string[] {
   return (map?.items ?? []).map((p) => String((p.key as Scalar).value));
 }
 
-type Style = {
+export type Style = {
   quote: Quote;
   /** Per key of the entry before: was its list or map written in flow style? */
   flowKeys: Map<string, boolean>;
@@ -38,7 +38,7 @@ type Style = {
 };
 
 /** Reads how the entry before is written, to write the next one the same way. */
-function styleOf(text: string, prev: Pair, sectionStep: number): Style {
+export function styleOf(text: string, prev: Pair, sectionStep: number): Style {
   const quotes: Quote[] = [];
   const lists: boolean[] = [];
   const maps: boolean[] = [];
@@ -84,11 +84,11 @@ function styleOf(text: string, prev: Pair, sectionStep: number): Style {
 
 const isScalarValue = (v: Value): v is string | number | boolean => typeof v !== "object";
 
-function scalarText(v: string | number | boolean, style: Style): string {
+export function scalarText(v: string | number | boolean, style: Style): string {
   return typeof v === "string" ? stringText(v, style.quote) : String(v);
 }
 
-function flowText(v: Value, style: Style): string {
+export function flowText(v: Value, style: Style): string {
   if (isScalarValue(v)) return scalarText(v, style);
   if (Array.isArray(v)) return `[${v.map((x) => flowText(x, style)).join(", ")}]`;
   const pairs = Object.entries(v).map(([k, x]) => `${keyText(k, style)}: ${flowText(x, style)}`);
@@ -99,7 +99,7 @@ function flowText(v: Value, style: Style): string {
 const keyText = (key: string, style: Style): string => (plainSafe(key) ? key : stringText(key, style.quote === "single" ? "single" : "double"));
 
 /** `key: value` as lines at column `pad`, lists and maps in flow style where the entry before had them so. */
-function pairLines(key: string, value: Value, pad: number, style: Style): string[] {
+export function pairLines(key: string, value: Value, pad: number, style: Style): string[] {
   const at = " ".repeat(pad);
   const head = `${at}${keyText(key, style)}:`;
   if (isScalarValue(value)) return [`${head} ${scalarText(value, style)}`];
