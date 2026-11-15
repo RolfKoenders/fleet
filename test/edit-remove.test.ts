@@ -80,8 +80,8 @@ const must = (ops: EditOp[], input?: Files) => {
 test("removing a server takes its entry, comments inside it included, and every mention of it in the defaults and the hosts", () => {
   const r = must([{ op: "removeServer", name: "tracker" }]);
   assert.deepEqual(r.changed.sort(), ["catalog/mcp.yaml", "hosts/_defaults.yaml", "hosts/box.yaml"]);
-  // The comment above the entry is not the entry's: it stays, as everything else does. The blank line that set the entry apart goes.
-  assert.equal(r.files["catalog/mcp.yaml"], MCP.replace(/\n  tracker:\n(.*\n)*?(?=\n  search:)/, "\n"));
+  // The comment right above the entry describes it and goes with it (the YAML view shows it as part of the item), and so does the blank line that set it apart.
+  assert.equal(r.files["catalog/mcp.yaml"], MCP.replace("  # the tracker\n  tracker:\n    transport: http\n    url: https://tracker.example.com/mcp # live\n    headers:\n      Authorization: secret:TRACKER_TOKEN\n\n", ""));
   assert.doesNotMatch(r.files["catalog/mcp.yaml"]!, /tracker\.example|TRACKER_TOKEN/);
   assert.equal(r.files["hosts/_defaults.yaml"], DEFAULTS.replace("[docs, tracker]", "[docs]"));
   assert.equal(r.files["hosts/box.yaml"], BOX.replace("[search, tracker]", "[search]"));
@@ -108,7 +108,7 @@ test("the last entry goes without leaving a blank line at the end", () => {
 
 test("removing every server leaves an empty section the loader reads, and a server can be added to it again", () => {
   const r = must([{ op: "removeServer", name: "docs" }, { op: "removeServer", name: "tracker" }, { op: "removeServer", name: "search" }]);
-  assert.equal(r.files["catalog/mcp.yaml"], "# Servers every host may pick.\nservers: {}\n  # the tracker\n");
+  assert.equal(r.files["catalog/mcp.yaml"], "# Servers every host may pick.\nservers: {}\n");
   assert.deepEqual(load(r.files["catalog/mcp.yaml"]!), { servers: {} });
   const again = must([{ op: "removeServer", name: "docs" }, { op: "removeServer", name: "tracker" }, { op: "removeServer", name: "search" }, { op: "addServer", name: "docs", entry: { command: ["x"] } }]);
   assert.deepEqual((load(again.files["catalog/mcp.yaml"]!) as any).servers, { docs: { command: ["x"] } });
@@ -182,4 +182,11 @@ test("a host whose list is in the way of the removal is left as it is when the i
 test("a removal replays after earlier edits: a held pick of the item is taken out too", () => {
   const r = must([{ op: "add", host: "mini", kind: "bundles", name: "extra" }, { op: "removeBundle", name: "extra" }]);
   assert.equal(r.files["hosts/mini.yaml"], "ssh: me@mini\nbundles: []\n");
+});
+
+test("only the comment lines right above the entry go: not one after a blank line, one at another indent, or one below the entry", () => {
+  const text = "# top\nservers:\n  # about a\n\n  # about b, after a blank line\n  b:\n    command: [b]\n  # about c\n  c:\n    command: [c]\n    # inside c\n  # below c, for d\n  d:\n    command: [d]\n";
+  const r = must([{ op: "removeServer", name: "b" }, { op: "removeServer", name: "c" }], { ...files(), "catalog/mcp.yaml": text });
+  // "about a" is not above b (a blank line is between), b's own comment is, c's and its inner one are, the comment below c is d's.
+  assert.equal(r.files["catalog/mcp.yaml"], "# top\nservers:\n  # about a\n\n  # below c, for d\n  d:\n    command: [d]\n");
 });

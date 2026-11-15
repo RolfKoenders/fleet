@@ -12,7 +12,9 @@ import { heldNames } from "./secrets.js";
  * @typedef {{ op: "editServer" | "editSource", name: string, changes: { key: string, from: any, to: any }[] }} EditFieldsOp
  * @typedef {{ op: "editBundle", name: string, from: string[], to: string[] }} EditBundleOp
  * @typedef {{ op: "editHost", host: string, from: string | null, to: string }} EditHostOp
- * @typedef {PickOp | EntryOp | BundleOp | SecretOp | EditFieldsOp | EditBundleOp | EditHostOp} Op
+ * @typedef {{ op: "removeServer" | "removeBundle", name: string }} RemoveOp
+ * @typedef {{ op: "removeSource", name: string, skills: string[] }} RemoveSourceOp
+ * @typedef {PickOp | EntryOp | BundleOp | SecretOp | EditFieldsOp | EditBundleOp | EditHostOp | RemoveOp | RemoveSourceOp} Op
  * @typedef {{ skills: { added: string[], removed: string[] }, servers: { added: string[], removed: string[] } }} PickChange
  */
 
@@ -88,6 +90,9 @@ export function opLabel(op) {
   if (op.op === "editSource") return `edit skill source ${op.name}`;
   if (op.op === "editBundle") return `edit bundle ${op.name}`;
   if (op.op === "editHost") return `edit host ${op.host}`;
+  if (op.op === "removeServer") return `remove server ${op.name} from the catalog`;
+  if (op.op === "removeSource") return `remove skill source ${op.name} from the catalog`;
+  if (op.op === "removeBundle") return `remove bundle ${op.name} from the catalog`;
   return `add bundle ${op.name} to the catalog`;
 }
 
@@ -113,6 +118,11 @@ export function suggestMessage(ops) {
     ...ops.flatMap((o) => (o.op === "editHost" ? [`host ${o.host}`] : [])),
   ];
   if (edits.length > 0) parts.push(`edit ${list(edits)}`);
+  for (const [op, word] of /** @type {const} */ ([["removeServer", "server"], ["removeSource", "skill source"], ["removeBundle", "bundle"]])) {
+    const names = ops.flatMap((o) => (o.op === op ? [o.name] : []));
+    if (names.length > 0) parts.push(`remove ${word}${names.length === 1 ? "" : "s"} ${list(names)}`);
+  }
+  const removed = ops.filter((o) => o.op === "removeServer" || o.op === "removeSource" || o.op === "removeBundle").length;
   const secrets = ops.filter((o) => o.op === "setSecret");
   for (const { name, files } of heldNames(ops)) parts.push(`set ${name} for ${list(files.map((f) => (f === "shared" ? "every host" : f)))}`);
   const picks = ops.filter(isPick);
@@ -127,8 +137,8 @@ export function suggestMessage(ops) {
   const text = parts.join("; ");
   const message = text.charAt(0).toUpperCase() + text.slice(1);
   if (message.length <= 72) return message;
-  const added = ops.length - picks.length - secrets.length - edits.length;
-  const catalog = [added === 0 ? "" : `add ${added} catalog entr${added === 1 ? "y" : "ies"}`, edits.length === 0 ? "" : `edit ${edits.length} item${edits.length === 1 ? "" : "s"}`].filter((x) => x !== "").join("; ");
+  const added = ops.length - picks.length - secrets.length - edits.length - removed;
+  const catalog = [added === 0 ? "" : `add ${added} catalog entr${added === 1 ? "y" : "ies"}`, edits.length === 0 ? "" : `edit ${edits.length} item${edits.length === 1 ? "" : "s"}`, removed === 0 ? "" : `remove ${removed} catalog entr${removed === 1 ? "y" : "ies"}`].filter((x) => x !== "").join("; ");
   const first = catalog.charAt(0).toUpperCase() + catalog.slice(1);
   const changed = hosts.length === 0 ? "" : `change what ${hosts.length} host${hosts.length === 1 ? "" : "s"} get${hosts.length === 1 ? "s" : ""}`;
   return catalog === "" ? `Change${changed.slice("change".length)}` : changed === "" ? first : `${first}; ${changed}`;

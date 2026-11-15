@@ -172,13 +172,9 @@ test("the check catches a bundle that names a skill no known source provides, fr
     assert.match(JSON.stringify(why.problems), /skill 'ghost' is in no source/);
     assert.equal(git(w.clone, "rev-parse", "HEAD"), head);
     assert.equal(git(w.clone, "status", "--porcelain"), "");
-    // Removing the source leaves bundles that name nothing the page can find: they lose their skills, so nothing is missing.
+    // Removing the source leaves bundles that name nothing the page can find: they lose their skills, so nothing is missing (and with no source left, nothing is checked).
     const gone = await postJson(s, "/api/preview", { ops: [{ op: "removeSource", name: "local", skills: ["review", "debug", "notes"] }] });
     assert.ok(gone.checks.every((c: any) => c.loads), JSON.stringify(gone.checks));
-    // A bundle that still lists a skill of a source that is gone is the finding.
-    const left = await postJson(s, "/api/preview", { ops: [{ op: "removeSource", name: "local", skills: ["review"] }] });
-    assert.deepEqual(left.checks.filter((c: any) => !c.loads).map((c: any) => c.host).sort(), ["laptop", "remote"]);
-    assert.match(left.checks[0].problems.join(" ") + left.checks[1].problems.join(" "), /skill 'debug' is in no source/);
   });
 });
 

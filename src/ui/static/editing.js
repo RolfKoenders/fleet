@@ -46,6 +46,15 @@ export function ownOp(ops, kind, name) {
   return ops.find((o) => (o.op === EDITS[kind] && (o.op === "editHost" ? o.host === name : "name" in o && o.name === name)) || (kind !== "host" && o.op === ADDS[kind] && "name" in o && o.name === name));
 }
 
+const REMOVED = { server: "removeServer", source: "removeSource", bundle: "removeBundle" };
+
+/**
+ * The removal of an item that is on To push, or undefined. The item is gone from the page's view while it is held, so its card is drawn from the files.
+ * @param {Op[]} ops @param {Exclude<Kind, "host">} kind @param {string} name
+ * @returns {Op | undefined}
+ */
+export const removalOp = (ops, kind, name) => ops.find((o) => o.op === REMOVED[kind] && "name" in o && o.name === name);
+
 /** An addition that has not been pushed yet. @param {Op | undefined} op */
 export const isAddition = (op) => op !== undefined && (op.op === "addServer" || op.op === "addSource" || op.op === "addBundle");
 

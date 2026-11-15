@@ -63,6 +63,16 @@ const read = (configDir: string, path: string): string | undefined => {
   }
 };
 
+/** Whether the fleet keeps secrets at all. One that does not has nothing to rekey, and rekey would first ask for keys it does not use. */
+function encrypts(configDir: string): boolean {
+  if (read(configDir, ".sops.yaml") !== undefined) return true;
+  try {
+    return readdirSync(join(configDir, "secrets")).some((f) => f.endsWith(".enc.yaml"));
+  } catch {
+    return false;
+  }
+}
+
 const secretNames = (text: string | undefined): string[] => (text === undefined ? [] : [...parseSopsText(text).entries.keys()].sort());
 
 export type RemovePreview = {
@@ -70,6 +80,8 @@ export type RemovePreview = {
   ssh: string | null;
   /** Each file removed or rewritten, as it is and as it will be. A secrets file is by its names only, never its ciphertext. */
   files: { path: string; before: string; after: string }[];
+  /** Whether `fleet secrets rekey` runs: only when the fleet keeps secrets. */
+  rekey: boolean;
   /** The secrets files re-encrypted so that they stop naming the host's key. */
   rekeyed: string[];
   /** The names of the secrets the host could read: those in `shared` (when it has a key) and those in its own file. Never a value. */
@@ -99,7 +111,7 @@ export function previewRemove(configDir: string, name: string): RemovePreview {
   }
   const shared = read(configDir, secretsFile("shared"));
   const rekeyed = shared !== undefined && age !== null && parseSopsText(shared).recipients.includes(age) ? [secretsFile("shared")] : [];
-  return { name, ssh: typeof doc?.ssh === "string" ? doc.ssh : null, files, rekeyed, readable: { shared: age === null ? [] : secretNames(shared), own: secretNames(own) } };
+  return { name, ssh: typeof doc?.ssh === "string" ? doc.ssh : null, files, rekey: encrypts(configDir), rekeyed, readable: { shared: age === null ? [] : secretNames(shared), own: secretNames(own) } };
 }
 
 export type RemoveDoc = { ok: boolean; code: string; exit: number | null; messages: string[]; written: string; removed: boolean; restored: boolean; kept: boolean; output: string[] };
@@ -130,6 +142,7 @@ export async function removeHost(configDir: string, toolDir: string, home: strin
     output.push(text);
     onLine(text);
   };
+  const rekey = encrypts(configDir);
   const before = snapshot(configDir, name);
   const path = hostFile(name);
   const restore = (): void => {
@@ -151,9 +164,11 @@ export async function removeHost(configDir: string, toolDir: string, home: strin
   say(`$ delete ${path}${before.has(secretsFile(name)) ? ` and ${secretsFile(name)}` : ""}`);
   rmSync(join(configDir, path), { force: true });
   rmSync(join(configDir, secretsFile(name)), { force: true });
-  say("$ fleet secrets rekey");
-  const exit = await runChild(toolDir, configDir, home, ["secrets", "rekey"], say);
-  if (exit !== 0) return failed(exit, [`fleet: fleet secrets rekey did not finish (${exit === null ? "it could not run" : `exit ${exit}`})`]);
+  if (rekey) {
+    say("$ fleet secrets rekey");
+    const exit = await runChild(toolDir, configDir, home, ["secrets", "rekey"], say);
+    if (exit !== 0) return failed(exit, [`fleet: fleet secrets rekey did not finish (${exit === null ? "it could not run" : `exit ${exit}`})`]);
+  }
 
   const added = runGit(configDir, "add", "-A");
   if (!added.ok) return failed(null, [`fleet: cannot stage the removal: ${added.stderr.split("\n")[0]}`]);

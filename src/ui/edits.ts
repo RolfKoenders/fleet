@@ -94,7 +94,10 @@ export type StagedSkills = Record<string, string[]>;
 export function knownSkills(configDir: string, home: string, files: Files, staged: StagedSkills): Set<string> | null {
   const problems: string[] = [];
   const known = new Set<string>();
-  for (const source of parseCatalog(configDir, problems, { root: configDir, files }).sources) {
+  const sources = parseCatalog(configDir, problems, { root: configDir, files }).sources;
+  // A catalog with no source is a config still being set up: its bundles are not checked against nothing.
+  if (sources.length === 0) return null;
+  for (const source of sources) {
     const held = staged[source.name];
     if (held !== undefined) {
       held.forEach((s) => known.add(s));

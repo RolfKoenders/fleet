@@ -5,9 +5,10 @@ import { linkBanner, linkUsable, linkWord } from "./link.js";
 import { jobLabel, jobsOf, withJobs } from "./jobs.js";
 import { changed, counts, lineDiff, splitLines, tokenize } from "./diff.js";
 import { fill, h } from "./dom.js";
-import { ADD, addable, CATALOG_KINDS, closable, confirmLabel, fileOf, freshAdd, hostAsDraft, paneView } from "./adding.js";
+import { ADD, addable, CATALOG_KINDS, closable, confirmLabel, fileOf, freshAdd, hostAsDraft, nearChanges, paneView } from "./adding.js";
 import { bundleDraft, checkLines, cloneKey, confirmText, needsLook, opWarnings, secretOf, secretsOf, serverDraft, skillChoices, sourceDraft, sourceEditDraft, sourceInputs, takeBack } from "./catalog.js";
-import { bundleFormOf, EDIT, EDIT_DROP_LABEL, EDIT_LABEL, editPaneView, freshEdit, hostEditDraft, hostFormOf, isAddition, ownOp, readOnlyLines, serverAsAdded, serverFormOf, sourceFormOf, startOf, withEdit } from "./editing.js";
+import { bundleFormOf, EDIT, EDIT_DROP_LABEL, EDIT_LABEL, editPaneView, freshEdit, hostEditDraft, hostFormOf, isAddition, ownOp, readOnlyLines, removalOp, serverAsAdded, serverFormOf, sourceFormOf, startOf, withEdit } from "./editing.js";
+import { bundleLosses, EMPTY_BUNDLE, goLabel, heldForHost, hostKeeps, hostRefusal, hostRuns, lossLine, NO_SKILLS_KNOWN, removal, REMOVE, ROTATE, sourceSkills, touched } from "./removing.js";
 import { blockers, cellAction, DROPPED_BLOCKER, cellState, clickCell, opLabel, suggestMessage, summaryLine, WORDS } from "./matrix.js";
 import { confirmInit, elapsed, heldProblem, hostDraft, idleInit, initEnd, initLine, SETUP_DOC, startInit } from "./hosts.js";
 import { actionOf, afterSet, cellView, dialogTargets, heldNames, missingCount, retryText, valueProblem } from "./secrets.js";
@@ -17,6 +18,10 @@ import { heldFiles, idlePush, plain, pushEnd, pushEvent, routeOf, statusView, to
 /** @typedef {import("./state.js").Held} Held */
 /** @typedef {import("./state.js").PushState} PushState */
 /** @typedef {import("./matrix.js").Op} Op */
+/** What the Remove dialog holds: the item, what the server said of it, and what the removal would do to the held edits. @typedef {{
+ *   kind: import("./adding.js").AddKind, name: string, state: "loading" | "ready" | "error", error: string | null,
+ *   plan: ReturnType<typeof removal> | null, skills: string[], diffs: { path: string, before: string, after: string }[], dropped: any[], broken: string | null, host: any, confirm: boolean,
+ * }} RemoveState */
 
 const main = /** @type {HTMLElement} */ (document.getElementById("main"));
 const $ = (/** @type {string} */ id) => /** @type {HTMLElement} */ (document.getElementById(id));
@@ -41,7 +46,8 @@ $("local").textContent = `${location.host} · only this machine`;
  *   push: PushState, pushError: string | null, pushNotice: string | null, link: import("./link.js").Link, jobs: import("./jobs.js").Job[],
  *   skills: { name: string, source: string, bundle: string | null }[], stagedSkills: Record<string, string[]>,
  *   form: import("./adding.js").AddState | null, menu: boolean, init: import("./hosts.js").InitState, initError: string | null,
- *   yaml: Record<string, string>, yamlErrors: Record<string, string>, yamlOpen: Set<string>
+ *   yaml: Record<string, string>, yamlErrors: Record<string, string>, yamlOpen: Set<string>,
+ *   rm: RemoveState | null, removal: import("./hosts.js").InitState, removalError: string | null
  * }}
  */
 const model = {
@@ -52,6 +58,7 @@ const model = {
   skills: [], stagedSkills: {}, form: null, menu: false,
   init: idleInit(), initError: null,
   yaml: {}, yamlErrors: {}, yamlOpen: new Set(),
+  rm: null, removal: idleInit(), removalError: null,
 };
 
 // The To push list is restored after a reload. See session.js: it holds edits only, never a plain secret value.
@@ -144,6 +151,7 @@ function render() {
     }
   }
   renderDialog();
+  renderRemove();
   returnFocus();
 }
 
@@ -379,6 +387,24 @@ function openEdit(kind, name, opener = "") {
   if (openForm(freshEdit(kind, name), opener)) loadEdit();
 }
 
+/** Tab wraps inside the dialog: from its last control to its first, and back. @param {HTMLDialogElement} dialog */
+function trapTab(dialog) {
+  dialog.addEventListener("keydown", (e) => {
+    if (e.key !== "Tab") return;
+    const controls = /** @type {HTMLElement[]} */ ([...dialog.querySelectorAll("input, select, button, a[href]")]).filter((el) => !(/** @type {HTMLInputElement} */ (el).disabled) && el.getClientRects().length > 0);
+    const first = controls[0];
+    const last = controls[controls.length - 1];
+    if (first === undefined || last === undefined) return;
+    if (e.shiftKey && document.activeElement === first) {
+      e.preventDefault();
+      last.focus();
+    } else if (!e.shiftKey && document.activeElement === last) {
+      e.preventDefault();
+      first.focus();
+    }
+  });
+}
+
 /** @param {import("./adding.js").AddState} form @param {string} opener @returns {boolean} whether it opened */
 function openForm(form, opener) {
   if (client === null || !usable() || model.form !== null || model.base === null) return false;
@@ -395,21 +421,7 @@ function openForm(form, opener) {
   dialog.addEventListener("cancel", (e) => {
     if (!closable(kind, model.init, form.edit !== null)) e.preventDefault();
   });
-  // Tab wraps inside the dialog: from its last control to its first, and back.
-  dialog.addEventListener("keydown", (e) => {
-    if (e.key !== "Tab") return;
-    const controls = /** @type {HTMLElement[]} */ ([...dialog.querySelectorAll("input, select, button, a[href]")]).filter((el) => !(/** @type {HTMLInputElement} */ (el).disabled) && el.getClientRects().length > 0);
-    const first = controls[0];
-    const last = controls[controls.length - 1];
-    if (first === undefined || last === undefined) return;
-    if (e.shiftKey && document.activeElement === first) {
-      e.preventDefault();
-      last.focus();
-    } else if (!e.shiftKey && document.activeElement === last) {
-      e.preventDefault();
-      first.focus();
-    }
-  });
+  trapTab(dialog);
   dialog.addEventListener("close", () => {
     // A second Esc can slip past the cancel event; a dialog that may not close is shown again.
     if (model.form !== null && !closable(kind, model.init, form.edit !== null)) return void dialog.showModal();
@@ -562,7 +574,7 @@ async function loadLive() {
   const key = JSON.stringify(d.op);
   const seq = ++liveSeq;
   try {
-    const doc = await (f.kind === "host" && f.edit === null ? client.previewHost(d.op) : client.preview(f.edit !== null ? editedOps(f, d).ops : [...model.ops, d.op]));
+    const doc = await (f.kind === "host" && f.edit === null ? client.previewHost(d.op) : client.preview(f.edit !== null ? editedOps(f, d).ops : [...model.ops, d.op], undefined, model.stagedSkills));
     if (seq !== liveSeq || model.form !== f) return;
     f.live = { key, doc, error: null };
   } catch (e) {
@@ -1015,11 +1027,273 @@ const editBtn = (kind, name) => h("button", { type: "button", id: `edit-${kind}-
 const heldTag = (op) => (op ? h("span", { class: "tag ok" }, "to push") : null);
 const takeBackBtn = (/** @type {Op | undefined} */ op) => (op ? h("button", { type: "button", class: "btn ghost small", onclick: () => removeFromPush(op) }, "Remove from push") : null);
 
+/**
+ * The card of an item whose removal is on To push: it is gone from the page's view, so it is drawn from the files, dimmed, with the button that takes the removal back.
+ * @param {import("./adding.js").AddKind} kind @param {any} row what the files on disk say of it
+ */
+function removedCard(kind, row) {
+  const op = /** @type {Op} */ (removalOp(model.ops, /** @type {"server" | "source" | "bundle"} */ (kind), row.name));
+  const y = yamlToggle({ kind, name: row.name });
+  return h("div", { class: "panel card removing" + (y.panel ? " yamlopen" : ""), id: `removed-${kind}-${row.name}` }, h("h3", {}, row.name, h("span", { class: "tag bad" }, "removal to push")), h("div", { class: "row" }, takeBackBtn(op), y.button), y.panel);
+}
+
+/** The items of one kind on disk whose removal is held and that the page's view no longer shows. @param {"server" | "source" | "bundle"} kind @param {any[]} shown @param {any[]} disk */
+const removedRows = (kind, shown, disk) => disk.filter((/** @type {any} */ row) => removalOp(model.ops, kind, row.name) !== undefined && !shown.some((/** @type {any} */ x) => x.name === row.name));
+
 /** The addition or edit of an item that is on To push. @param {import("./adding.js").AddKind} kind @param {string} name @returns {Op | undefined} */
 const heldOp = (kind, name) => ownOp(model.ops, kind, name);
 
 /** A page title with the buttons that act on it on the right. @param {string} title @param {string} about @param {...Node} actions */
 const pageHead = (title, about, ...actions) => h("div", { class: "pagehead" }, h("div", {}, h("h1", {}, title), h("p", { class: "sub" }, about)), h("div", { class: "pageact" }, ...actions));
+
+// ---- Removing: the confirmation before anything is staged or run
+
+/** The Remove button of a card, next to Edit. A host that may not be removed says why, as the button's title. @param {import("./adding.js").AddKind} kind @param {string} name @param {string | null} [refusal] */
+const removeBtn = (kind, name, refusal = null) =>
+  h("button", { type: "button", id: `remove-${kind}-${name}`, class: "btn ghost small danger", ...(!usable() ? { disabled: true, title: "fleet ui is not answering" } : refusal !== null ? { disabled: true, title: refusal } : {}), "aria-label": `Remove ${name}`, onclick: () => openRemove(kind, name, `remove-${kind}-${name}`) }, "Remove");
+
+/** @type {HTMLDialogElement | null} */
+let rmEl = null;
+let rmOpener = "";
+
+/** Esc and Cancel close the dialog, except while a host is being removed: the run goes on without the page, and its output is the only way to see how it ends. */
+const rmClosable = () => !model.removal.running;
+
+/**
+ * Opens the dialog that asks before an item is removed. Nothing is staged or run until its button is pressed, and what it holds is dropped when it closes.
+ * @param {import("./adding.js").AddKind} kind @param {string} name @param {string} opener
+ */
+function openRemove(kind, name, opener) {
+  if (client === null || !usable() || model.rm !== null || model.form !== null || model.base === null) return;
+  rmOpener = opener;
+  if (kind === "host" && !model.removal.running) {
+    model.removal = idleInit();
+    model.removalError = null;
+  }
+  model.rm = { kind, name, state: "loading", error: null, plan: null, skills: [], diffs: [], dropped: [], broken: null, host: null, confirm: false };
+  const dialog = h("dialog", { class: "adlg", "aria-labelledby": "rm-title" });
+  rmEl = dialog;
+  dialog.addEventListener("cancel", (e) => {
+    if (!rmClosable()) e.preventDefault();
+  });
+  trapTab(dialog);
+  dialog.addEventListener("close", () => {
+    if (model.rm !== null && !rmClosable()) return void dialog.showModal();
+    dropRemove(dialog);
+  });
+  document.body.append(dialog);
+  document.documentElement.classList.add("modal");
+  renderRemove();
+  dialog.showModal();
+  loadRemove();
+}
+
+function closeRemove() {
+  rmEl?.close();
+}
+
+/** @param {HTMLDialogElement} dialog */
+function dropRemove(dialog) {
+  if (rmEl !== dialog) return;
+  model.rm = null;
+  rmEl = null;
+  if (!model.removal.running) {
+    model.removal = idleInit();
+    model.removalError = null;
+  }
+  dialog.remove();
+  document.documentElement.classList.remove("modal");
+  const back = document.getElementById(rmOpener);
+  refocus = back !== null && back.offsetParent !== null ? rmOpener : "";
+  returnFocus();
+}
+
+/** The changes of a file between two texts, with a little around them. @param {string} before @param {string} after */
+const changeLines = (before, after) => nearChanges(lineDiff(splitLines(before), splitLines(after)), 3);
+
+/** Reads what the removal would do: from the server's own replay for an item of the catalog, and its preview for a host. */
+async function loadRemove() {
+  const r = model.rm;
+  if (r === null || client === null) return;
+  try {
+    if (r.kind === "host") {
+      r.host = await client.previewRemoveHost(r.name);
+    } else {
+      // The skills a source provides are those of its clone here, and those seen when it was added.
+      if (r.kind === "source") await loadSkills();
+      if (model.rm !== r) return;
+      r.skills = r.kind === "source" ? sourceSkills(r.name, model.skills, model.stagedSkills) : [];
+      r.plan = removal(model.ops, r.kind, r.name, r.skills);
+      if (r.plan.mode === "stage") {
+        // What it changes is its own diff: the files with it, against the files with the other edits held.
+        const plan = r.plan;
+        const [without, withIt] = await Promise.all([client.preview(model.ops.filter((o) => !plan.moot.includes(o)), undefined, model.stagedSkills), client.preview(plan.ops, undefined, model.stagedSkills)]);
+        if (model.rm !== r) return;
+        r.diffs = withIt.files.map((/** @type {any} */ f) => ({ path: f.path, before: without.files.find((/** @type {any} */ x) => x.path === f.path)?.after ?? f.before, after: f.after })).filter((/** @type {any} */ d) => d.before !== d.after);
+        r.dropped = withIt.dropped;
+        const was = new Set(without.checks.filter((/** @type {any} */ c) => !c.loads).map((/** @type {any} */ c) => c.host));
+        const now = withIt.checks.filter((/** @type {any} */ c) => !c.loads && !was.has(c.host));
+        r.broken = now.length > 0 ? `With this, the config does not load for ${now.map((/** @type {any} */ c) => c.host).join(", ")}: ${now[0].problems[0] ?? ""}` : null;
+      }
+    }
+    r.state = "ready";
+  } catch (e) {
+    if (model.rm !== r) return;
+    r.state = "error";
+    r.error = said(e, "it could not be read");
+  }
+  renderRemove();
+  /** @type {HTMLElement | null | undefined} */ (rmEl?.querySelector("#rm-go:not([disabled])"))?.focus();
+}
+
+/** The confirmed removal of an item of the catalog: it goes on To push (or the unpushed addition is dropped), and the dialog closes. @param {RemoveState} r */
+function stageRemoval(r) {
+  const plan = r.plan;
+  if (plan === null || r.state !== "ready") return;
+  if (r.kind === "source" && plan.mode === "forget") delete model.stagedSkills[r.name];
+  model.ops = plan.ops;
+  model.messageEdited = false;
+  closeRemove();
+  refreshPreview();
+}
+
+/** Deletes the host's files and runs the real rekey, commit and push. Its output comes on the stream while this call is open. @param {RemoveState} r */
+async function runRemove(r) {
+  if (client === null || r.kind !== "host" || model.removal.running || r.state !== "ready") return;
+  r.confirm = false;
+  model.removalError = null;
+  model.removal = { ...startInit(r.name) };
+  renderRemove();
+  try {
+    const doc = await client.removeHost(r.name);
+    model.removal = initEnd(model.removal, doc);
+    // The edits to push for the host go with it; those of other hosts stay. When nothing was removed they are all still good.
+    if (doc.removed === true) {
+      const gone = heldForHost(model.ops, r.name);
+      model.ops = model.ops.filter((o) => !gone.includes(o));
+    }
+  } catch (e) {
+    model.removal = { ...model.removal, running: false };
+    model.removalError = said(e, "the host could not be removed");
+  }
+  renderRemove();
+  loadStatus();
+  loadMatrix();
+  loadSecrets();
+}
+
+/** A file's changes as a panel of the dialog's right side. @param {string} path @param {string} before @param {string} after @param {string} [note] */
+function changePanel(path, before, after, note = "") {
+  const lines = changeLines(before, after);
+  const { added, removed } = counts(lineDiff(splitLines(before), splitLines(after)));
+  return h("div", { class: "pane-file" }, h("div", { class: "ph" }, h("span", { class: "path" }, path), h("span", { class: "spacer" }), note === "" ? null : h("span", { class: "tag warn" }, note), h("span", { class: "tag " + (added + removed > 0 ? "ok" : "") }, `+${added} -${removed}`)), diffBody(lines));
+}
+
+/** @param {string[]} lines */
+const bullets = (lines) => h("ul", { class: "rmlist" }, ...lines.map((l) => h("li", {}, l)));
+
+/** What the dialog says of an item of the catalog, as paragraphs. @param {RemoveState} r */
+function catalogWords(r) {
+  const plan = /** @type {ReturnType<typeof removal>} */ (r.plan);
+  const kindWord = { server: "MCP server", source: "skill source", bundle: "skill bundle" }[/** @type {"server" | "source" | "bundle"} */ (r.kind)];
+  if (plan.mode === "forget") {
+    return [h("p", {}, `${r.name} was added here and is not pushed yet. Removing it drops that addition${plan.moot.length > 1 ? `, and ${plan.moot.length - 1} more edit${plan.moot.length === 2 ? "" : "s"} to push that name it` : ""}. Nothing is written.`)];
+  }
+  const { hosts } = touched(r.diffs);
+  /** @type {Node[]} */
+  const out = [h("p", {}, `Removes the ${kindWord} ${r.name} from the catalog${r.kind === "source" ? "" : ", and from every host that picks or excludes it"}. This is a change to push: nothing is written until you push.`)];
+  if (r.kind !== "source") out.push(h("p", { id: "rm-hosts" }, hosts.length === 0 ? "No host picks or excludes it." : `It is also taken out of: ${hosts.join(", ")}.`));
+  if (r.kind === "source") {
+    const losses = bundleLosses(shownMatrix().bundles, r.skills);
+    out.push(
+      r.skills.length === 0 ? h("div", { class: "notice inline", id: "rm-noskills" }, NO_SKILLS_KNOWN) : h("p", { id: "rm-skills" }, losses.length === 0 ? "No bundle lists a skill of this source." : "Its skills are taken out of every bundle that lists them:"),
+      ...(losses.length > 0 ? [bullets(losses.map(lossLine))] : []),
+      ...losses.filter((l) => l.left === 0).map((l) => h("div", { class: "notice inline", id: `rm-empty-${l.bundle}` }, `${l.bundle} has ${EMPTY_BUNDLE}.`)),
+      h("p", { class: "muted" }, "The clone of the source on each machine is left alone."),
+    );
+  }
+  const others = plan.moot.filter((o) => o.op !== (r.kind === "server" ? "removeServer" : r.kind === "source" ? "removeSource" : "removeBundle"));
+  if (others.length > 0) out.push(h("div", { class: "notice inline", id: "rm-moot" }, "Dropped from To push, because the item is going:", bullets(others.map((o) => opLabel(o)))));
+  return out;
+}
+
+/** What the dialog says of a host, and what it asks. @param {RemoveState} r */
+function hostWords(r) {
+  const doc = r.host;
+  const readable = [...doc.readable.shared.map((/** @type {string} */ n) => `${n} (shared)`), ...doc.readable.own.map((/** @type {string} */ n) => `${n} (its own file)`)];
+  const dropping = heldForHost(model.ops, r.name);
+  const outside = (model.base?.outside ?? []).length > 0;
+  const out = [
+    h("p", {}, hostRuns(r.name, doc).lead),
+    ...(doc.rekeyed.length > 0 ? [h("p", { id: "rm-rekeyed" }, `Re-encrypted without its key: ${doc.rekeyed.join(", ")}.`)] : []),
+    h("p", { id: "rm-keeps" }, hostKeeps(r.name)),
+    readable.length > 0 ? h("div", { class: "notice inline", id: "rm-secrets" }, `${r.name} could read these secrets: ${readable.join(", ")}.`, h("div", {}, ROTATE)) : h("p", { class: "muted", id: "rm-secrets" }, `${r.name} has no key, so it could read no secret.`),
+  ];
+  if (dropping.length > 0) out.push(h("div", { class: "notice inline", id: "rm-held" }, `${dropping.length} edit${dropping.length === 1 ? "" : "s"} to push for ${r.name} will be dropped:`, bullets(dropping.map((o) => opLabel(o)))));
+  if (outside) out.push(h("div", { class: "notice bad inline", id: "rm-outside" }, "The config repo has changes the page did not make: commit or discard them first."));
+  return out;
+}
+
+/** The output of a host's removal, as it streams in, and how it ended. */
+function removalPane() {
+  const end = model.removal.end;
+  return h(
+    "div",
+    { class: "initpane" },
+    h("div", { class: "ph" }, `removing ${model.removal.name ?? ""}`, h("span", { class: "spacer" }), end ? h("span", { class: "tag " + (end.ok ? "ok" : "bad") }, end.code) : model.removal.running ? h("span", { class: "tag" }, "running") : null),
+    model.removalError !== null ? h("div", { class: "notice bad inset", role: "alert" }, model.removalError) : null,
+    h("pre", { class: "term", id: "rmlog", "aria-live": "polite" }, model.removal.lines.join("\n")),
+    end ? h("div", { class: "hint", id: "rmdone" }, ...(end.ok ? [`${model.removal.name} is removed and pushed.`] : end.messages.map((m) => h("div", {}, m)))) : null,
+  );
+}
+
+function renderRemove() {
+  const r = model.rm;
+  if (r === null || rmEl === null) return;
+  const host = r.kind === "host";
+  const active = document.activeElement;
+  const keep = active instanceof HTMLElement && rmEl.contains(active) && active.id !== "" ? active.id : null;
+  const ran = host && (model.removal.running || model.removal.end !== null || model.removalError !== null);
+  const done = host && model.removal.end?.ok === true;
+  const plan = r.plan;
+  const stale = r.dropped.length > 0;
+  const outside = host && (model.base?.outside ?? []).length > 0;
+  const ready = r.state === "ready" && usable() && !stale && r.broken === null && !outside && !model.removal.running && (host ? !r.confirm : plan !== null);
+  /** @type {Node[]} */
+  let words = [h("div", { class: "hint" }, "Reading the files...")];
+  /** @type {Node[]} */
+  let right = [];
+  if (r.state === "error") words = [h("div", { class: "notice bad", role: "alert" }, r.error)];
+  else if (r.state === "ready" && host) {
+    words = hostWords(r);
+    right = ran ? [removalPane()] : r.host.files.map((/** @type {any} */ f) => changePanel(f.path, f.before, f.after, f.path.startsWith("secrets/") ? "names only" : ""));
+  } else if (r.state === "ready" && plan !== null) {
+    words = catalogWords(r);
+    right = plan.mode === "forget" ? [] : r.diffs.map((d) => changePanel(d.path, d.before, d.after));
+    if (stale) words.push(h("div", { class: "notice bad inline", id: "rm-stale" }, r.dropped.map((/** @type {any} */ d) => d.reason).join("; ")));
+    if (r.broken !== null) words.push(h("div", { class: "notice bad inline", id: "rm-broken" }, r.broken));
+  }
+  const goText = host ? (model.removal.running ? "Removing..." : `Remove ${r.name} and push`) : goLabel(plan?.mode ?? "stage");
+  const go = host
+    ? h("button", { type: "button", id: "rm-go", class: "btn danger", disabled: !ready, onclick: () => runRemove(r) }, goText)
+    : h("button", { type: "button", id: "rm-go", class: "btn danger", disabled: !ready, onclick: () => stageRemoval(r) }, goText);
+  fill(
+    rmEl,
+    h(
+      "form",
+      { class: "adlg-form", autocomplete: "off", novalidate: true, onsubmit: (e) => e.preventDefault() },
+      h("div", { class: "adlg-head" }, h("h3", { id: "rm-title" }, `${REMOVE[r.kind]}: ${r.name}`), h("span", { class: "muted" }, host ? (r.host === null ? "runs now" : hostRuns(r.name, r.host).head) : plan?.mode === "forget" ? "drops an addition: nothing is written" : "goes to To push; written when you push")),
+      h("div", { class: "adlg-body" + (right.length === 0 ? " single" : "") }, h("div", { class: "form rmwords" }, ...words), ...(right.length === 0 ? [] : [h("div", { class: "formright" }, ...right)])),
+      h("div", { class: "adlg-foot" }, h("span", { class: "spacer" }), done ? h("button", { type: "button", id: "rm-done", class: "btn primary", onclick: closeRemove }, "Done") : h("button", { type: "button", id: "rm-cancel", class: "btn ghost", disabled: !rmClosable(), onclick: closeRemove }, ran && !model.removal.running ? "Close" : "Cancel"), done ? null : go),
+    ),
+  );
+  const log = rmEl.querySelector("#rmlog");
+  if (log !== null) log.scrollTop = log.scrollHeight;
+  if (keep !== null) {
+    const again = rmEl.querySelector(`[id="${keep}"]`);
+    if (again instanceof HTMLElement && !(again instanceof HTMLButtonElement && again.disabled)) again.focus();
+  }
+}
 
 // ---- YAML toggles: how an item is written in the config repo
 
@@ -1104,8 +1378,9 @@ function catalogScreen() {
       ...view.servers.map((/** @type {any} */ sv) => {
         const op = heldOp("server", sv.name);
         const y = yamlToggle({ kind: "server", name: sv.name });
-        return h("div", { class: "panel card" + (y.panel ? " yamlopen" : "") }, h("h3", {}, sv.name, h("span", { class: "tag" }, sv.server?.kind ?? ""), heldTag(op)), h("p", {}, serverLine(sv)), h("div", { class: "row" }, onHosts(sv), takeBackBtn(op), editBtn("server", sv.name), y.button), y.panel);
+        return h("div", { class: "panel card" + (y.panel ? " yamlopen" : "") }, h("h3", {}, sv.name, h("span", { class: "tag" }, sv.server?.kind ?? ""), heldTag(op)), h("p", {}, serverLine(sv)), h("div", { class: "row" }, onHosts(sv), takeBackBtn(op), editBtn("server", sv.name), removeBtn("server", sv.name), y.button), y.panel);
       }),
+      ...removedRows("server", view.servers, model.base.servers).map((/** @type {any} */ row) => removedCard("server", row)),
       addCard("server", "+ Add an MCP server"),
     ),
     h("h2", {}, "Skill sources"),
@@ -1120,10 +1395,11 @@ function catalogScreen() {
           h("h3", {}, src.name, h("span", { class: "tag " + (src.commit ? "info" : "ok") }, src.commit ? "pinned" : "followed"), src.review ? h("span", { class: "tag warn" }, "review") : null, heldTag(op)),
           h("p", {}, [src.repo, src.commit ? src.commit.slice(0, 7) : null, src.commit ? `tracks ${src.track}` : src.branch].filter((x) => x).join(" · ")),
           skills.length > 0 ? h("div", { class: "row" }, ...skills.slice(0, 12).map((/** @type {string} */ sk) => h("span", { class: "tag" }, sk)), skills.length > 12 ? h("span", { class: "muted" }, `+${skills.length - 12}`) : null) : null,
-          h("div", { class: "row" }, takeBackBtn(op), editBtn("source", src.name), y.button),
+          h("div", { class: "row" }, takeBackBtn(op), editBtn("source", src.name), removeBtn("source", src.name), y.button),
           y.panel,
         );
       }),
+      ...removedRows("source", sources, model.base.sources ?? []).map((/** @type {any} */ row) => removedCard("source", row)),
       addCard("source", "+ Add a skill source"),
     ),
     h("h2", {}, "Skill bundles"),
@@ -1131,8 +1407,9 @@ function catalogScreen() {
       ...view.bundles.map((/** @type {any} */ b) => {
         const op = heldOp("bundle", b.name);
         const y = yamlToggle({ kind: "bundle", name: b.name });
-        return h("div", { class: "panel card" + (y.panel ? " yamlopen" : "") }, h("h3", {}, b.name, heldTag(op)), h("div", { class: "row" }, ...b.skills.map((/** @type {string} */ sk) => h("span", { class: "tag" }, sk))), h("p", {}, ""), h("div", { class: "row" }, onHosts(b), takeBackBtn(op), editBtn("bundle", b.name), y.button), y.panel);
+        return h("div", { class: "panel card" + (y.panel ? " yamlopen" : "") }, h("h3", {}, b.name, b.skills.length === 0 ? h("span", { class: "tag warn", title: EMPTY_BUNDLE }, "no skills") : null, heldTag(op)), h("div", { class: "row" }, ...b.skills.map((/** @type {string} */ sk) => h("span", { class: "tag" }, sk))), h("p", {}, ""), h("div", { class: "row" }, onHosts(b), takeBackBtn(op), editBtn("bundle", b.name), removeBtn("bundle", b.name), y.button), y.panel);
       }),
+      ...removedRows("bundle", view.bundles, model.base.bundles).map((/** @type {any} */ row) => removedCard("bundle", row)),
       addCard("bundle", "+ Add a skill bundle"),
     ),
     model.ops.length > 0 ? h("div", { class: "row heldbar" }, h("span", { class: "tag ok" }, `${model.ops.length} to push`), h("a", { class: "btn primary", href: "#/review" }, "Review & push")) : null,
@@ -1161,7 +1438,7 @@ function hostsScreen() {
           { class: "panel card" + (y.panel ? " yamlopen" : "") },
           h("h3", {}, host.name, host.self ? h("span", { class: "tag ok" }, "this host") : null, heldTag(op)),
           h("dl", { class: "facts small" }, h("dt", {}, "reached"), h("dd", {}, host.self ? "local" : host.ssh ? `ssh ${host.ssh}` : "on its own timer"), h("dt", {}, "bundles"), h("dd", {}, bundles.join(", ") || "none"), h("dt", {}, "servers"), h("dd", {}, servers.join(", ") || "none")),
-          h("div", { class: "row" }, takeBackBtn(op), editBtn("host", host.name), y.button),
+          h("div", { class: "row" }, takeBackBtn(op), editBtn("host", host.name), removeBtn("host", host.name, hostRefusal(host, hosts)), y.button),
           y.panel,
         );
       }),
@@ -1298,8 +1575,9 @@ function reviewScreen() {
   const dropped = p?.dropped ?? [];
   const checks = p?.checks ?? [];
   const stop = [
-    ...blockers({ outside: model.init.running ? [] : (p?.outside ?? model.base?.outside ?? []), dropped, checks, running: model.push.running }),
+    ...blockers({ outside: model.init.running || model.removal.running ? [] : (p?.outside ?? model.base?.outside ?? []), dropped, checks, running: model.push.running }),
     ...(model.init.running ? [`fleet init of ${model.init.name ?? "a host"} is running`] : []),
+    ...(model.removal.running ? [`removing ${model.removal.name ?? "a host"} is running`] : []),
   ];
   const editing = model.ops.length > 0;
   const message = h("input", { type: "text", id: "msg", placeholder: editing ? "commit message" : "commit message (optional, for what is already in the repo)", maxlength: "1000", "aria-label": "commit message", value: model.message, oninput: (e) => { model.message = /** @type {HTMLInputElement} */ (e.target).value; model.messageEdited = true; } });
@@ -1418,7 +1696,7 @@ async function refreshPreview() {
   const seq = ++previewSeq;
   const focus = model.focus ?? model.base?.hosts?.[0]?.name ?? null;
   try {
-    const doc = await client.preview(model.ops, focus === null ? undefined : `hosts/${focus}.yaml`);
+    const doc = await client.preview(model.ops, focus === null ? undefined : `hosts/${focus}.yaml`, model.stagedSkills);
     if (seq !== previewSeq) return;
     model.preview = doc;
     model.matrixError = null;
@@ -1505,7 +1783,7 @@ async function writeAndPush() {
       // Read the state after the answer: the stream has been filling it (lanes, log) while the call was open.
       model.push = pushEnd(model.push, end);
     } else {
-      const done = await client.write(model.ops, message);
+      const done = await client.write(model.ops, message, model.stagedSkills);
       model.push = pushEnd(model.push, done.push);
       // The files are committed whether or not the push went through, so the edits are no longer held either way.
       model.pushNotice = writtenNotice(done.written, done.code);
@@ -1585,10 +1863,12 @@ if (token !== null) {
         model.jobs = now;
       } else if (name === "init") model.init = initLine(model.init, doc);
       else if (name === "initend") model.init = initEnd(model.init, doc);
+      else if (name === "remove") model.removal = initLine(model.removal, doc);
+      else if (name === "removeend") model.removal = initEnd(model.removal, doc);
       else model.push = name === "push" ? pushEvent(model.push, doc) : pushEnd(model.push, doc);
       render();
       // Another tab's push or init changed the repo and this host: read them again, so nothing here is older than its end.
-      if (name === "initend" || name === "pushend") {
+      if (name === "initend" || name === "pushend" || name === "removeend") {
         loadStatus();
         loadMatrix();
         loadSecrets();
@@ -1602,7 +1882,7 @@ if (token !== null) {
   });
   // Leaving the page does not stop a push or a host set-up, but the page is the only place their output is seen live.
   window.addEventListener("beforeunload", (e) => {
-    if (!model.push.running && !model.init.running) return;
+    if (!model.push.running && !model.init.running && !model.removal.running) return;
     e.preventDefault();
     e.returnValue = "";
   });

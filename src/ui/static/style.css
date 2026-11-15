@@ -314,3 +314,9 @@ html.modal main { overflow: hidden; }
 .card dl + .row { margin-top: 10px; }
 [hidden] { display: none !important; }
 .notice.cloneerr { margin: 10px 0 0; overflow-wrap: anywhere; }
+
+.card.removing { opacity: .75; border-style: dashed; }
+.adlg-body.single { grid-template-columns: minmax(0, 1fr); }
+.rmwords p { margin: 0; }
+.rmwords .rmlist, .notice .rmlist { margin: 4px 0 0; padding-left: 20px; }
+.rmwords .notice.inline div { margin-top: 4px; }

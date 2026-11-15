@@ -4,8 +4,8 @@ import type { Section } from "./entries.ts";
 import { CannotEdit, Stale, afterColon, isMap, lineStart, pairOf, parse } from "./yamltext.ts";
 
 /**
- * Takes one entry out of a catalog section, with the lines of the entry and the comments inside it, and nothing else: a comment
- * above it or after it, the other entries and their blank lines stay byte for byte. A section left with no entry is `{}`, which
+ * Takes one entry out of a catalog section, with the lines of the entry, the comments inside it and the comment lines right above it (the
+ * ones the YAML view shows as part of the item), and nothing else: any other comment, the other entries and their blank lines stay byte for byte. A section left with no entry is `{}`, which
  * the loader reads as an empty section (a bare `servers:` is not a map). The result is read again and must be the old document
  * without the entry.
  */
@@ -19,8 +19,27 @@ export function removeEntry(text: string, section: Section, name: string): strin
   if (!pair) throw new Stale(`'${name}' is not in the ${section} of the file any more`);
 
   const first = map.items[0] === pair;
-  const from = lineStart(text, (pair.key as { range: [number, number] }).range[0]);
-  let out = removePair(text, pair);
+  const keyAt = (pair.key as { range: [number, number] }).range[0];
+  let from = lineStart(text, keyAt);
+  // The comment lines directly above, at the entry's own indent, describe it and go with it: the same lines the YAML view shows for the item.
+  const column = keyAt - from;
+  for (let at = from; at > 0; ) {
+    const above = lineStart(text, at - 1);
+    const line = text.slice(above, at - 1);
+    if (!line.trimStart().startsWith("#") || line.length - line.trimStart().length !== column) break;
+    from = above;
+    at = above;
+  }
+  // `removePair` refuses an entry that does not have lines of its own; its cut is the entry's last content line, and comments deeper than the key
+  // that follow it (still inside the entry, as the YAML view has it) go as well.
+  const rest = removePair(text, pair).slice(lineStart(text, keyAt));
+  let kept = text.length - rest.length;
+  for (let next = text.indexOf("\n", kept); next !== -1 && next + 1 < text.length; next = text.indexOf("\n", kept)) {
+    const line = text.slice(kept, next);
+    if (!line.trimStart().startsWith("#") || line.length - line.trimStart().length <= column) break;
+    kept = next + 1;
+  }
+  let out = `${text.slice(0, from)}${text.slice(kept)}`;
   if (map.items.length === 1) {
     const colon = afterColon(text, owner);
     out = `${out.slice(0, colon)} {}${out.slice(colon)}`;

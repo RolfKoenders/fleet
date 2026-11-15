@@ -294,8 +294,12 @@ test("shapes that cannot be spliced safely are refused and the file is left as i
   }
   const flowMcp = applyOps({ "hosts/box.yaml": "mcp: { exclude: [a] }\n", "hosts/_defaults.yaml": defaults }, [{ ...op, kind: "mcp" }]);
   assert.equal(flowMcp.dropped[0]!.why, "cannot-edit");
-  const flowCatalog = applyOps({ "catalog/mcp.yaml": "servers: {}\n" }, [{ op: "addServer", name: "a", entry: { url: "u" } }]);
+  const flowCatalog = applyOps({ "catalog/mcp.yaml": "servers: { b: { url: v } }\n" }, [{ op: "addServer", name: "a", entry: { url: "u" } }]);
   assert.equal(flowCatalog.dropped[0]!.why, "cannot-edit");
+  // A section that is `{}` (what taking out the last entry leaves) has nothing in it: the entry is added as the first.
+  const emptyCatalog = applyOps({ "catalog/mcp.yaml": "servers: {}\n" }, [{ op: "addServer", name: "a", entry: { url: "u" } }]);
+  assert.deepEqual(emptyCatalog.dropped, []);
+  assert.equal(emptyCatalog.files["catalog/mcp.yaml"], "servers:\n  a:\n    url: u\n");
 });
 
 test("names that need quoting are written quoted and read back as the same name", () => {
