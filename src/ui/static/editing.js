@@ -20,8 +20,9 @@ export const EDIT = {
   host: "Edit host",
 };
 
-/** The confirm button: the edit goes to To push. */
+/** The confirm button: the edit goes to To push, or, when the form is back to what the file says, comes off it. */
 export const EDIT_LABEL = "Save to push";
+export const EDIT_DROP_LABEL = "Take off To push";
 
 /** What an edit dialog holds besides the form: where it has got to with reading the item, and what it found. @typedef {{
  *   name: string, state: "loading" | "ready" | "readonly" | "error", error: string | null, reason: string | null, path: string, text: string, base: any,
@@ -186,12 +187,14 @@ export function serverAsAdded(d, base, name) {
  * @param {string} path the file the item is in
  * @param {string} baseText that file with the edits to push but this item's own
  * @param {Op | null} sent
+ * @param {boolean} [dropping] the form holds what the file holds, and an edit of this item is on To push: saving takes it off
  * @returns {Pane}
  */
-export function editPaneView(d, live, path, baseText, sent) {
+export function editPaneView(d, live, path, baseText, sent, dropping = false) {
   const none = { problems: /** @type {string[]} */ ([]), message: /** @type {string | null} */ (null), lines: /** @type {import("./diff.js").DiffLine[]} */ ([]), broken: /** @type {string | null} */ (null) };
   if (d.op === null) {
-    return d.unchanged ? { ...none, path, tag: "no change", tone: "", state: "missing", problems: ["change something: this is what the file says now"] } : { ...none, path, tag: "not ready", tone: "", state: "missing", problems: d.problems };
+    return d.unchanged
+      ? { ...none, path, tag: "no change", tone: "", state: "missing", problems: [dropping ? "this is what the file says now: saving takes the edit off To push" : "change something: this is what the file says now"] } : { ...none, path, tag: "not ready", tone: "", state: "missing", problems: d.problems };
   }
   const key = JSON.stringify(sent);
   if (live === null || live.key !== JSON.stringify(d.op)) return { ...none, path, tag: "reading", tone: "", state: "reading" };

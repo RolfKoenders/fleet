@@ -4,6 +4,10 @@ What changed in fleet, newest first. Each version lists what you can do now, wha
 
 ## Unreleased
 
+### Added
+
+- `fleet ui` can edit an existing skill source, bundle, MCP server or host: every card on the Catalog and on Hosts has an Edit button that opens the Add dialog for that kind with its current values, the name read-only and the same live YAML diff and checks. An edit writes only the fields that changed and keeps every other key and comment byte for byte (a changed value keeps the comment at the end of its line), goes on To push like any edit, and is dropped as stale, never overwriting a newer value, when the file has moved on. A skill source can change its path, branch, pin or follow and review (the repo stays, because machines keep each clone under the source's name) and moves its pin to the head of a new branch; an addition that is still on To push is changed in place; an entry fleet cannot change safely (anchors, aliases, flow maps) opens read-only with the reason and the file to edit by hand. See [the page](docs/ui.md).
+
 ## 2.4.0 - 2026-11-14
 
 ### Added

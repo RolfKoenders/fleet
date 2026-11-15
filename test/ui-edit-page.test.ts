@@ -228,6 +228,8 @@ test("the pane of an Edit shows the file as a diff against the file without this
   assert.equal(editPaneView(d, live(null, "no"), "catalog/mcp.yaml", base, op).state, "refused");
   const none = editPaneView({ op: null, problems: [], unchanged: true }, null, "catalog/mcp.yaml", base, null);
   assert.deepEqual([none.state, none.tag], ["missing", "no change"]);
+  assert.match(none.problems[0]!, /change something/);
+  assert.match(editPaneView({ op: null, problems: [], unchanged: true }, null, "catalog/mcp.yaml", base, null, true).problems[0]!, /takes the edit off To push/);
   assert.deepEqual(editPaneView({ op: null, problems: ["give it a command"] }, null, "p", base, null).problems, ["give it a command"]);
   // The op the server was asked about may differ from the form's (an unpushed addition is changed in place).
   const add = { op: "addServer", name: "x", entry: { command: ["b"] } } as any;

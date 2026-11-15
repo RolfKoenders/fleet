@@ -7,7 +7,7 @@ import { changed, counts, lineDiff, splitLines, tokenize } from "./diff.js";
 import { fill, h } from "./dom.js";
 import { ADD, addable, CATALOG_KINDS, closable, confirmLabel, fileOf, freshAdd, hostAsDraft, paneView } from "./adding.js";
 import { bundleDraft, checkLines, cloneKey, confirmText, needsLook, opWarnings, secretOf, secretsOf, serverDraft, skillChoices, sourceDraft, sourceEditDraft, sourceInputs, takeBack } from "./catalog.js";
-import { bundleFormOf, EDIT, EDIT_LABEL, editPaneView, freshEdit, hostEditDraft, hostFormOf, isAddition, ownOp, readOnlyLines, serverAsAdded, serverFormOf, sourceFormOf, startOf, withEdit } from "./editing.js";
+import { bundleFormOf, EDIT, EDIT_DROP_LABEL, EDIT_LABEL, editPaneView, freshEdit, hostEditDraft, hostFormOf, isAddition, ownOp, readOnlyLines, serverAsAdded, serverFormOf, sourceFormOf, startOf, withEdit } from "./editing.js";
 import { blockers, cellAction, DROPPED_BLOCKER, cellState, clickCell, opLabel, suggestMessage, summaryLine, WORDS } from "./matrix.js";
 import { confirmInit, elapsed, heldProblem, hostDraft, idleInit, initEnd, initLine, SETUP_DOC, startInit } from "./hosts.js";
 import { actionOf, afterSet, cellView, dialogTargets, heldNames, missingCount, retryText, valueProblem } from "./secrets.js";
@@ -821,8 +821,14 @@ function hostBlocked() {
   );
 }
 
+/** An Edit form that holds what the file holds while an edit of the item is on To push: saving it takes that edit off. @param {any} f @param {any} d */
+function droppingEdit(f, d) {
+  const own = f.edit === null ? undefined : ownOp(model.ops, f.kind, f.edit.name);
+  return d.unchanged === true && own !== undefined && !isAddition(own);
+}
+
 /** What the pane beside the form shows for the form as it is now. @param {any} f @param {any} d */
-const paneOf = (f, d) => (f.edit !== null ? editPaneView(d, f.live, f.edit.path, f.edit.text, d.op === null ? null : editedOps(f, d).sent) : paneView(f.kind, d, f.live, f.kind === "host" ? null : (model.held[fileOf(f.kind)]?.after ?? null), f.host.name));
+const paneOf = (f, d) => (f.edit !== null ? editPaneView(d, f.live, f.edit.path, f.edit.text, d.op === null ? null : editedOps(f, d).sent, droppingEdit(f, d)) : paneView(f.kind, d, f.live, f.kind === "host" ? null : (model.held[fileOf(f.kind)]?.after ?? null), f.host.name));
 
 /** The pane beside the form: the file as a diff, or what is missing. @param {any} f @param {any} d */
 function filePane(f, d) {
@@ -907,12 +913,11 @@ function dialogContent(f) {
   const outside = (model.base?.outside ?? []).length > 0;
   const pane = paneOf(f, d);
   // Not while the pane says the server refuses it, it does not apply, or the config would not load with it.
-  const own = edit === null ? undefined : ownOp(model.ops, f.kind, edit.name);
-  const ready = edit !== null ? edit.state === "ready" && addable(pane) && (d.op !== null || (d.unchanged === true && own !== undefined && !isAddition(own))) : d.op !== null && addable(pane) && (!host || (!outside && !running));
+  const ready = edit !== null ? edit.state === "ready" && addable(pane) && (d.op !== null || droppingEdit(f, d)) : d.op !== null && addable(pane) && (!host || (!outside && !running));
   const full = f.kind === "server" ? serverAsAdded(d, edit?.base ?? null, f.server.name.trim()) : null;
   const primary = done
     ? h("button", { type: "button", id: "add-done", class: "btn primary", onclick: closeAdd }, "Done")
-    : h("button", { type: "submit", id: "add-confirm", class: "btn primary", disabled: !ready || !usable() || (host && f.confirm), "aria-describedby": "pane" }, running ? "Setting up..." : edit !== null ? EDIT_LABEL : confirmLabel(f.kind));
+    : h("button", { type: "submit", id: "add-confirm", class: "btn primary", disabled: !ready || !usable() || (host && f.confirm), "aria-describedby": "pane" }, running ? "Setting up..." : edit !== null ? (droppingEdit(f, d) ? EDIT_DROP_LABEL : EDIT_LABEL) : confirmLabel(f.kind));
   return h(
     "form",
     { class: "adlg-form", autocomplete: "off", novalidate: true, onsubmit: (e) => { e.preventDefault(); submitAdd(); }, onkeydown: (/** @type {any} */ e) => {
@@ -922,7 +927,7 @@ function dialogContent(f) {
         submitAdd();
       }
     } },
-    h("div", { class: "adlg-head" }, h("h3", { id: "adlg-title" }, edit !== null ? `${EDIT[f.kind]}: ${edit.name}` : ADD[f.kind].title), h("span", { class: "muted" }, host ? "writes hosts/<name>.yaml, then runs fleet init from here" : "goes to To push; written when you push")),
+    h("div", { class: "adlg-head" }, h("h3", { id: "adlg-title" }, edit !== null ? `${EDIT[f.kind]}: ${edit.name}` : ADD[f.kind].title), h("span", { class: "muted" }, host ? "writes hosts/<name>.yaml, then runs fleet init from here" : edit !== null && edit.state === "readonly" ? "nothing to push: this one is edited by hand" : "goes to To push; written when you push")),
     h(
       "div",
       { class: "adlg-body" },
@@ -932,7 +937,7 @@ function dialogContent(f) {
     h(
       "div",
       { class: "adlg-foot" },
-      f.kind === "server" ? h("button", { type: "button", id: "add-check", class: "btn", disabled: full === null || !usable() || f.confirm || f.check?.state === "running" || (edit !== null && edit.state !== "ready"), onclick: () => { f.confirm = true; renderDialog(); /** @type {HTMLElement | null | undefined} */ (dialogEl?.querySelector("#probe-run"))?.focus(); } }, "Check it starts") : null,
+      f.kind === "server" && (edit === null || edit.state === "ready") ? h("button", { type: "button", id: "add-check", class: "btn", disabled: full === null || !usable() || f.confirm || f.check?.state === "running" || (edit !== null && edit.state !== "ready"), onclick: () => { f.confirm = true; renderDialog(); /** @type {HTMLElement | null | undefined} */ (dialogEl?.querySelector("#probe-run"))?.focus(); } }, "Check it starts") : null,
       h("span", { class: "spacer" }),
       done ? null : h("button", { type: "button", id: "add-cancel", class: "btn ghost", disabled: !closable(f.kind, model.init, edit !== null), onclick: closeAdd }, edit !== null && edit.state !== "ready" ? "Close" : "Cancel"),
       blocked || (edit !== null && edit.state !== "ready") ? null : primary,
