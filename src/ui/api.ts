@@ -2,7 +2,7 @@ import { readHostName } from "../host.ts";
 import { LockedError, acquirePushLock } from "../lock.ts";
 import { loadModel } from "../tui/model.ts";
 import { readSecrets } from "../tui/reads.ts";
-import { outsideChanges, plan, preview, readFiles, secretOpProblem, WriteRefused, writeAndCommit } from "./edits.ts";
+import { entryOf, outsideChanges, plan, preview, readFiles, secretOpProblem, WriteRefused, writeAndCommit } from "./edits.ts";
 import { secretsTable } from "./secretsview.ts";
 import { setRequest, setSecret } from "./secretset.ts";
 import { status } from "../status.ts";
@@ -41,6 +41,9 @@ import type { Job } from "./jobs.ts";
  *                      config load, and what its picks change) and `outside`. Nothing is written.
  *   POST /api/yaml     Body `{"kind": "server" | "source" | "bundle" | "host", "name": "..."}`. The file that item is written in, as it is on disk:
  *                      `{path, text}`. A path is never taken from the page, only a kind and a name; a host that is not there is 404.
+ *   POST /api/entry    Body `{"ops": [...], "kind": "server" | "source" | "bundle" | "host", "name": "..."}`. What that item is after the held `ops`, for an
+ *                      Edit dialog: `value` (the entry as written: a bundle's skills, a host's `{ssh}`; secrets as `secret:NAME`, never a value), `path`,
+ *                      `editable`, and when it is not, `reason` and `text` (the file, to show read-only). 404 `not-found` for an item that is not there.
  *   POST /api/plan     Body `{"ops": [...]}`. This host's full plan: `fleet diff` against the edited config, nothing written.
  *   POST /api/write    Body `{"ops": [...], "message": "..."}`. Writes the edited files, commits them, then runs the real
  *                      `fleet push` as `POST /api/push` does. Refuses, writing nothing, when a push is running (409 `locked`),
@@ -76,8 +79,9 @@ import type { Job } from "./jobs.ts";
  *                      value is never in an answer, an error, a log or the stream: a failure is one of a few fixed messages (422
  *                      `no-recipient`, `needs-secret`, `sops-failed`, `recipients`, `invalid`; 409 `stale`).
  *
- * Edits are operations (`EditOp`) held by the page and replayed here: `add` and `remove` of a bundle or server for a host, and the
- * catalog additions `addServer`, `addSource` and `addBundle`, and `setSecret`, a secrets file already encrypted. Each is checked by `opsOf`, with the loader's own rules.
+ * Edits are operations (`EditOp`) held by the page and replayed here: `add` and `remove` of a bundle or server for a host, the
+ * catalog additions `addServer`, `addSource` and `addBundle`, the field changes `editServer`, `editSource`, `editBundle` and `editHost`
+ * (each remembers what it changed from, so a file that moved on makes it stale), and `setSecret`, a secrets file already encrypted. Each is checked by `opsOf`, with the loader's own rules.
  */
 
 export type ApiResponse = { status: number; body: unknown };
@@ -227,6 +231,16 @@ export function routes(deps: ApiDeps): Route[] {
       handle: async (req) => {
         const file = yamlOf(deps.configDir, yamlRequest(await req.json()));
         return file === null ? refused(404, "not-found", "there is no such host") : { status: 200, body: { ok: true, ...file } };
+      },
+    },
+    {
+      method: "POST",
+      path: "/api/entry",
+      handle: async (req) => {
+        const body = await req.json();
+        const { kind, name } = yamlRequest(body);
+        const doc = entryOf(deps.configDir, heldOps(body), kind, name);
+        return doc.found ? { status: 200, body: { ok: true, ...doc } } : refused(404, "not-found", `${name} is not there`);
       },
     },
     {

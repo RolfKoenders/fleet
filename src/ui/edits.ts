@@ -1,8 +1,8 @@
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { diff } from "../apply.ts";
-import { applyOps, CATALOG_FILES, DEFAULTS_FILE, parseSopsText, reviewText, secretsOwner, validate } from "../edit/index.ts";
-import type { Applied, EditOp, Files, HostProblems } from "../edit/index.ts";
+import { applyOps, CATALOG_FILES, DEFAULTS_FILE, entryProblem, entryValue, hostFile, parseSopsText, reviewText, secretsOwner, validate } from "../edit/index.ts";
+import type { Applied, EditKind, EditOp, Files, HostProblems, Value } from "../edit/index.ts";
 import { spawnSync } from "node:child_process";
 import { MissingToolError, runGit } from "../git.ts";
 import { findTool } from "../tools.ts";
@@ -30,6 +30,19 @@ export function readFiles(configDir: string): Files {
     }
   }
   return files;
+}
+
+/**
+ * What an item is as the files would have it after `ops`, for an Edit dialog to start from: the entry as written (`secret:NAME` stays a
+ * name, no value is ever here), and whether the engine can change it in place. When it cannot, `reason` says why and `text` is the file,
+ * for the page to show read-only. `found` is false for an item that is not there.
+ */
+export function entryOf(configDir: string, ops: readonly EditOp[], kind: EditKind, name: string) {
+  const edited = applyOps(readFiles(configDir), ops).files;
+  const path = kind === "host" ? hostFile(name) : CATALOG_FILES[kind === "server" ? "servers" : kind === "source" ? "sources" : "bundles"];
+  const value: Value | null = entryValue(edited, kind, name);
+  const reason = value === null ? null : entryProblem(edited, kind, name);
+  return { kind, name, path, found: value !== null, value, editable: value !== null && reason === null, reason, text: reason === null ? null : (edited[path] ?? "") };
 }
 
 /** What one host gets more or less of, by name. */
