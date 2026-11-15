@@ -33,6 +33,7 @@
       <a href="#how">How it works</a>
       <a href="#watch">Watch it land</a>
       <a href="#bridge">The bridge</a>
+      <a href="#ui">In your browser</a>
       <a href="#compare">Compare</a>
       <a href="#whats-new">What's new</a>
       <a href="#start">Get started</a>
@@ -168,6 +169,36 @@
         <button type="button" data-screen="help"><kbd>?</kbd> Help</button>
       </div>
       <p class="caption" id="caption"></p>
+    </section>
+
+    <!-- fleet ui: screenshots of the page on the demo sandbox's made-up hosts. -->
+    <section class="ui" id="ui">
+      <div class="section-head">
+        <p class="kicker">fleet ui</p>
+        <h2>Or click it, in your browser.</h2>
+        <p><code>fleet ui</code> opens a page for your whole fleet. Every click is an edit to the same YAML files, with your comments kept, and you see the diff before anything is written. Nothing changes on a machine until you push.</p>
+      </div>
+
+      <div class="window">
+        <div class="window-bar">
+          <span class="lights"><i></i><i></i><i></i></span>
+          <div class="tabs ui-tabs" role="tablist">
+            <button role="tab" data-shot="matrix" aria-selected="true">Matrix</button>
+            <button role="tab" data-shot="edit" aria-selected="false">Edit</button>
+          </div>
+          <span class="window-title">127.0.0.1 · fleet ui</span>
+        </div>
+        <img class="ui-shot" data-shot="matrix" src="ui-matrix.webp" width="1600" height="1000" loading="lazy" alt="The Matrix in fleet ui: skill bundles and MCP servers as rows, the hosts laptop, devbox and server as columns. Two cells are changed and waiting on To push, and the pane on the right shows the YAML diff of hosts/server.yaml.">
+        <img class="ui-shot" data-shot="edit" src="ui-edit.webp" width="1600" height="1000" loading="lazy" hidden alt="The Edit dialog for the MCP server docs. The command's version is changed from 1.0.0 to 1.4.0, and the pane on the right shows that one line changed in catalog/mcp.yaml.">
+      </div>
+      <p class="caption" id="ui-caption">Click a cell to give a host a bundle or a server, or take it away. The pane shows the change to its host file.</p>
+
+      <ul class="feat-strip ui-strip">
+        <li><span class="feat-ic">▦</span><b>See every host</b>Every bundle and server against every host, with a search that finds a skill inside its bundle.</li>
+        <li><span class="feat-ic">✎</span><b>Add, edit, remove</b>MCP servers, skill sources, bundles and hosts. Only the lines you change are written.</li>
+        <li><span class="feat-ic">↑</span><b>Review &amp; push</b>Checks every host still loads, commits, and runs the real <code>fleet push</code> with live progress.</li>
+        <li><span class="feat-ic">⚿</span><b>Only you</b>Listens on <code>127.0.0.1</code>, needs the token in the URL it prints, stops when no page is open.</li>
+      </ul>
     </section>
 
     <!-- What fleet manages, and the promise it makes. -->

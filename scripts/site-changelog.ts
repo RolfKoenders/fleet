@@ -115,7 +115,7 @@ const page = (indexHtml: string, all: Release[]) => {
     .replace(/(href|src)="(fonts\/|style\.css)/g, '$1="../$2');
   const nav = indexHtml.match(/<header class="nav">[\s\S]*?<\/header>/)![0]
     .replace(/href="#top"/, 'href="../"')
-    .replace(/href="#(how|bridge|compare|start)"/g, 'href="../#$1"')
+    .replace(/href="#(how|watch|bridge|ui|compare|start)"/g, 'href="../#$1"')
     .replace('<a href="#whats-new">What\'s new</a>', '<a href="../#whats-new">What\'s new</a>')
     .replace(/(<a href="\.\.\/#start">)/, '<a href="./" aria-current="page" style="color:var(--text)">Changelog</a>\n      $1');
   return `${meta}
