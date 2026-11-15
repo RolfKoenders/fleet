@@ -3,6 +3,7 @@ import { editFields, editProblem, readValue } from "./fields.ts";
 import type { Change } from "./fields.ts";
 import type { Section, Value } from "./entries.ts";
 import { addToList, readList, removeFromList } from "./lists.ts";
+import { removeEntry } from "./remove.ts";
 import type { ListPath } from "./lists.ts";
 import { newHostFile } from "./hostfile.ts";
 import { CannotEdit, Stale } from "./yamltext.ts";
@@ -38,6 +39,15 @@ export type EditOp =
    */
   | { op: "editServer"; name: string; changes: Change[] }
   | { op: "editSource"; name: string; changes: Change[] }
+  /** The server is gone from `catalog/mcp.yaml`, and from every `mcp.include` and `mcp.exclude` of the defaults and the hosts. */
+  | { op: "removeServer"; name: string }
+  /** The bundle is gone from `catalog/skills.yaml`, and from every `bundles` and `exclude` of the defaults and the hosts. */
+  | { op: "removeBundle"; name: string }
+  /**
+   * The skill source is gone from `catalog/skills.yaml`, and `skills` (the ones only it provides, as the page knew them) are taken out of every bundle that
+   * lists them. A bundle left with no skill stays, as `[]`. A clone of the source on a machine is not touched.
+   */
+  | { op: "removeSource"; name: string; skills: string[] }
   /** A bundle's skills, from what the file held to what it should hold. */
   | { op: "editBundle"; name: string; from: string[]; to: string[] }
   /** A host's ssh destination (`null` from: the file had none). */
@@ -130,6 +140,12 @@ function run(files: Files, op: EditOp): void {
       files[hostFile(op.host)] = newHostFile(op.ssh, source ?? null);
       return;
     }
+    case "removeServer":
+      return removeCatalog(files, "servers", op.name, MCP_LISTS);
+    case "removeBundle":
+      return removeCatalog(files, "bundles", op.name, BUNDLE_LISTS);
+    case "removeSource":
+      return removeSource(files, op.name, op.skills);
     case "editServer":
       return editCatalog(files, "servers", op.name, op.changes);
     case "editSource":
@@ -178,6 +194,36 @@ function editCatalog(files: Files, section: Section, name: string, changes: Chan
   const text = files[path] ?? "";
   if (!entryNames(text, section).includes(name)) throw new Stale(`'${name}' is not in ${path}`);
   files[path] = section === "bundles" ? editFields(text, ["bundles"], changes, []) : editFields(text, [section, name], changes, KEY_ORDER[section]);
+}
+
+const MCP_LISTS: ListPath[] = [INCLUDE.mcp, EXCLUDE.mcp];
+const BUNDLE_LISTS: ListPath[] = [INCLUDE.bundles, EXCLUDE.bundles];
+
+/** The defaults and every host file there is: the files that pick bundles and servers. */
+const pickingFiles = (files: Files): string[] => Object.keys(files).filter((p) => p === DEFAULTS_FILE || /^hosts\/[^/]+\.yaml$/.test(p)).sort();
+
+/** Takes the entry out of its catalog file, and its name out of `lists` in every file that picks. */
+function removeCatalog(files: Files, section: Section, name: string, lists: ListPath[]): void {
+  const path = CATALOG_FILES[section];
+  const text = files[path] ?? "";
+  if (!entryNames(text, section).includes(name)) throw new Stale(`'${name}' is not in ${path}`);
+  files[path] = removeEntry(text, section, name);
+  for (const file of pickingFiles(files)) {
+    let next = files[file]!;
+    for (const list of lists) next = removeFromList(next, list, name);
+    files[file] = next;
+  }
+}
+
+function removeSource(files: Files, name: string, skills: string[]): void {
+  const path = CATALOG_FILES.sources;
+  if (!entryNames(files[path] ?? "", "sources").includes(name)) throw new Stale(`'${name}' is not in ${path}`);
+  const bundles = (readValue(files[path]!, ["bundles"]) ?? {}) as Record<string, string[]>;
+  for (const [bundle, listed] of Object.entries(bundles)) {
+    const kept = listed.filter((s) => !skills.includes(s));
+    if (kept.length !== listed.length) editCatalog(files, "bundles", bundle, [{ key: bundle, from: listed, to: kept }]);
+  }
+  files[path] = removeEntry(files[path]!, "sources", name);
 }
 
 function setSecret(files: Files, op: Extract<EditOp, { op: "setSecret" }>): void {

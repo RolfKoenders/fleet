@@ -5,7 +5,7 @@
 export { applyOps, entryProblem, entryValue, DEFAULTS_FILE, SHARED_HOST, hostFile, CATALOG_FILES } from "./ops.ts";
 export type { Applied, Dropped, EditKind, EditOp, Files, PickKind } from "./ops.ts";
 export { validate } from "./validate.ts";
-export type { HostProblems } from "./validate.ts";
+export type { HostProblems, ValidateOptions } from "./validate.ts";
 export type { Value } from "./entries.ts";
 export type { Change } from "./fields.ts";
 export { ciphertextProblem, fingerprint, parseSopsText, reviewText, SECRET_NAME, SECRETS_PATH, secretsOwner, MAX_SECRETS_TEXT } from "./secretfile.ts";

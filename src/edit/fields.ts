@@ -211,7 +211,7 @@ function insertPair(text: string, parsed: Parsed, map: YAMLMap, owner: Pair | nu
 }
 
 /** The key and everything under it, with its lines. A comment above it stays. */
-function removePair(text: string, pair: Pair): string {
+export function removePair(text: string, pair: Pair): string {
   const keyAt = (pair.key as Scalar).range![0];
   const from = lineStart(text, keyAt);
   const end = pairEnd(text, pair);

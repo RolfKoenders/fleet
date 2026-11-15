@@ -19,7 +19,10 @@ export const KEY_ORDER: Record<Section, string[]> = {
 
 /** The names in `section`, empty when the section is missing. */
 export function entryNames(text: string, section: Section): string[] {
-  const map = mapUnder(parse(text).map, section);
+  const parsed = parse(text);
+  const held = parsed.map && pairOf(parsed.map, section);
+  if (held && isMap(held.value) && held.value.flow && held.value.items.length === 0) return [];
+  const map = mapUnder(parsed.map, section);
   return (map?.items ?? []).map((p) => String((p.key as Scalar).value));
 }
 
@@ -137,6 +140,18 @@ function entryLines(name: string, value: Value, pad: number, style: Style, canon
  * section is made when it is missing.
  */
 export function addEntry(text: string, section: Section, name: string, value: Value): string {
+  return addTo(unbraced(text, section), section, name, value);
+}
+
+/** A section left as `servers: {}` (what taking out its last entry writes) is a section with nothing under it again. */
+function unbraced(text: string, section: Section): string {
+  const pair = parse(text).map && pairOf(parse(text).map!, section);
+  if (!pair || !isMap(pair.value) || !pair.value.flow || pair.value.items.length > 0) return text;
+  const [start, end] = pair.value.range!;
+  return `${text.slice(0, start).replace(/[ \t]+$/, "")}${text.slice(end)}`;
+}
+
+function addTo(text: string, section: Section, name: string, value: Value): string {
   const parsed = parse(text);
   const canonical = KEY_ORDER[section];
   const pair = parsed.map && pairOf(parsed.map, section);
