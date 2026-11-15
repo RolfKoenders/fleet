@@ -1,19 +1,19 @@
 /**
  * The jobs `fleet ui` runs for the page: what they are, and what a page that joins late needs to catch up.
  *
- * A job is a push (also the write before it), setting up a host (`init`), cloning a skill source, checking an MCP server,
+ * A job is a push (also the write before it), setting up a host (`init`), removing one (`remove`), cloning a skill source, checking an MCP server,
  * or encrypting a secret. The page is told which ones run (`hello`, then a `jobs` event whenever the list changes), so
  * it can label them and clear them on the matching end. While a push or an init runs, the events it sends are kept
  * (bounded) and replayed to a stream that opens meanwhile, so a second tab or a reload sees the progress so far.
  */
 
-export type Job = { kind: "push" | "init" | "clone" | "check" | "secret"; name?: string };
+export type Job = { kind: "push" | "init" | "remove" | "clone" | "check" | "secret"; name?: string };
 
 /** The most events kept for one run. The `hosts` event, which draws a push's lanes, is never the one dropped. */
 export const REPLAY_MAX = 400;
 
-/** Events that belong to a push or an init: the ones worth replaying. */
-const STREAMED = new Set(["push", "pushend", "init", "initend"]);
+/** Events that belong to a push, an init or a removal: the ones worth replaying. */
+const STREAMED = new Set(["push", "pushend", "init", "initend", "remove", "removeend"]);
 
 export class Jobs {
   #running: Job[] = [];
@@ -26,7 +26,7 @@ export class Jobs {
 
   /** Marks a job as running. Returns the call that says it ended. */
   start(job: Job): () => void {
-    if ((job.kind === "push" || job.kind === "init") && !this.#running.some(streams)) this.#events = [];
+    if (streams(job) && !this.#running.some(streams)) this.#events = [];
     const mine = { ...job };
     this.#running.push(mine);
     this.#changed(this.list());
@@ -64,4 +64,4 @@ export class Jobs {
   }
 }
 
-const streams = (j: Job) => j.kind === "push" || j.kind === "init";
+const streams = (j: Job) => j.kind === "push" || j.kind === "init" || j.kind === "remove";

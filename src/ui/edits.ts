@@ -5,6 +5,9 @@ import { applyOps, CATALOG_FILES, DEFAULTS_FILE, entryProblem, entryValue, hostF
 import type { Applied, EditKind, EditOp, Files, HostProblems, Value } from "../edit/index.ts";
 import { spawnSync } from "node:child_process";
 import { MissingToolError, runGit } from "../git.ts";
+import { existsSync } from "node:fs";
+import { parseCatalog } from "../catalog.ts";
+import { findSkills, sourceDir } from "../sources.ts";
 import { findTool } from "../tools.ts";
 import { hostNames, readRules } from "../recipients.ts";
 import { InvalidConfigError } from "../config.ts";
@@ -81,12 +84,36 @@ export type Preview = {
   checks: HostCheck[];
 };
 
-export function preview(configDir: string, self: string | null, ops: readonly EditOp[], show: string | null): Preview {
+/** What the page knows of the skills of sources that are not cloned here yet: the ones it looked at when it added them, by source. */
+export type StagedSkills = Record<string, string[]>;
+
+/**
+ * Every skill the skill sources of `files` provide, from the clones this machine has (and `staged` for a source the page just added), or `null`
+ * when some source has no known list, because then a skill that is missing may only be one nobody looked at.
+ */
+export function knownSkills(configDir: string, home: string, files: Files, staged: StagedSkills): Set<string> | null {
+  const problems: string[] = [];
+  const known = new Set<string>();
+  for (const source of parseCatalog(configDir, problems, { root: configDir, files }).sources) {
+    const held = staged[source.name];
+    if (held !== undefined) {
+      held.forEach((s) => known.add(s));
+      continue;
+    }
+    const found = existsSync(join(sourceDir(home, source.name), ".git")) ? findSkills(source, home) : null;
+    if (found === null || found.problem !== null) return null;
+    found.dirs.forEach((_, s) => known.add(s));
+  }
+  return known;
+}
+
+export function preview(configDir: string, self: string | null, ops: readonly EditOp[], show: string | null, skills: { home: string; staged: StagedSkills } | null = null): Preview {
   const files = readFiles(configDir);
   const result = applyOps(files, ops);
   const before = loadModel(configDir, self);
   const after = loadModel(configDir, self, result.files);
-  const failed = new Map<string, HostProblems>(validate(configDir, result.files).map((f) => [f.host, f]));
+  const known = skills === null ? null : knownSkills(configDir, skills.home, result.files, skills.staged);
+  const failed = new Map<string, HostProblems>(validate(configDir, result.files, { skills: known }).map((f) => [f.host, f]));
   const checks = after.hosts.map((h): HostCheck => ({
     host: h.name,
     self: h.self,
@@ -164,14 +191,16 @@ export class WriteRefused extends Error {
  * Nothing is written when anything is wrong; a commit that fails puts the files back as they were.
  * The caller holds the push lock and has checked for outside changes.
  */
-export function writeAndCommit(configDir: string, ops: readonly EditOp[], message: string): { files: string[]; commit: string } {
+export function writeAndCommit(configDir: string, ops: readonly EditOp[], message: string, skills: { home: string; staged: StagedSkills } | null = null): { files: string[]; commit: string } {
   const unfit = secretOpProblem(configDir, ops);
   if (unfit !== null) throw new WriteRefused("invalid", unfit);
   const before = readFiles(configDir);
   const result = applyOps(before, ops);
   if (result.dropped.length > 0) throw new WriteRefused("stale", result.dropped.length === 1 ? "1 edit no longer applies to the files on disk" : `${result.dropped.length} edits no longer apply to the files on disk`, { dropped: result.dropped });
   if (result.changed.length === 0) throw new WriteRefused("nothing", "there is nothing to write");
-  const failed = validate(configDir, result.files);
+  // The same check as the preview's, so a bundle that names a skill no known source provides is refused here too.
+  const known = skills === null ? null : knownSkills(configDir, skills.home, result.files, skills.staged);
+  const failed = validate(configDir, result.files, { skills: known });
   if (failed.length > 0) throw new WriteRefused("invalid", `the edited config does not load for ${failed.map((f) => f.host).join(", ")}`, { problems: failed });
 
   const done: string[] = [];

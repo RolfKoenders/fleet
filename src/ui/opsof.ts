@@ -64,6 +64,12 @@ function opOf(raw: unknown, i: number): EditOp {
       return { op: "addSource", ...sourceOf(at, o) };
     case "addBundle":
       return { op: "addBundle", ...bundleOf(at, o) };
+    case "removeServer":
+      return { op: "removeServer", name: removedName(at, o, SERVER_NAME, "server") };
+    case "removeBundle":
+      return { op: "removeBundle", name: removedName(at, o, NAME, "bundle") };
+    case "removeSource":
+      return { op: "removeSource", name: removedName(at, o, NAME, "source"), skills: removedSkills(at, o.skills) };
     case "editServer":
       return { op: "editServer", ...editedOf(at, o, SERVER_NAME, "server", serverTo) };
     case "editSource":
@@ -206,6 +212,20 @@ function bundleOf(at: string, o: Raw): { name: string; skills: string[] } {
   parseCatalog(".", problems, { root: ".", files: { "catalog/skills.yaml": JSON.stringify({ bundles: { [name]: skills } }) } });
   if (problems.length > 0) throw new BadRequest(`${at}: ${problems[0]!.replace(/^catalog\/skills\.yaml: /, "")}`);
   return { name, skills };
+}
+
+/** The name of a catalog entry a removal names: one fleet could have in the catalog. */
+function removedName(at: string, o: Raw, nameRe: RegExp, what: string): string {
+  const name = o.name;
+  if (typeof name !== "string" || !nameRe.test(name) || name.length > MAX_NAME) throw new BadRequest(`${at}: ${what} name is not one fleet knows`);
+  return name;
+}
+
+/** The skills a removed source provided, as the page knew them: names a bundle could list. */
+function removedSkills(at: string, v: unknown): string[] {
+  const skills = strings(at, "skills", v, MAX_SKILLS);
+  if (!skills.every((s) => SKILL_NAME.test(s))) throw new BadRequest(`${at}: a skill name must be letters, digits, '.', '_' or '-'`);
+  return [...new Set(skills)];
 }
 
 // ---- Edits of what is already in the config

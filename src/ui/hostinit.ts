@@ -87,10 +87,10 @@ export function previewHost(configDir: string, req: HostRequest): { refused: Ref
 
 export type InitDoc = { ok: boolean; code: string; exit: number | null; messages: string[]; written: string; removed: boolean; kept: boolean; output: string[] };
 
-type Refusal = { status: number; code: string; message: string; extra?: Record<string, unknown> };
+export type Refusal = { status: number; code: string; message: string; extra?: Record<string, unknown> };
 export type InitOutcome = { refused: Refusal } | { doc: InitDoc };
 
-const codeName = (exit: number | null): string => (exit === null ? "error" : (Object.entries(EXIT).find(([, n]) => n === exit)?.[0] ?? "error"));
+export const codeName = (exit: number | null): string => (exit === null ? "error" : (Object.entries(EXIT).find(([, n]) => n === exit)?.[0] ?? "error"));
 
 /** One line of the child's output as the page may show it: no escape sequence, no control character. */
 export const cleanLine = (line: string): string => line.replace(/\x1b\[[0-9;?]*[ -/]*[@-~]/g, "").replace(/[\u0000-\u0008\u000b-\u001f\u007f]/g, "");
@@ -132,7 +132,7 @@ export async function addHost(configDir: string, toolDir: string, home: string, 
   };
   const hadSops = existsSync(join(configDir, ".sops.yaml"));
   say(`$ fleet init ${req.name}`);
-  const exit = await runChild(toolDir, configDir, home, req.name, say);
+  const exit = await runChild(toolDir, configDir, home, ["init", req.name], say);
 
   let removed = false;
   let kept = false;
@@ -156,10 +156,11 @@ export async function addHost(configDir: string, toolDir: string, home: string, 
   return { doc: { ok: exit === 0, code: codeName(exit), exit, messages, written: path, removed, kept, output: output.slice(-200) } };
 }
 
-function runChild(toolDir: string, configDir: string, home: string, name: string, onLine: (text: string) => void): Promise<number | null> {
+/** Runs `fleet <args>` as a child process of its own, relaying each line of its output. Resolves to its exit code, or null when it could not run. */
+export function runChild(toolDir: string, configDir: string, home: string, args: string[], onLine: (text: string) => void): Promise<number | null> {
   return new Promise((resolve) => {
     // Its own session, like the push: a Ctrl-C aimed at the page does not stop it half way through a host.
-    const child = spawn(join(toolDir, "bin/fleet"), ["init", name], {
+    const child = spawn(join(toolDir, "bin/fleet"), args, {
       detached: true,
       stdio: ["ignore", "pipe", "pipe"],
       env: { ...process.env, NO_COLOR: "1", FLEET_INIT_PROGRESS: "1", FLEET_NODE: probedNode(), FLEET_CONFIG: configDir, HOME: home },
@@ -175,7 +176,7 @@ function runChild(toolDir: string, configDir: string, home: string, name: string
     child.stdout.setEncoding("utf8").on("data", take("out"));
     child.stderr.setEncoding("utf8").on("data", take("err"));
     child.once("error", (error) => {
-      onLine(`fleet: cannot run fleet init: ${error.message}`);
+      onLine(`fleet: cannot run fleet ${args[0]}: ${error.message}`);
       resolve(null);
     });
     child.once("close", (code) => {
