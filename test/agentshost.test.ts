@@ -6,7 +6,7 @@ import { AGENTS, agentById, hostAgents, leftAlone, skillTargets, SKILL_TARGETS }
 import type { Agent } from "../src/agents/index.ts";
 import { loadConfig, InvalidConfigError } from "../src/config.ts";
 import { detectAgents } from "../src/hostagents.ts";
-import { FAKE_VERSIONS, NODE, installFakeClaude, installFakeTool, installStatusTools, makeClone, makeHome, makeSource, publish, removeAgent, runFleet, skipIfSystemWide, writeExecutable } from "./helpers.ts";
+import { FAKE_VERSIONS, NODE, fakeTimer, installFakeClaude, installFakeTool, installStatusTools, makeClone, makeHome, makeSource, publish, removeAgent, runFleet, skipIfSystemWide, writeExecutable } from "./helpers.ts";
 
 /** Agents per host: a host gets the agents installed on it, unless its host file names them. */
 
@@ -334,6 +334,8 @@ test("fleet context lists only the agents the host has", { skip: skipIfSystemWid
 test("doctor leaves out the servers of an agent the host does not have", { skip: skipIfSystemWide("opencode") }, () => {
   const w = world();
   removeAgent(w.home, "opencode");
+  // The timer check asks the OS scheduler; a running one keeps the exit code about the servers.
+  fakeTimer(w.home, "active");
   w.edit("catalog/mcp.yaml", "servers:\n  only-for-opencode:\n    transport: http\n    url: http://127.0.0.1:9/mcp\n    only: [opencode]\n");
   w.edit("hosts/_defaults.yaml", "mcp:\n  include: [only-for-opencode]\n");
   const r = w.run("doctor", "--json");
