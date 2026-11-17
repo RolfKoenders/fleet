@@ -108,6 +108,7 @@ function normalize(text: string, w: { clone: string; home: string; source: { rem
   for (const [from, to] of pairs) out = out.split(from).join(to);
   return out
     .replace(/\b\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(\.\d+)?Z/g, "<TIME>")
+    .replace(/"ageSeconds": \d+/g, '"ageSeconds": "<AGE>"')
     .replace(/\b[0-9a-f]{40}\b/g, "<SHA>")
     .replace(/\b[0-9a-f]{7,12}\b(?=[ ",)\n]|$)/g, (m) => (/\d/.test(m) && /[a-f]/.test(m) ? "<SHA>" : m));
 }

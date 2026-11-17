@@ -479,7 +479,7 @@ exit 0
   },
   "applied": {
     "at": "<TIME>",
-    "ageSeconds": 2,
+    "ageSeconds": "<AGE>",
     "config": "<SHA>"
   },
   "timer": "active",
