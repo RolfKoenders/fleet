@@ -1,0 +1,190 @@
+$ fleet diff
+exit 3
+--- stdout
+create ~/.claude/settings.json attribution.commit
+create ~/.claude/settings.json attribution.pr
+create ~/.claude/settings.json permissions.defaultMode
+create ~/.claude/settings.json env.DISABLE_TELEMETRY
+create ~/.claude.json mcpServers.tracker
+create ~/.claude.json mcpServers.events
+create ~/.claude.json mcpServers.claude-only
+create ~/.claude.json mcpServers.stale
+create ~/.config/opencode/AGENTS.md -> <CONFIG>/config/AGENTS.md
+create ~/.claude/rules -> <CONFIG>/config/rules
+create ~/.claude/skills/review -> <HOME>/.local/share/fleet/sources/mine/skills/review
+create ~/.claude/skills/debug -> <HOME>/.local/share/fleet/sources/mine/skills/debug
+create ~/.claude/skills/notes -> <HOME>/.local/share/fleet/sources/mine/skills/notes
+conflict ~/.config/opencode/opencode.json: ~/.config/opencode/opencode.json exists, and opencode loads both it and ~/.config/opencode/opencode.jsonc
+  fix: Move its settings into the host file and delete it (rm ~/.config/opencode/opencode.json), then run 'fleet apply'.
+conflict ~/.config/opencode/opencode.jsonc autoupdate: autoupdate already has a value in ~/.config/opencode/opencode.jsonc that fleet did not write
+  fix: Make ~/.config/opencode/opencode.jsonc or the host file agree on autoupdate, or delete autoupdate from ~/.config/opencode/opencode.jsonc, then run 'fleet apply'.
+conflict ~/.config/opencode/opencode.jsonc mcp.tracker: mcp.tracker already has a value in ~/.config/opencode/opencode.jsonc that fleet did not write
+  fix: Make ~/.config/opencode/opencode.jsonc or the host file agree on mcp.tracker, or delete mcp.tracker from ~/.config/opencode/opencode.jsonc, then run 'fleet apply'.
+conflict ~/.config/opencode/opencode.jsonc: ~/.config/opencode/opencode.jsonc has comments or trailing commas, which fleet would lose by rewriting it
+  fix: Remove the comments and trailing commas from ~/.config/opencode/opencode.jsonc, then run 'fleet apply'.
+conflict ~/.claude.json mcpServers.docs: mcpServers.docs already has a value in ~/.claude.json that fleet did not write
+  fix: Make ~/.claude.json or the host file agree on mcpServers.docs, or delete mcpServers.docs from ~/.claude.json, then run 'fleet apply'.
+conflict ~/.claude/CLAUDE.md: ~/.claude/CLAUDE.md is a file, not a link to <CONFIG>/config/AGENTS.md
+  fix: Move or delete it (rm ~/.claude/CLAUDE.md), then run 'fleet apply'. To keep its content, copy it to <CONFIG>/config/AGENTS.md first.
+--- stderr
+fleet: 6 conflicts; nothing was written
+
+$ fleet diff --json
+exit 3
+--- stdout
+{
+  "ok": false,
+  "code": "conflict",
+  "host": "laptop",
+  "messages": [
+    "fleet: 6 conflicts; nothing was written"
+  ],
+  "created": [
+    {
+      "file": "~/.claude/settings.json",
+      "path": "attribution.commit"
+    },
+    {
+      "file": "~/.claude/settings.json",
+      "path": "attribution.pr"
+    },
+    {
+      "file": "~/.claude/settings.json",
+      "path": "permissions.defaultMode"
+    },
+    {
+      "file": "~/.claude/settings.json",
+      "path": "env.DISABLE_TELEMETRY"
+    },
+    {
+      "file": "~/.claude.json",
+      "path": "mcpServers.tracker"
+    },
+    {
+      "file": "~/.claude.json",
+      "path": "mcpServers.events"
+    },
+    {
+      "file": "~/.claude.json",
+      "path": "mcpServers.claude-only"
+    },
+    {
+      "file": "~/.claude.json",
+      "path": "mcpServers.stale"
+    },
+    {
+      "target": "~/.config/opencode/AGENTS.md",
+      "source": "<CONFIG>/config/AGENTS.md"
+    },
+    {
+      "target": "~/.claude/rules",
+      "source": "<CONFIG>/config/rules"
+    },
+    {
+      "target": "~/.claude/skills/review",
+      "source": "<HOME>/.local/share/fleet/sources/mine/skills/review"
+    },
+    {
+      "target": "~/.claude/skills/debug",
+      "source": "<HOME>/.local/share/fleet/sources/mine/skills/debug"
+    },
+    {
+      "target": "~/.claude/skills/notes",
+      "source": "<HOME>/.local/share/fleet/sources/mine/skills/notes"
+    }
+  ],
+  "updated": [],
+  "removed": [],
+  "forgotten": [],
+  "unchanged": [],
+  "warnings": [],
+  "conflicts": [
+    {
+      "kind": "key",
+      "path": "~/.config/opencode/opencode.json",
+      "detail": "~/.config/opencode/opencode.json exists, and opencode loads both it and ~/.config/opencode/opencode.jsonc",
+      "fix": "Move its settings into the host file and delete it (rm ~/.config/opencode/opencode.json), then run 'fleet apply'."
+    },
+    {
+      "kind": "key",
+      "path": "~/.config/opencode/opencode.jsonc autoupdate",
+      "detail": "autoupdate already has a value in ~/.config/opencode/opencode.jsonc that fleet did not write",
+      "fix": "Make ~/.config/opencode/opencode.jsonc or the host file agree on autoupdate, or delete autoupdate from ~/.config/opencode/opencode.jsonc, then run 'fleet apply'."
+    },
+    {
+      "kind": "key",
+      "path": "~/.config/opencode/opencode.jsonc mcp.tracker",
+      "detail": "mcp.tracker already has a value in ~/.config/opencode/opencode.jsonc that fleet did not write",
+      "fix": "Make ~/.config/opencode/opencode.jsonc or the host file agree on mcp.tracker, or delete mcp.tracker from ~/.config/opencode/opencode.jsonc, then run 'fleet apply'."
+    },
+    {
+      "kind": "key",
+      "path": "~/.config/opencode/opencode.jsonc",
+      "detail": "~/.config/opencode/opencode.jsonc has comments or trailing commas, which fleet would lose by rewriting it",
+      "fix": "Remove the comments and trailing commas from ~/.config/opencode/opencode.jsonc, then run 'fleet apply'."
+    },
+    {
+      "kind": "key",
+      "path": "~/.claude.json mcpServers.docs",
+      "detail": "mcpServers.docs already has a value in ~/.claude.json that fleet did not write",
+      "fix": "Make ~/.claude.json or the host file agree on mcpServers.docs, or delete mcpServers.docs from ~/.claude.json, then run 'fleet apply'."
+    },
+    {
+      "kind": "link",
+      "path": "~/.claude/CLAUDE.md",
+      "detail": "~/.claude/CLAUDE.md is a file, not a link to <CONFIG>/config/AGENTS.md",
+      "fix": "Move or delete it (rm ~/.claude/CLAUDE.md), then run 'fleet apply'. To keep its content, copy it to <CONFIG>/config/AGENTS.md first."
+    }
+  ]
+}
+--- stderr
+fleet: 6 conflicts; nothing was written
+
+$ fleet apply
+exit 3
+--- stdout
+created ~/.claude/settings.json attribution.commit
+created ~/.claude/settings.json attribution.pr
+created ~/.claude/settings.json permissions.defaultMode
+created ~/.claude/settings.json env.DISABLE_TELEMETRY
+created ~/.claude.json mcpServers.tracker
+created ~/.claude.json mcpServers.events
+created ~/.claude.json mcpServers.claude-only
+created ~/.claude.json mcpServers.stale
+created ~/.config/opencode/AGENTS.md -> <CONFIG>/config/AGENTS.md
+created ~/.claude/rules -> <CONFIG>/config/rules
+created ~/.claude/skills/review -> <HOME>/.local/share/fleet/sources/mine/skills/review
+created ~/.claude/skills/debug -> <HOME>/.local/share/fleet/sources/mine/skills/debug
+created ~/.claude/skills/notes -> <HOME>/.local/share/fleet/sources/mine/skills/notes
+conflict ~/.config/opencode/opencode.json: ~/.config/opencode/opencode.json exists, and opencode loads both it and ~/.config/opencode/opencode.jsonc
+  fix: Move its settings into the host file and delete it (rm ~/.config/opencode/opencode.json), then run 'fleet apply'.
+conflict ~/.config/opencode/opencode.jsonc autoupdate: autoupdate already has a value in ~/.config/opencode/opencode.jsonc that fleet did not write
+  fix: Make ~/.config/opencode/opencode.jsonc or the host file agree on autoupdate, or delete autoupdate from ~/.config/opencode/opencode.jsonc, then run 'fleet apply'.
+conflict ~/.config/opencode/opencode.jsonc mcp.tracker: mcp.tracker already has a value in ~/.config/opencode/opencode.jsonc that fleet did not write
+  fix: Make ~/.config/opencode/opencode.jsonc or the host file agree on mcp.tracker, or delete mcp.tracker from ~/.config/opencode/opencode.jsonc, then run 'fleet apply'.
+conflict ~/.config/opencode/opencode.jsonc: ~/.config/opencode/opencode.jsonc has comments or trailing commas, which fleet would lose by rewriting it
+  fix: Remove the comments and trailing commas from ~/.config/opencode/opencode.jsonc, then run 'fleet apply'.
+conflict ~/.claude.json mcpServers.docs: mcpServers.docs already has a value in ~/.claude.json that fleet did not write
+  fix: Make ~/.claude.json or the host file agree on mcpServers.docs, or delete mcpServers.docs from ~/.claude.json, then run 'fleet apply'.
+conflict ~/.claude/CLAUDE.md: ~/.claude/CLAUDE.md is a file, not a link to <CONFIG>/config/AGENTS.md
+  fix: Move or delete it (rm ~/.claude/CLAUDE.md), then run 'fleet apply'. To keep its content, copy it to <CONFIG>/config/AGENTS.md first.
+--- stderr
+fleet: running from <CONFIG>, not the managed fleet clone, so the config's pinned tool commit was not enforced
+fleet: 6 conflicts; nothing was written
+
+$ fleet status --conflicts
+exit 0
+--- stdout
+key ~/.config/opencode/opencode.json: ~/.config/opencode/opencode.json exists, and opencode loads both it and ~/.config/opencode/opencode.jsonc
+  fix: Move its settings into the host file and delete it (rm ~/.config/opencode/opencode.json), then run 'fleet apply'.
+key ~/.config/opencode/opencode.jsonc autoupdate: autoupdate already has a value in ~/.config/opencode/opencode.jsonc that fleet did not write
+  fix: Make ~/.config/opencode/opencode.jsonc or the host file agree on autoupdate, or delete autoupdate from ~/.config/opencode/opencode.jsonc, then run 'fleet apply'.
+key ~/.config/opencode/opencode.jsonc mcp.tracker: mcp.tracker already has a value in ~/.config/opencode/opencode.jsonc that fleet did not write
+  fix: Make ~/.config/opencode/opencode.jsonc or the host file agree on mcp.tracker, or delete mcp.tracker from ~/.config/opencode/opencode.jsonc, then run 'fleet apply'.
+key ~/.config/opencode/opencode.jsonc: ~/.config/opencode/opencode.jsonc has comments or trailing commas, which fleet would lose by rewriting it
+  fix: Remove the comments and trailing commas from ~/.config/opencode/opencode.jsonc, then run 'fleet apply'.
+key ~/.claude.json mcpServers.docs: mcpServers.docs already has a value in ~/.claude.json that fleet did not write
+  fix: Make ~/.claude.json or the host file agree on mcpServers.docs, or delete mcpServers.docs from ~/.claude.json, then run 'fleet apply'.
+link ~/.claude/CLAUDE.md: ~/.claude/CLAUDE.md is a file, not a link to <CONFIG>/config/AGENTS.md
+  fix: Move or delete it (rm ~/.claude/CLAUDE.md), then run 'fleet apply'. To keep its content, copy it to <CONFIG>/config/AGENTS.md first.
+--- stderr

@@ -1,0 +1,497 @@
+$ fleet diff
+exit 0
+--- stdout
+create ~/.claude/settings.json attribution.commit
+create ~/.claude/settings.json attribution.pr
+create ~/.claude/settings.json permissions.defaultMode
+create ~/.claude/settings.json env.DISABLE_TELEMETRY
+create ~/.config/opencode/opencode.jsonc autoupdate
+create ~/.config/opencode/opencode.jsonc share
+create ~/.config/opencode/opencode.jsonc permission.bash
+create ~/.config/opencode/opencode.jsonc mcp.docs
+create ~/.config/opencode/opencode.jsonc mcp.tracker
+create ~/.config/opencode/opencode.jsonc mcp.events
+create ~/.config/opencode/opencode.jsonc mcp.local-tool
+create ~/.config/opencode/opencode.jsonc mcp.stale
+create ~/.claude.json mcpServers.docs
+create ~/.claude.json mcpServers.tracker
+create ~/.claude.json mcpServers.events
+create ~/.claude.json mcpServers.claude-only
+create ~/.claude.json mcpServers.stale
+create ~/.claude/CLAUDE.md -> <CONFIG>/config/AGENTS.md
+create ~/.config/opencode/AGENTS.md -> <CONFIG>/config/AGENTS.md
+create ~/.claude/rules -> <CONFIG>/config/rules
+create ~/.claude/skills/review -> <HOME>/.local/share/fleet/sources/mine/skills/review
+create ~/.claude/skills/debug -> <HOME>/.local/share/fleet/sources/mine/skills/debug
+create ~/.claude/skills/notes -> <HOME>/.local/share/fleet/sources/mine/skills/notes
+--- stderr
+
+$ fleet diff --json
+exit 0
+--- stdout
+{
+  "ok": true,
+  "code": "ok",
+  "host": "laptop",
+  "messages": [],
+  "created": [
+    {
+      "file": "~/.claude/settings.json",
+      "path": "attribution.commit"
+    },
+    {
+      "file": "~/.claude/settings.json",
+      "path": "attribution.pr"
+    },
+    {
+      "file": "~/.claude/settings.json",
+      "path": "permissions.defaultMode"
+    },
+    {
+      "file": "~/.claude/settings.json",
+      "path": "env.DISABLE_TELEMETRY"
+    },
+    {
+      "file": "~/.config/opencode/opencode.jsonc",
+      "path": "autoupdate"
+    },
+    {
+      "file": "~/.config/opencode/opencode.jsonc",
+      "path": "share"
+    },
+    {
+      "file": "~/.config/opencode/opencode.jsonc",
+      "path": "permission.bash"
+    },
+    {
+      "file": "~/.config/opencode/opencode.jsonc",
+      "path": "mcp.docs"
+    },
+    {
+      "file": "~/.config/opencode/opencode.jsonc",
+      "path": "mcp.tracker"
+    },
+    {
+      "file": "~/.config/opencode/opencode.jsonc",
+      "path": "mcp.events"
+    },
+    {
+      "file": "~/.config/opencode/opencode.jsonc",
+      "path": "mcp.local-tool"
+    },
+    {
+      "file": "~/.config/opencode/opencode.jsonc",
+      "path": "mcp.stale"
+    },
+    {
+      "file": "~/.claude.json",
+      "path": "mcpServers.docs"
+    },
+    {
+      "file": "~/.claude.json",
+      "path": "mcpServers.tracker"
+    },
+    {
+      "file": "~/.claude.json",
+      "path": "mcpServers.events"
+    },
+    {
+      "file": "~/.claude.json",
+      "path": "mcpServers.claude-only"
+    },
+    {
+      "file": "~/.claude.json",
+      "path": "mcpServers.stale"
+    },
+    {
+      "target": "~/.claude/CLAUDE.md",
+      "source": "<CONFIG>/config/AGENTS.md"
+    },
+    {
+      "target": "~/.config/opencode/AGENTS.md",
+      "source": "<CONFIG>/config/AGENTS.md"
+    },
+    {
+      "target": "~/.claude/rules",
+      "source": "<CONFIG>/config/rules"
+    },
+    {
+      "target": "~/.claude/skills/review",
+      "source": "<HOME>/.local/share/fleet/sources/mine/skills/review"
+    },
+    {
+      "target": "~/.claude/skills/debug",
+      "source": "<HOME>/.local/share/fleet/sources/mine/skills/debug"
+    },
+    {
+      "target": "~/.claude/skills/notes",
+      "source": "<HOME>/.local/share/fleet/sources/mine/skills/notes"
+    }
+  ],
+  "updated": [],
+  "removed": [],
+  "forgotten": [],
+  "unchanged": [],
+  "warnings": [],
+  "conflicts": []
+}
+--- stderr
+
+$ fleet apply
+exit 0
+--- stdout
+created ~/.claude/settings.json attribution.commit
+created ~/.claude/settings.json attribution.pr
+created ~/.claude/settings.json permissions.defaultMode
+created ~/.claude/settings.json env.DISABLE_TELEMETRY
+created ~/.config/opencode/opencode.jsonc autoupdate
+created ~/.config/opencode/opencode.jsonc share
+created ~/.config/opencode/opencode.jsonc permission.bash
+created ~/.config/opencode/opencode.jsonc mcp.docs
+created ~/.config/opencode/opencode.jsonc mcp.tracker
+created ~/.config/opencode/opencode.jsonc mcp.events
+created ~/.config/opencode/opencode.jsonc mcp.local-tool
+created ~/.config/opencode/opencode.jsonc mcp.stale
+created ~/.claude.json mcpServers.docs
+created ~/.claude.json mcpServers.tracker
+created ~/.claude.json mcpServers.events
+created ~/.claude.json mcpServers.claude-only
+created ~/.claude.json mcpServers.stale
+created ~/.claude/CLAUDE.md -> <CONFIG>/config/AGENTS.md
+created ~/.config/opencode/AGENTS.md -> <CONFIG>/config/AGENTS.md
+created ~/.claude/rules -> <CONFIG>/config/rules
+created ~/.claude/skills/review -> <HOME>/.local/share/fleet/sources/mine/skills/review
+created ~/.claude/skills/debug -> <HOME>/.local/share/fleet/sources/mine/skills/debug
+created ~/.claude/skills/notes -> <HOME>/.local/share/fleet/sources/mine/skills/notes
+--- stderr
+fleet: running from <CONFIG>, not the managed fleet clone, so the config's pinned tool commit was not enforced
+
+$ fleet diff
+exit 0
+--- stdout
+nothing to do
+--- stderr
+
+$ fleet context --json
+exit 0
+--- stdout
+{
+  "ok": true,
+  "code": "ok",
+  "host": "laptop",
+  "messages": [],
+  "agents": [
+    {
+      "agent": "claude",
+      "tokens": 36,
+      "complete": false,
+      "instructions": {
+        "tokens": 8,
+        "count": 2,
+        "unmeasured": 0
+      },
+      "skills": {
+        "tokens": 28,
+        "count": 4,
+        "unmeasured": 0
+      },
+      "mcp": {
+        "tokens": 0,
+        "count": 6,
+        "unmeasured": 6
+      },
+      "items": [
+        {
+          "kind": "instructions",
+          "name": "~/.claude/CLAUDE.md",
+          "path": "~/.claude/CLAUDE.md",
+          "tokens": 6,
+          "fromConfig": true,
+          "measurement": null,
+          "doctor": null
+        },
+        {
+          "kind": "instructions",
+          "name": "~/.claude/rules/one.md",
+          "path": "~/.claude/rules/one.md",
+          "tokens": 2,
+          "fromConfig": true,
+          "measurement": null,
+          "doctor": null
+        },
+        {
+          "kind": "skills",
+          "name": "debug",
+          "path": "~/.claude/skills/debug",
+          "tokens": 7,
+          "fromConfig": true,
+          "measurement": null,
+          "doctor": null
+        },
+        {
+          "kind": "skills",
+          "name": "loose",
+          "path": "~/.claude/skills/loose",
+          "tokens": 7,
+          "fromConfig": false,
+          "measurement": null,
+          "doctor": null
+        },
+        {
+          "kind": "skills",
+          "name": "notes",
+          "path": "~/.claude/skills/notes",
+          "tokens": 7,
+          "fromConfig": true,
+          "measurement": null,
+          "doctor": null
+        },
+        {
+          "kind": "skills",
+          "name": "review",
+          "path": "~/.claude/skills/review",
+          "tokens": 7,
+          "fromConfig": true,
+          "measurement": null,
+          "doctor": null
+        },
+        {
+          "kind": "mcp",
+          "name": "claude-only",
+          "path": null,
+          "tokens": null,
+          "fromConfig": true,
+          "measurement": null,
+          "doctor": null
+        },
+        {
+          "kind": "mcp",
+          "name": "docs",
+          "path": null,
+          "tokens": null,
+          "fromConfig": true,
+          "measurement": null,
+          "doctor": null
+        },
+        {
+          "kind": "mcp",
+          "name": "events",
+          "path": null,
+          "tokens": null,
+          "fromConfig": true,
+          "measurement": null,
+          "doctor": null
+        },
+        {
+          "kind": "mcp",
+          "name": "handmade",
+          "path": null,
+          "tokens": null,
+          "fromConfig": false,
+          "measurement": null,
+          "doctor": null
+        },
+        {
+          "kind": "mcp",
+          "name": "stale",
+          "path": null,
+          "tokens": null,
+          "fromConfig": true,
+          "measurement": null,
+          "doctor": null
+        },
+        {
+          "kind": "mcp",
+          "name": "tracker",
+          "path": null,
+          "tokens": null,
+          "fromConfig": true,
+          "measurement": null,
+          "doctor": null
+        }
+      ],
+      "notes": []
+    },
+    {
+      "agent": "opencode",
+      "tokens": 43,
+      "complete": false,
+      "instructions": {
+        "tokens": 6,
+        "count": 1,
+        "unmeasured": 0
+      },
+      "skills": {
+        "tokens": 37,
+        "count": 5,
+        "unmeasured": 0
+      },
+      "mcp": {
+        "tokens": 0,
+        "count": 6,
+        "unmeasured": 6
+      },
+      "items": [
+        {
+          "kind": "instructions",
+          "name": "~/.config/opencode/AGENTS.md",
+          "path": "~/.config/opencode/AGENTS.md",
+          "tokens": 6,
+          "fromConfig": true,
+          "measurement": null,
+          "doctor": null
+        },
+        {
+          "kind": "skills",
+          "name": "debug",
+          "path": "~/.claude/skills/debug",
+          "tokens": 7,
+          "fromConfig": true,
+          "measurement": null,
+          "doctor": null
+        },
+        {
+          "kind": "skills",
+          "name": "loose",
+          "path": "~/.claude/skills/loose",
+          "tokens": 7,
+          "fromConfig": false,
+          "measurement": null,
+          "doctor": null
+        },
+        {
+          "kind": "skills",
+          "name": "notes",
+          "path": "~/.claude/skills/notes",
+          "tokens": 7,
+          "fromConfig": true,
+          "measurement": null,
+          "doctor": null
+        },
+        {
+          "kind": "skills",
+          "name": "review",
+          "path": "~/.claude/skills/review",
+          "tokens": 7,
+          "fromConfig": true,
+          "measurement": null,
+          "doctor": null
+        },
+        {
+          "kind": "skills",
+          "name": "group",
+          "path": "~/.config/opencode/skills/nested/group",
+          "tokens": 9,
+          "fromConfig": false,
+          "measurement": null,
+          "doctor": null
+        },
+        {
+          "kind": "mcp",
+          "name": "docs",
+          "path": null,
+          "tokens": null,
+          "fromConfig": true,
+          "measurement": null,
+          "doctor": null
+        },
+        {
+          "kind": "mcp",
+          "name": "events",
+          "path": null,
+          "tokens": null,
+          "fromConfig": true,
+          "measurement": null,
+          "doctor": null
+        },
+        {
+          "kind": "mcp",
+          "name": "local-tool",
+          "path": null,
+          "tokens": null,
+          "fromConfig": true,
+          "measurement": null,
+          "doctor": null
+        },
+        {
+          "kind": "mcp",
+          "name": "mine",
+          "path": null,
+          "tokens": null,
+          "fromConfig": false,
+          "measurement": null,
+          "doctor": null
+        },
+        {
+          "kind": "mcp",
+          "name": "stale",
+          "path": null,
+          "tokens": null,
+          "fromConfig": true,
+          "measurement": null,
+          "doctor": null
+        },
+        {
+          "kind": "mcp",
+          "name": "tracker",
+          "path": null,
+          "tokens": null,
+          "fromConfig": true,
+          "measurement": null,
+          "doctor": null
+        }
+      ],
+      "notes": []
+    }
+  ],
+  "notes": []
+}
+--- stderr
+
+$ fleet context
+exit 0
+--- stdout
+claude    ██████▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓       ~36+   instructions ~8 · skills ~28 (4) · mcp not measured (6)
+opencode  ████▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓  ~43+   instructions ~6 · skills ~37 (5) · mcp not measured (6)
+
+largest         group skill ~9 (not from config)   debug skill ~7   loose skill ~7 (not from config)
+not measured    claude-only, docs, events, stale, tracker, local-tool (run fleet doctor)   handmade, mine (not from config, doctor does not measure it)
+not from config group skill ~9   loose skill ~7   handmade mcp   mine mcp
+A + after a total means a server was not measured, so the total is incomplete.
+--- stderr
+
+$ fleet status --json
+exit 0
+--- stdout
+{
+  "ok": true,
+  "code": "ok",
+  "host": "laptop",
+  "messages": [],
+  "repos": {
+    "fleet": {
+      "branch": "main",
+      "sha": "<SHA>",
+      "clean": true,
+      "ahead": 0,
+      "behind": 0
+    }
+  },
+  "applied": {
+    "at": "<TIME>",
+    "ageSeconds": 2,
+    "config": "<SHA>"
+  },
+  "timer": "active",
+  "pending": 0,
+  "conflicts": 0,
+  "conflictList": [],
+  "tools": {
+    "claude": "2.1.4",
+    "opencode": "1.4.2",
+    "sops": "3.13.3",
+    "node": "22.18.0",
+    "t3": null
+  }
+}
+--- stderr
