@@ -490,7 +490,7 @@ exit 0
     "claude": "2.1.4",
     "opencode": "1.4.2",
     "sops": "3.13.3",
-    "node": "22.18.0",
+    "node": "<NODE_VERSION>",
     "t3": null
   }
 }

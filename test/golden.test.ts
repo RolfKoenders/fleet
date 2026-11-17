@@ -102,13 +102,15 @@ function normalize(text: string, w: { clone: string; home: string; source: { rem
     [w.source.first, "<SHA>"],
     [w.clone, "<CONFIG>"],
     [w.home, "<HOME>"],
-    [dirname(process.execPath), "<NODE_BIN>"],
   ];
-  let out = text;
+  // Where Node is differs per machine, and it can be a directory the rest of the text also names (`/usr/bin`), so the two places it appears are replaced whole.
+  const bin = dirname(process.execPath);
+  let out = text.split(`${bin}:/usr/local/bin:/usr/bin:/bin`).join("<NODE_BIN>:/usr/local/bin:/usr/bin:/bin").split(`${bin}/npx`).join("<NODE_BIN>/npx");
   for (const [from, to] of pairs) out = out.split(from).join(to);
   return out
     .replace(/\b\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(\.\d+)?Z/g, "<TIME>")
     .replace(/"ageSeconds": \d+/g, '"ageSeconds": "<AGE>"')
+    .replace(/"node": "[^"]*"/g, '"node": "<NODE_VERSION>"')
     .replace(/\b[0-9a-f]{40}\b/g, "<SHA>")
     .replace(/\b[0-9a-f]{7,12}\b(?=[ ",)\n]|$)/g, (m) => (/\d/.test(m) && /[a-f]/.test(m) ? "<SHA>" : m));
 }
