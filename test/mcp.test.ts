@@ -3,7 +3,7 @@ import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, rmSync, sy
 import { dirname, join } from "node:path";
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { claudeCalls, installFakeClaude, makeClone, makeHome, publish, runFleet, skipIfSystemWide } from "./helpers.ts";
+import { NODE, claudeCalls, installFakeClaude, makeClone, makeHome, publish, removeAgent, runFleet, skipIfSystemWide } from "./helpers.ts";
 import { EXIT } from "../src/exit.ts";
 import { findTool } from "../src/tools.ts";
 
@@ -11,6 +11,7 @@ function setup(opts: { catalog: string; defaults?: string; host?: string; instal
   const { clone } = makeClone();
   const home = makeHome("laptop");
   if (opts.installClaude !== false) installFakeClaude(home);
+  else removeAgent(home, "claude");
   const write = (rel: string, text: string) => {
     mkdirSync(dirname(join(clone, rel)), { recursive: true });
     writeFileSync(join(clone, rel), text);
@@ -53,7 +54,7 @@ test("a network server renders to each tool's shape, with empty headers omitted"
   });
 });
 
-const NODE_DIR = dirname(process.execPath);
+const NODE_DIR = dirname(NODE);
 
 test("an npx server runs the npx beside Node, with a PATH that finds it; empty args are omitted", () => {
   const s = setup({
@@ -258,12 +259,35 @@ test("a project-scoped server with the same name is a warning that names the pro
   assert.match(diff.stdout, /warning .*\/work\/tracker/);
 });
 
-test("without claude, apply sets up opencode and warns, and the first apply after claude is installed adds its servers", { skip: skipIfSystemWide("claude") }, () => {
-  const s = setup({ catalog: BOTH, host: "mcp:\n  include: [everywhere]\n", installClaude: false });
+test("without claude and with no agents pinned, apply leaves all of Claude's config alone and sets up opencode, and says nothing until claude has been set up and goes away", { skip: skipIfSystemWide("claude") }, () => {
+  const s = setup({ catalog: BOTH, host: "mcp:\n  include: [everywhere]\nsettings:\n  claude:\n    env:\n      A: b\n", installClaude: false });
+  const r = s.run(["apply"]);
+  assert.equal(r.code, EXIT.ok, r.stderr);
+  assert.doesNotMatch(r.stdout + r.stderr, /not installed/, "this host never had Claude set up, so there is nothing to warn about");
+  assert.ok(s.readJson(".config/opencode/opencode.jsonc").mcp.everywhere);
+  assert.throws(() => readFileSync(join(s.home, ".claude.json")));
+  assert.throws(() => readFileSync(join(s.home, ".claude/settings.json")), "Claude's settings are left alone too");
+  assert.doesNotMatch(s.run(["diff"]).stdout, /not installed/);
+
+  installFakeClaude(s.home);
+  const after = s.run(["apply"]);
+  assert.equal(after.code, EXIT.ok, after.stderr);
+  assert.doesNotMatch(after.stdout, /not installed/);
+  assert.ok(s.readJson(".claude.json").mcpServers.everywhere);
+  assert.equal(s.readJson(".claude/settings.json").env.A, "b");
+
+  removeAgent(s.home, "claude");
+  assert.match(s.run(["diff"]).stdout, /warning Claude Code: not installed, its config is left as is\. Install it, or pin `agents:`/, "now fleet has applied config for it, so losing it is worth a word");
+});
+
+test("a host file that names claude while it is missing still gets everything but Claude's servers, which wait for the binary", { skip: skipIfSystemWide("claude") }, () => {
+  const s = setup({ catalog: BOTH, host: "agents: [claude, opencode]\nmcp:\n  include: [everywhere]\nsettings:\n  claude:\n    env:\n      A: b\n", installClaude: false });
   const r = s.run(["apply"]);
   assert.equal(r.code, EXIT.ok, r.stderr);
   assert.match(r.stdout, /claude is not installed, so 1 MCP server is left out/);
+  assert.doesNotMatch(r.stdout, /Claude Code: not installed/, "a pinned host is not warned about the agents it names");
   assert.ok(s.readJson(".config/opencode/opencode.jsonc").mcp.everywhere);
+  assert.equal(s.readJson(".claude/settings.json").env.A, "b", "the settings are written, they need no binary");
   assert.throws(() => readFileSync(join(s.home, ".claude.json")));
   assert.match(s.run(["diff"]).stdout, /claude is not installed/);
 

@@ -2,7 +2,7 @@ import { existsSync, lstatSync, mkdirSync, readFileSync, writeFileSync } from "n
 import { dirname, join } from "node:path";
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { agentOf, AGENTS, having, SKILL_DIR } from "../src/agents/index.ts";
+import { agentOf, AGENTS, having, skillTargets, SKILL_TARGETS } from "../src/agents/index.ts";
 import type { Registered } from "../src/agents/index.ts";
 import { renderFor } from "../src/mcp.ts";
 import type { Server } from "../src/mcp.ts";
@@ -128,8 +128,16 @@ for (const agent of AGENTS) {
   });
 }
 
-test("the skills directory fleet links into is one an agent reads", () => {
-  assert.ok(having("skills").some((a) => a.skills.dirs.includes(SKILL_DIR)));
+test("every skills directory fleet links into is one an agent reads", () => {
+  for (const dir of SKILL_TARGETS) assert.ok(having("skills").some((a) => a.skills.dirs.includes(dir)), dir);
+});
+
+test("an agent that reads another agent's skills has them linked where that agent's are, and one with its own target gets its own", () => {
+  for (const agent of having("skills")) {
+    const targets = skillTargets([agent]);
+    if (agent.skills.target !== null) assert.deepEqual(targets, [agent.skills.target], agent.id);
+    else assert.ok(targets.length > 0 && targets.every((dir) => agent.skills.dirs.includes(dir) && SKILL_TARGETS.includes(dir)), agent.id);
+  }
 });
 
 // ---- apply, then take everything away ----
@@ -199,7 +207,7 @@ test("apply gives every agent its config, and removing the config leaves no trac
     for (const name of ["conf-stdio", "conf-http", "conf-sse"]) assert.ok(doc[agent.mcp.key][name] !== undefined, `${agent.id} has ${name}`);
   }
   for (const target of targets) assert.ok(present(expandTarget(target, home)), `${target} is linked`);
-  assert.ok(present(expandTarget(`${SKILL_DIR}/conf-skill`, home)), "the skill is linked");
+  assert.ok(SKILL_TARGETS.every((dir) => present(expandTarget(`${dir}/conf-skill`, home))), "the skill is linked");
 
   put(clone, "hosts/_defaults.yaml", "{}\n");
   publish(clone, "take everything away");
@@ -211,7 +219,7 @@ test("apply gives every agent its config, and removing the config leaves no trac
   assert.deepEqual(state.keys, [], "no owned key is recorded");
   assert.deepEqual(state.links, [], "no link is recorded");
   for (const target of targets) assert.equal(present(expandTarget(target, home)), false, `${target} is gone`);
-  assert.equal(present(expandTarget(`${SKILL_DIR}/conf-skill`, home)), false, "the skill link is gone");
+  assert.equal(SKILL_TARGETS.some((dir) => present(expandTarget(`${dir}/conf-skill`, home))), false, "the skill link is gone");
   for (const file of merged) {
     const text = readFileSync(expandTarget(file, home), "utf8");
     assert.doesNotMatch(text, /conf-(stdio|http|sse)|fleetConformance/, `${file} holds nothing of fleet's`);

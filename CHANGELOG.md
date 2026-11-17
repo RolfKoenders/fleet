@@ -4,6 +4,17 @@ What changed in fleet, newest first. Each version lists what you can do now, wha
 
 ## Unreleased
 
+### Added
+
+- A machine now gets only the agents installed on it. Fleet finds an agent by its program (`claude`, `opencode`) on the usual paths and in the directory of the Node it runs under, where `npm -g` puts agent CLIs, which also covers the timer, whose `PATH` has no fnm. Config for an agent that is not installed is not applied, and what fleet applied for it earlier is left as it is, never removed; installing the agent sets it up at the next apply. Skills are linked while any agent that reads their directory is installed. When an agent that fleet applied config for earlier is gone, fleet says so on every apply, diff and status, and on the bridge's host card, and says nothing about an agent the machine never had: `opencode: not installed, its config is left as is. Install it, or pin `agents:``. Nothing changes for a machine that has every agent. See [setting up machines](docs/setting-up-machines.md#which-agents-a-machine-gets).
+- `agents: [claude, opencode]` in a host file (or the defaults) names the agents a machine gets instead of detecting them. A host file's list replaces the defaults' list, an unknown id is an error, and a named agent is set up whether or not it is installed (Claude's MCP servers still wait for `claude`). `fleet agent` has a recipe for taking an agent's config off a machine: take it out of the config and push while the agent is still installed, then pin it out.
+- `fleet status` shows the agents a machine gets (`agents: claude 2.1.4, opencode 1.4.2`, with `(opencode not installed)` and `(pinned)` where they apply). `status --json` has `agents`, one `{id, version, active, pinned}` per agent, and `notInstalled`, the ids of the agents that warning is about; `tools` is unchanged, and a host on an older fleet that sends neither is still read. A host card in the bridge lists only the agents its machine gets.
+- `fleet ui`: the Agents boxes of the MCP server form show the agents some machine has or names, and "Show all agents" reveals the rest. An agent that is not shown keeps its value, so hiding it never narrows a server's `only`.
+
+### Changed
+
+- `fleet context --json` (and `context --all`) lists only the agents a machine gets, so a machine without opencode has no opencode entry. `fleet doctor` likewise checks only their servers.
+
 ### Fixed
 
 - `fleet doctor --all` and the bridge no longer fail on a host whose fleet knows an agent this one does not: that agent's servers are left out of the doctor grid, and the bridge's context view skips the agent, instead of rejecting the host's whole answer.

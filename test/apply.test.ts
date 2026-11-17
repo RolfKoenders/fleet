@@ -338,7 +338,7 @@ test("diff prints the plan and writes nothing, not even the state directory", ()
   assert.equal(r.code, EXIT.ok, r.stderr);
   assert.match(r.stdout, /create ~\/new\/a -> .*config\/a\.md/);
   assert.equal(exists(join(s.home, "new")), false);
-  assert.equal(exists(join(s.home, ".local")), false);
+  assert.equal(exists(join(s.home, ".local/state")), false);
 });
 
 test("diff shows pending removals and exits 0", () => {

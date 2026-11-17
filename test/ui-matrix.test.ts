@@ -2,7 +2,7 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { git, gitEnv, installFakeSsh, linkFleetSkill, makeClone, makeHome, publish } from "./helpers.ts";
+import { git, gitEnv, installFakeSsh, linkFleetSkill, makeClone, makeHome, publish, removeAgent, skipIfSystemWide } from "./helpers.ts";
 import { acquirePushLock } from "../src/lock.ts";
 import { startUi } from "../src/ui/server.ts";
 import type { UiServer } from "../src/ui/server.ts";
@@ -72,7 +72,7 @@ test("matrix: one row per bundle and server, one cell per host, saying defaults,
     assert.deepEqual(cell(m, "bundles", "core", "laptop"), { on: true, picked: "defaults", excluded: null });
     assert.deepEqual(cell(m, "bundles", "extra", "laptop"), { on: true, picked: "host", excluded: null });
     assert.deepEqual(cell(m, "bundles", "core", "remote"), { on: false, picked: "defaults", excluded: "host" });
-    assert.deepEqual(m.agents, [{ id: "claude", name: "Claude Code" }, { id: "opencode", name: "opencode" }], "the agents a server can be for, from the registry");
+    assert.deepEqual(m.agents, [{ id: "claude", name: "Claude Code", used: true }, { id: "opencode", name: "opencode", used: true }], "the agents a server can be for, from the registry, and both are on this host");
     assert.deepEqual(m.outside, []);
   });
 });
@@ -263,5 +263,35 @@ test("secrets: names only, with who can read them", async () => {
     assert.equal(doc.ok, true);
     assert.deepEqual(doc.hosts, ["laptop", "remote"]);
     assert.deepEqual(doc.entries, []);
+  });
+});
+
+test("matrix: an agent is in use when this host has it, another host reported it or a host file names it, and the rest are not", { skip: skipIfSystemWide("opencode") }, async (t) => {
+  // The server reads this process's PATH, which on a developer's machine may have an agent on it.
+  const path = process.env.PATH;
+  process.env.PATH = "/usr/bin:/bin";
+  t.after(() => {
+    process.env.PATH = path;
+  });
+  await withServer({}, async (s, w) => {
+    const used = async () => (await get(s, "/api/matrix")).agents.map((a: any) => [a.id, a.used]);
+    assert.deepEqual(await used(), [["claude", true], ["opencode", true]], "this host has both");
+
+    removeAgent(w.home, "opencode");
+    assert.deepEqual(await used(), [["claude", true], ["opencode", false]]);
+    const hosts = (await get(s, "/api/matrix")).hosts;
+    assert.equal(hosts.every((h: any) => h.agents === undefined), true, "no host file names agents");
+
+    writeFileSync(join(w.clone, "hosts/remote.yaml"), `${REMOTE}agents: [opencode]\n`);
+    assert.deepEqual(await used(), [["claude", true], ["opencode", true]], "a host file names it");
+    assert.deepEqual((await get(s, "/api/matrix")).hosts.find((h: any) => h.name === "remote").agents, ["opencode"]);
+
+    writeFileSync(join(w.clone, "hosts/remote.yaml"), REMOTE);
+    assert.deepEqual(await used(), [["claude", true], ["opencode", false]]);
+    // What another host reported last, as the bridge remembers it.
+    mkdirSync(join(w.home, ".local/state/fleet"), { recursive: true });
+    const status = { repos: { fleet: { branch: "main", sha: "abc", clean: true, ahead: 0, behind: 0 } }, applied: { at: null, ageSeconds: null, config: null }, timer: "active", pending: 0, conflicts: 0, tools: {}, agents: [{ id: "claude", version: "2.1.4", active: true, pinned: false }, { id: "opencode", version: "1.4.2", active: true, pinned: false }] };
+    writeFileSync(join(w.home, ".local/state/fleet/bridge-hosts.json"), JSON.stringify({ app: "fleet-bridge-hosts", version: 1, hosts: { remote: { savedAt: Date.now(), status } } }));
+    assert.deepEqual(await used(), [["claude", true], ["opencode", true]], "another host's status reports it");
   });
 });

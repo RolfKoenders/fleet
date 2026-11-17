@@ -12,6 +12,10 @@ Nobody can read the secrets without a key that can decrypt them, and the key of 
 
 No. It leaves other entries in `~/.claude/skills` alone, and in a settings file it changes only the keys your config names. If something is already at a path fleet wants to write, that is a conflict, and fleet stops.
 
+## Why does fleet say an agent is not installed?
+
+A machine gets the agents installed on it, and fleet found none of `<agent>` although it applied config for it on this machine earlier. (An agent that was never set up here is not mentioned, however much the config says about it.) It leaves everything of that agent alone until it is installed, and says so on each apply, diff and status. If the machine should not have the agent at all, name the agents it keeps in its host file: `agents: [claude]`. See [setting up machines](setting-up-machines.md#which-agents-a-machine-gets), which also covers removing an agent's config.
+
 ## When does a change reach a machine?
 
 `fleet push` applies it straight away on every machine with an `ssh:` line in its host file. Every machine also pulls and applies every 30 minutes, so one that was offline catches up. A machine with no `ssh:` line gets changes only this way.

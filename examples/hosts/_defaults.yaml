@@ -3,6 +3,7 @@
 # How the two combine:
 #   bundles, mcp.include   the host's list is added to this one
 #   exclude, mcp.exclude   taken off after everything is added
+#   agents                 the host's list replaces this one
 #   settings, vars         merged key by key; the host's value wins at the same key
 #   files                  a host record with the same `target` replaces this one
 

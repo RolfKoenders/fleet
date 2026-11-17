@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { git, installFakeSsh, installStatusTools, makeClone, makeHome, makeSource, publish, repoRoot, tempDir, writeExecutable } from "../helpers.ts";
+import { NODE, git, installFakeSsh, installStatusTools, makeClone, makeHome, makeSource, publish, repoRoot, tempDir, writeExecutable } from "../helpers.ts";
 import { EXIT } from "../../src/exit.ts";
 import { LEAVE, ENTER } from "../../src/tui/terminal.ts";
 
@@ -78,7 +78,7 @@ function bridgeWorld() {
   publish(clone, "hosts");
   installStatusTools(home);
   installFakeSsh(home, {});
-  const env = { HOME: home, FLEET_CONFIG: clone, FLEET_NODE: process.execPath, TERM: "xterm-256color", COLORTERM: "truecolor", FLEET_NO_MOTION: "1" };
+  const env = { HOME: home, FLEET_CONFIG: clone, FLEET_NODE: NODE, TERM: "xterm-256color", COLORTERM: "truecolor", FLEET_NO_MOTION: "1" };
   return { clone, home, env, command: `${join(clone, "bin/fleet")} bridge; echo "EXIT=$?"; stty -a`, pattern: `${clone}/src/main.ts bridge` };
 }
 
@@ -94,7 +94,7 @@ function reviewWorld() {
   writeFileSync(join(clone, "catalog/skills.yaml"), catalog);
   writeFileSync(join(clone, "hosts/laptop.yaml"), "bundles: [core]\n");
   publish(clone, "catalog");
-  const env = { HOME: home, FLEET_CONFIG: clone, FLEET_NODE: process.execPath, TERM: "xterm-256color" };
+  const env = { HOME: home, FLEET_CONFIG: clone, FLEET_NODE: NODE, TERM: "xterm-256color" };
   const command = `${join(clone, "bin/fleet")} skills update --review; echo "EXIT=$?"; stty -a`;
   return { clone, env, command, catalog, from: a.first, to, read: () => readFileSync(join(clone, "catalog/skills.yaml"), "utf8") };
 }
@@ -311,7 +311,7 @@ function demoDecoy() {
   const path = tempDir("fleet-decoy-path-");
   for (const tool of ["ssh", "claude", "opencode", "sops", "age", "age-keygen", "systemctl"]) writeExecutable(join(path, tool), `#!/bin/sh\necho "${tool} $*" >> ${join(marks, "calls")}\nexit 1\n`);
   const tmp = tempDir("fleet-demo-tmp-");
-  const env = { HOME: home, PATH: `${path}:/usr/bin:/bin`, TMPDIR: tmp, TERM: "xterm-256color", COLORTERM: "truecolor", FLEET_NODE: process.execPath };
+  const env = { HOME: home, PATH: `${path}:/usr/bin:/bin`, TMPDIR: tmp, TERM: "xterm-256color", COLORTERM: "truecolor", FLEET_NODE: NODE };
   return { home, tmp, env, marked: () => (existsSync(join(marks, "calls")) ? readFileSync(join(marks, "calls"), "utf8") : "") };
 }
 
@@ -327,7 +327,8 @@ test("pty: fleet demo on a terminal goes straight into the bridge on fake hosts,
   assert.match(r.out, /EXIT=0/);
   assert.deepEqual(readdirSync(d.tmp), [], "the fake world is deleted");
   assert.equal(d.marked(), "", "no real tool ran");
-  assert.equal(existsSync(join(d.home, ".local")), false, "the real home was not written");
+  // `.local/bin` holds the stubs of agents that `makeHome` installs; what fleet would write is under `state` and `share`.
+  for (const dir of [".local/state", ".local/share"]) assert.equal(existsSync(join(d.home, dir)), false, `the real home was not written: ${dir}`);
 });
 
 test("pty: in the demo, P shows a push of fake hosts and runs it in the sandbox; the seeded conflict stops it", { skip }, async () => {
@@ -349,7 +350,7 @@ test("pty: in the demo, P shows a push of fake hosts and runs it in the sandbox;
   assert.match(r.out, /EXIT=0/);
   assert.deepEqual(readdirSync(d.tmp), []);
   assert.equal(d.marked(), "");
-  assert.equal(existsSync(join(d.home, ".local")), false);
+  for (const dir of [".local/state", ".local/share"]) assert.equal(existsSync(join(d.home, dir)), false, dir);
 });
 
 test("the DEMO pill appears only for the demo's own sandbox, never because of a variable alone", async () => {

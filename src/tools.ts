@@ -1,6 +1,6 @@
 import { accessSync, constants } from "node:fs";
 import { homedir } from "node:os";
-import { delimiter, join } from "node:path";
+import { delimiter, dirname, join } from "node:path";
 import { binDirs } from "./agents/index.ts";
 
 /**
@@ -14,8 +14,11 @@ export const HOMEBREW_KEG_NODES = ["/opt/homebrew", "/usr/local"].flatMap((prefi
 
 const AGENT_BIN_DIRS = binDirs();
 
-/** The directories searched for a program that is not found on `PATH`, apart from Homebrew's. The home ones come first, so a host's own copy wins. */
-export const probeExtraDirs = (home: string = homedir()): string[] => [join(home, ".local/bin"), ...AGENT_BIN_DIRS.map((dir) => join(home, dir)), "/usr/bin", "/usr/local/bin"];
+/**
+ * The directories searched for a program that is not found on `PATH`, apart from Homebrew's. The home ones come first, so a host's own copy wins.
+ * The last is where Node is: `npm -g` puts agent CLIs there, and the systemd timer's `PATH` has no fnm.
+ */
+export const probeExtraDirs = (home: string = homedir()): string[] => [join(home, ".local/bin"), ...AGENT_BIN_DIRS.map((dir) => join(home, dir)), "/usr/bin", "/usr/local/bin", dirname(probedNode())];
 
 /** The directories searched before `PATH`, in order. */
 export const probeDirs = (home: string = homedir()): string[] => [...probeExtraDirs(home), HOMEBREW_BIN];

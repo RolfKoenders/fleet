@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { bundleDraft, checkLines, cloneKey, COMMAND_SECRET, confirmText, opWarnings, secretsOf, serverDraft, skillChoices, sourceDraft, splitCommand, takeBack, typedSkills, unpinned } from "../src/ui/static/catalog.js";
+import { bundleDraft, checkLines, cloneKey, COMMAND_SECRET, confirmText, opWarnings, secretsOf, serverDraft, shownAgents, skillChoices, sourceDraft, splitCommand, takeBack, typedSkills, unpinned } from "../src/ui/static/catalog.js";
 import { clickCell, opLabel, suggestMessage } from "../src/ui/static/matrix.js";
 
 const server = (over: Record<string, unknown> = {}) => ({ name: "linear", kind: "command", command: "npx -y @linear/mcp-server@0.4.1", url: "", rows: [], agents: { claude: true, opencode: true }, ...over }) as any;
@@ -148,4 +148,30 @@ test("catalog additions have words, a commit message, and never get in the way o
   const cell = { on: false, picked: null, excluded: null };
   assert.equal(clickCell([server, bundle], "box", "mcp", "linear", cell).length, 3);
   assert.deepEqual(clickCell([server, pick], "box", "mcp", "linear", cell), [server]);
+});
+
+test("agents no host has are hidden from the form but still count: hiding never narrows a server's only", () => {
+  const agents = [{ id: "claude", name: "Claude Code", used: true }, { id: "opencode", name: "opencode", used: false }, { id: "other", name: "Other", used: false }];
+  const f = (over: Record<string, unknown> = {}) => server({ agents: { claude: true, opencode: true, other: true }, ...over });
+  assert.deepEqual(shownAgents(agents, f()).map((a) => a.id), ["claude"], "only the agent in use is drawn");
+  assert.deepEqual(shownAgents(agents, f({ showAll: true })).map((a) => a.id), ["claude", "opencode", "other"], "show all agents reveals the rest");
+
+  // A new server: the hidden agents are checked, so the server is for every agent, as before.
+  const fresh = serverDraft(f(), []);
+  assert.deepEqual(fresh.problems, []);
+  assert.equal("only" in (fresh.op as any).entry, false, "no only: not narrowed to the one agent that is shown");
+
+  // The only visible box unchecked: the hidden agents still count, so it narrows to them, and it never reaches "pick at least one" by hiding.
+  const narrowed = serverDraft(f({ agents: { claude: false, opencode: true, other: true } }), []);
+  assert.deepEqual((narrowed.op as any).entry.only, ["opencode", "other"]);
+  assert.deepEqual(serverDraft(f({ agents: { claude: false, opencode: false, other: false } }), []).problems, ["pick at least one agent"]);
+
+  // An edit: an agent the file leaves out stays out while hidden, and one it names stays in.
+  const base = { command: ["npx", "-y", "@linear/mcp-server@0.4.1"], only: ["claude", "opencode"] };
+  const edit = f({ agents: { claude: true, opencode: true, other: false } });
+  assert.deepEqual(serverDraft(edit, [], [], base).unchanged, true, "an untouched form is no edit, hidden agents or not");
+  assert.deepEqual(shownAgents(agents, edit).map((a) => a.id), ["claude", "other"], "an unused agent the form has switched off is drawn, so what the file leaves out can be seen");
+  const drop = serverDraft(f({ agents: { claude: false, opencode: true, other: false } }), [], [], base);
+  assert.deepEqual((drop.op as any).changes, [{ key: "only", from: ["claude", "opencode"], to: ["opencode"] }]);
+  assert.equal(shownAgents(agents.map((a) => ({ ...a, used: true })), f()).length, 3, "when every agent is in use nothing is hidden");
 });

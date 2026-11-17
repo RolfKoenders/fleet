@@ -6,7 +6,7 @@ import { lineDiff, splitLines } from "./diff.js";
 import { blankHost, hostDraft } from "./hosts.js";
 
 /** @typedef {"server" | "source" | "bundle" | "host"} AddKind */
-/** @typedef {{ id: string, name: string }} Agent An agent a server can be for, as the server lists them. */
+/** @typedef {{ id: string, name: string, used?: boolean }} Agent An agent a server can be for, as the server lists them. `used` is false for one no host has or names. */
 /** @typedef {import("./diff.js").DiffLine} DiffLine */
 /**
  * What the pane shows: the file it is about, a tag, and one of: what is missing, a wait, a refusal, or the diff.

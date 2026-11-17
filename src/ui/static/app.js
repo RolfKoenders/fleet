@@ -6,7 +6,7 @@ import { jobLabel, jobsOf, withJobs } from "./jobs.js";
 import { changed, counts, lineDiff, splitLines, tokenize } from "./diff.js";
 import { fill, h } from "./dom.js";
 import { ADD, addable, CATALOG_KINDS, closable, confirmLabel, fileOf, freshAdd, hostAsDraft, nearChanges, paneView } from "./adding.js";
-import { bundleDraft, checkLines, cloneKey, confirmText, needsLook, opWarnings, secretOf, secretsOf, serverDraft, skillChoices, sourceDraft, sourceEditDraft, sourceInputs, takeBack } from "./catalog.js";
+import { bundleDraft, checkLines, cloneKey, confirmText, needsLook, opWarnings, secretOf, secretsOf, serverDraft, shownAgents, skillChoices, sourceDraft, sourceEditDraft, sourceInputs, takeBack } from "./catalog.js";
 import { bundleFormOf, EDIT, EDIT_DROP_LABEL, EDIT_LABEL, editPaneView, freshEdit, hostEditDraft, hostFormOf, isAddition, ownOp, readOnlyLines, removalOp, serverAsAdded, serverFormOf, sourceFormOf, startOf, withEdit } from "./editing.js";
 import { bundleLosses, EMPTY_BUNDLE, goLabel, heldForHost, hostKeeps, hostRefusal, hostRuns, lossLine, NO_SKILLS_KNOWN, removal, REMOVE, ROTATE, sourceSkills, touched } from "./removing.js";
 import { blockers, cellAction, DROPPED_BLOCKER, cellState, clickCell, opLabel, suggestMessage, summaryLine, WORDS } from "./matrix.js";
@@ -204,7 +204,7 @@ function statusScreen() {
 const mono = (/** @type {string} */ t) => h("span", { class: "m" }, t);
 
 /** The agents a server can be for, in the order the server lists them. */
-const agentList = () => /** @type {{ id: string, name: string }[]} */ (model.base?.agents ?? []);
+const agentList = () => /** @type {{ id: string, name: string, used?: boolean }[]} */ (model.base?.agents ?? []);
 
 /** The matrix as the page shows it: the server's answer for the held edits when there is one, else the files on disk. */
 const shownMatrix = () => model.preview?.matrix ?? model.base;
@@ -743,8 +743,25 @@ function serverFields(f) {
       h("button", { type: "button", id: "f-addrow", class: "btn ghost small", onclick: () => { s.rows.push({ key: "", mode: "secret", value: "" }); edited(); } }, net ? "+ Add a header" : "+ Add a variable"),
       h("div", { class: "help" }, "A secret is stored encrypted, by name. This form never sees its value: set it under Secrets."),
     ),
-    h("div", { class: "field" }, h("label", {}, "Agents"), h("div", { class: "row" }, ...agentList().map((/** @type {{ id: string, name: string }} */ a) => check(`f-agent-${a.id}`, a.name, s.agents[a.id] === true, (v) => (s.agents[a.id] = v))))),
+    agentField(s),
   ];
+}
+
+/** The agents checkboxes of a server form: the agents in use, and the rest behind "Show all agents". @param {any} s */
+function agentField(s) {
+  const shown = shownAgents(agentList(), s);
+  const hidden = agentList().filter((a) => !shown.includes(a));
+  const unused = agentList().filter((a) => a.used === false);
+  return h(
+    "div",
+    { class: "field" },
+    h("label", {}, "Agents"),
+    h("div", { class: "row" }, ...shown.map((/** @type {{ id: string, name: string }} */ a) => check(`f-agent-${a.id}`, a.name, s.agents[a.id] === true, (v) => (s.agents[a.id] = v)))),
+    unused.length === 0
+      ? null
+      : h("button", { type: "button", id: "f-agents-all", class: "btn ghost small", "aria-pressed": String(s.showAll === true), onclick: () => { s.showAll = s.showAll !== true; edited(); } }, s.showAll === true ? "Hide agents no host has" : "Show all agents"),
+    hidden.length === 0 ? null : h("div", { class: "help" }, `Also for ${hidden.map((a) => a.name).join(" and ")}: no host has ${hidden.length === 1 ? "it" : "them"} yet, so ${hidden.length === 1 ? "it is" : "they are"} not shown.`),
+  );
 }
 
 /** @param {any} f */

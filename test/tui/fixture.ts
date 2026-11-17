@@ -34,6 +34,8 @@ export const status = (over: Partial<StatusFields> = {}): StatusFields => ({
   pending: 0,
   conflicts: 0,
   conflictList: null,
+  agents: [{ id: "claude", version: "2.1.4", active: true, pinned: false }, { id: "opencode", version: "1.4.2", active: true, pinned: false }],
+  notInstalled: [],
   tools: { claude: "2.1.4", opencode: "1.4.2", sops: "3.13.3", node: "22.18.0", t3: "0.1.0" },
   ...over,
 });

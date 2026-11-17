@@ -90,6 +90,8 @@ export type MeasureOptions = {
   now?: Date;
   /** Hash of each server's current catalog entry, by `definitionKey`. Null when the config could not be read. */
   definitions?: Map<string, string> | null;
+  /** The agents to measure: the ones the host gets. Every registered agent when absent. */
+  agents?: readonly Registered[];
 };
 
 export const definitionKey = (agent: AgentId, name: string): string => `${agent}\0${name}`;
@@ -325,11 +327,12 @@ export function agentContext(agent: AgentId, items: ContextItem[], notes: string
 
 /** Reads this host and nothing else: no process is started and no secret is decrypted. */
 export function measureContext(home: string = homedir(), options: MeasureOptions = {}): ContextReport {
+  const hosted = options.agents ?? AGENTS;
   const now = options.now ?? new Date();
   const doctor = readDoctorResult(home)?.servers ?? [];
   const hostNotes: string[] = [];
   const applied = appliedBy(home, hostNotes);
-  const agents = AGENTS.map((agent): AgentContext => {
+  const agents = hosted.map((agent): AgentContext => {
     const notes: string[] = [];
     const items = [...instructionItems(agent, home, applied, notes), ...skillItems(agent, home, applied, notes), ...mcpItems(agent, home, applied, doctor, options, now, notes)];
     return agentContext(agent.id, items, notes);

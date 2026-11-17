@@ -12,7 +12,7 @@ export type PrimerCommand = { name: string; usage: string; summary: string; effe
 /** The glossary in one sentence per term, in the order of GLOSSARY.md. */
 const TERMS: [string, string][] = [
   ["Host", "One machine fleet manages, as one agent user on it (`laptop` as `alice`, `server` as `deploy`)."],
-  ["Agent", "A coding agent fleet sets up on a host, such as Claude Code or opencode."],
+  ["Agent", "A coding agent fleet sets up on a host, such as Claude Code or opencode. A host gets the agents installed on it, unless its host file names them."],
   ["Agent user", "The OS user on a host whose agent setup fleet manages; other users there are not fleet's business."],
   ["Config repo", "The private repo a user keeps their catalog, host files, shared instructions and encrypted secrets in."],
   ["Fleet clone", "The copy of the fleet tool a host runs from, kept at the commit its config pins; nobody works in it."],

@@ -2,6 +2,7 @@ import { spawnSync } from "node:child_process";
 import { existsSync, chmodSync, cpSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { AGENTS } from "../src/agents/index.ts";
 import { LAUNCHD_LABEL } from "../src/scheduler.ts";
 import { HOMEBREW_BIN, HOMEBREW_KEG_NODES } from "../src/tools.ts";
 
@@ -31,8 +32,34 @@ process.on("exit", () => {
   }
 });
 
+/**
+ * This Node by a path in a directory of its own. Fleet looks for an agent's binary beside Node as well, and a
+ * developer's own Node directory has `claude` in it, so tests run fleet under this one, where nothing else is.
+ */
+export const NODE = ((): string => {
+  const dir = tempDir("fleet-node-");
+  symlinkSync(process.execPath, join(dir, "node"));
+  return join(dir, "node");
+})();
+// For what runs in this process: the other half of `FLEET_NODE`, which `bin/fleet` turns into this.
+process.env.FLEET_NODE_PATH = NODE;
+
+/**
+ * A home with every agent installed, as far as fleet can tell: a binary of each in `~/.local/bin` that does nothing. A test about
+ * a host that lacks an agent removes its stub with `removeAgent`; one that needs its output or its calls installs a fake over it.
+ */
+export function installStubAgents(home: string): void {
+  for (const agent of AGENTS) writeExecutable(join(home, ".local/bin", agent.binary), "#!/bin/sh\nexit 0\n");
+}
+
+/** Takes an agent's binary off the host, so fleet finds the agent missing. */
+export function removeAgent(home: string, binary: string): void {
+  rmSync(join(home, ".local/bin", binary), { force: true });
+}
+
 export function makeHome(host?: string): string {
   const home = tempDir("fleet-home-");
+  installStubAgents(home);
   if (host !== undefined) {
     mkdirSync(join(home, ".config/fleet"), { recursive: true });
     writeFileSync(join(home, ".config/fleet/host"), `${host}\n`);
@@ -126,7 +153,7 @@ export function runBin(bin: string, args: string[], opts: { home: string; env?: 
     env: {
       PATH: "/usr/bin:/bin",
       HOME: opts.home,
-      FLEET_NODE: process.execPath,
+      FLEET_NODE: NODE,
       ...gitEnv,
       ...opts.env,
     },

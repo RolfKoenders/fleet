@@ -2,7 +2,7 @@ import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { git, installFakeSsh, linkFleetSkill, makeClone, makeHome, publish, repoRoot } from "../helpers.ts";
+import { NODE, git, installFakeSsh, linkFleetSkill, makeClone, makeHome, publish, repoRoot } from "../helpers.ts";
 import type { SshPlan } from "../helpers.ts";
 import { pushArguments, RealPusher } from "../../src/tui/pusher.ts";
 import { loadModel } from "../../src/tui/model.ts";
@@ -18,7 +18,7 @@ function world(ssh: Record<string, SshPlan>, hosts: Record<string, string | null
   const { clone, remote } = makeClone();
   const home = makeHome("laptop");
   process.env.HOME = home;
-  process.env.FLEET_NODE = process.execPath;
+  process.env.FLEET_NODE = NODE;
   const write = (rel: string, content: string) => {
     mkdirSync(dirname(join(clone, rel)), { recursive: true });
     writeFileSync(join(clone, rel), content);

@@ -2,12 +2,13 @@ import { spawnSync } from "node:child_process";
 import { readdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { AGENT_IDS, AGENTS } from "./agents/index.ts";
+import { AGENT_IDS, AGENTS, hostAgents, isAgentId } from "./agents/index.ts";
 import type { AgentId } from "./agents/index.ts";
 import { planConflicts, planCounts } from "./apply.ts";
 import { MissingToolError, repoState } from "./git.ts";
 import type { RepoState } from "./git.ts";
 import { readHostName } from "./host.ts";
+import { detectAgents, notInstalledWarning } from "./hostagents.ts";
 import { paint } from "./output.ts";
 import type { Result } from "./output.ts";
 import { statusOs, timerWord } from "./scheduler.ts";
@@ -21,6 +22,12 @@ import type { Obj } from "./yamlfile.ts";
 /** A version fleet could read, or null. The Node that runs fleet is `node`; `t3` is the newest installed T3 Code. */
 export type ToolVersions = { [K in AgentId]: string | null } & { sops: string | null; node: string | null; t3: string | null };
 
+/**
+ * One registered agent as this host has it. `active` is whether fleet sets it up here (the host file names it, or
+ * it is installed and the file names none), `pinned` whether the host file names it.
+ */
+export type AgentStatus = { id: AgentId; version: string | null; active: boolean; pinned: boolean };
+
 /** What `fleet status --json` reports about one host, besides `host`. Null is "could not be read". */
 export type StatusFields = {
   repos: { fleet: RepoState };
@@ -33,6 +40,10 @@ export type StatusFields = {
   conflicts: number | null;
   /** The first conflicts, as a row can name them, in the order `status --conflicts` lists them. Null when the conflicts are unknown, or the host's fleet does not send the list. */
   conflictList: ConflictName[] | null;
+  /** Every agent fleet knows, as this host has it. Null when the host's fleet does not send it. */
+  agents: AgentStatus[] | null;
+  /** The ids of agents fleet applied config for earlier and cannot find on the host now. Ids, not sentences, so a reader words them itself. Null when the host's fleet does not send it. */
+  notInstalled: AgentId[] | null;
   tools: ToolVersions;
 };
 
@@ -114,13 +125,15 @@ const reasons = (result: Result): string => {
   return `${all.slice(0, 3).join("; ")}${all.length > 3 ? ` (and ${all.length - 3} more)` : ""}`;
 };
 
-function changeCounts(configDir: string, home: string, host: string | null, messages: string[]): Pick<StatusFields, "pending" | "conflicts" | "conflictList"> {
-  const unknown = { pending: null, conflicts: null, conflictList: null };
+type Counted = Pick<StatusFields, "pending" | "conflicts" | "conflictList"> & { pin: AgentId[] | null; notInstalled: AgentId[] };
+
+function changeCounts(configDir: string, home: string, host: string | null, messages: string[]): Counted {
+  const unknown = { pending: null, conflicts: null, conflictList: null, pin: null, notInstalled: [] };
   if (host === null) return unknown; // already said: no host name
   try {
     const counts = planCounts(configDir, home);
     if (!("code" in counts)) {
-      return { pending: counts.pending, conflicts: counts.conflicts.length, conflictList: counts.conflicts.slice(0, CONFLICT_LIST_MAX).map(({ kind, path }) => ({ kind, path })) };
+      return { pending: counts.pending, conflicts: counts.conflicts.length, conflictList: counts.conflicts.slice(0, CONFLICT_LIST_MAX).map(({ kind, path }) => ({ kind, path })), pin: counts.pin, notInstalled: counts.notInstalled };
     }
     messages.push(`fleet: pending changes and conflicts are unknown: ${reasons(counts)}`);
   } catch (error) {
@@ -135,6 +148,16 @@ export const ago = (seconds: number): string => {
   if (seconds < 48 * 3600) return `${Math.floor(seconds / 3600)}h ago`;
   return `${Math.floor(seconds / 86400)}d ago`;
 };
+
+/** `agents: claude 2.1.4, opencode 1.4.2 (pinned) (codex not installed)`: the agents fleet sets up, then the ones it does not. */
+function agentsLine(agents: AgentStatus[]): string {
+  const on = agents.filter((a) => a.active);
+  const off = agents.filter((a) => !a.active);
+  const left = off.map((a) => `(${a.id} ${a.version === null ? "not installed" : "pinned out"})`);
+  const pinned = on.some((a) => a.pinned) ? " (pinned)" : "";
+  const names = on.length === 0 ? "none" : on.map((a) => `${a.id} ${a.version ?? "not installed"}`).join(", ");
+  return `agents: ${[`${names}${pinned}`, ...left].join(" ")}`;
+}
 
 /** The lines of one host's status, after its name. `clone` is the path of the fleet clone when it is known. */
 function lines(fields: StatusFields, color: boolean, clone: string | null): string[] {
@@ -153,6 +176,7 @@ function lines(fields: StatusFields, color: boolean, clone: string | null): stri
     `timer: ${timer}`,
     `pending: ${shown(fields.pending)}`,
     `conflicts: ${fields.conflicts === null || fields.conflicts === 0 ? shown(fields.conflicts) : paint(color, "yellow", String(fields.conflicts))}`,
+    ...(fields.agents === null ? [] : [agentsLine(fields.agents)]),
     "tools:",
     ...TOOL_NAMES.map((name) => `  ${name}: ${shown(fields.tools[name])}`),
   ];
@@ -167,13 +191,19 @@ function collect(toolDir: string, configDir: string, home: string, host: string 
     if (error instanceof MissingToolError) return { code: "missing-prerequisite", messages: [`fleet: ${error.message}`] };
     throw error;
   }
+  const { pin, notInstalled, ...counts } = changeCounts(configDir, home, host, messages);
+  const versions = Object.fromEntries(AGENTS.map((a) => [a.id, toolVersion(a.binary, a.version, home)])) as { [K in AgentId]: string | null };
+  const on = hostAgents(pin, detectAgents(home));
+  messages.push(...AGENTS.filter((a) => notInstalled.includes(a.id)).map((a) => `fleet: ${notInstalledWarning(a)}`));
   return {
     repos: { fleet },
     applied: appliedAge(home, messages),
     timer: timerState(home),
-    ...changeCounts(configDir, home, host, messages),
+    ...counts,
+    agents: AGENTS.map((a) => ({ id: a.id, version: versions[a.id], active: on.includes(a), pinned: pin?.includes(a.id) ?? false })),
+    notInstalled,
     tools: {
-      ...(Object.fromEntries(AGENTS.map((a) => [a.id, toolVersion(a.binary, a.version, home)])) as { [K in AgentId]: string | null }),
+      ...versions,
       sops: toolVersion("sops", SOPS_VERSION_ARGS, home),
       node: parseVersion(process.version),
       t3: t3Version(home),
@@ -230,6 +260,15 @@ function conflictNames(value: unknown): ConflictName[] | null {
   return names;
 }
 
+/** A host's `agents`: the entries for agents this fleet knows. An agent it does not know is left out, as it is from a newer fleet. Null when the host sent none. */
+function agentStatuses(value: unknown): AgentStatus[] | null {
+  if (!Array.isArray(value)) return null;
+  return value.flatMap((entry): AgentStatus[] => {
+    if (!isObject(entry) || !isAgentId(entry.id) || typeof entry.active !== "boolean") return [];
+    return [{ id: entry.id, version: printable(entry.version), active: entry.active, pinned: entry.pinned === true }];
+  });
+}
+
 /**
  * A remote host's status, cut down to the fields fleet knows and to printable text, because it is shown on a
  * terminal and a host can be wrong. Null when the document has no fleet clone state, such as a failed status.
@@ -247,6 +286,8 @@ export function statusFromDocument(doc: Obj): StatusFields | null {
     pending: count(doc.pending),
     conflicts: count(doc.conflicts),
     conflictList: conflictNames(doc.conflictList),
+    agents: agentStatuses(doc.agents),
+    notInstalled: Array.isArray(doc.notInstalled) ? AGENT_IDS.filter((id) => (doc.notInstalled as unknown[]).includes(id)) : null,
     tools: Object.fromEntries(TOOL_NAMES.map((name) => [name, printable(tools[name])])) as ToolVersions,
   };
 }

@@ -6,7 +6,7 @@
 /**
  * @typedef {{ key: string, mode: "secret" | "plain", value: string }} Row
  * One environment variable (or header): a plain value, or a secret by name. A secret row with no name uses the variable's own.
- * @typedef {{ name: string, kind: "command" | "http" | "sse", command: string, url: string, rows: Row[], agents: Record<string, boolean> }} ServerForm
+ * @typedef {{ name: string, kind: "command" | "http" | "sse", command: string, url: string, rows: Row[], agents: Record<string, boolean>, showAll?: boolean }} ServerForm
  * @typedef {{ name: string, repo: string, path: string, branch: string, mode: "pin" | "follow", review: boolean }} SourceForm
  * @typedef {{ name: string, picked: string[], extra: string }} BundleForm
  * @typedef {{ key: string, repo: string, path: string, branch: string | null, commit: string, skills: string[], problem: string | null, id: string, headBranch: string | null }} Cloned
@@ -211,6 +211,14 @@ export function applyChanges(base, changes) {
   }
   return out;
 }
+
+/**
+ * The agents the server form draws a checkbox for: the ones in use, and every one when the form says to show all. An agent that is
+ * not in use is also drawn when the form has it switched off, so that what the file leaves out can be seen. An agent that is not drawn
+ * keeps its value in `f.agents`, and `serverDraft` counts it: hiding an agent never narrows a server's `only`.
+ * @param {{ id: string, name: string, used?: boolean }[]} agents @param {ServerForm} f
+ */
+export const shownAgents = (agents, f) => (f.showAll === true ? agents : agents.filter((a) => a.used !== false || f.agents[a.id] === false));
 
 /**
  * The edit a server form holds, or why it cannot yet. Given `base` (the entry as it is in the file) the form is an edit of that

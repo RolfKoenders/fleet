@@ -7,7 +7,7 @@ import { Headless } from "../../src/tui/headless.ts";
 import { loadModel } from "../../src/tui/model.ts";
 import { motionAllowed } from "../../src/tui/bridge.ts";
 import type { HostInfo } from "../../src/tui/model.ts";
-import type { Probe } from "../../src/tui/probe.ts";
+import type { HostResult, Probe } from "../../src/tui/probe.ts";
 
 const unreachable = { result: "unreachable" as const, status: null, detail: "ssh: connect to host box port 22: Connection timed out" };
 
@@ -339,4 +339,23 @@ test("no frame ever holds a control character", async () => {
     b.press(...keys);
     assert.ok(!/[\u0000-\u0009\u000b-\u001f\u007f-\u009f]/.test(b.frame()));
   }
+});
+
+test("home: a host card shows only the agents that host gets, and says which one fleet applied config for and cannot find now", async () => {
+  const claude = { id: "claude" as const, version: "2.1.4", active: true, pinned: false };
+  const opencode = { id: "opencode" as const, version: null, active: false, pinned: false };
+  const every = (result: HostResult) => ({ laptop: result, server: result, box: result });
+  const both = (await bridgeFor(makeConfig())).frame();
+  assert.match(both, /claude 2\.1\.4\s+opencode 1\.4\.2/, "a host with both shows both");
+
+  const one = (await bridgeFor(makeConfig(), { hosts: every(ok({ agents: [claude, opencode], notInstalled: ["opencode"] })) })).frame();
+  assert.match(one, /claude 2\.1\.4/);
+  assert.doesNotMatch(one, /opencode 1\.4\.2/, "the agent the host does not get is not listed with a version");
+  assert.match(one, /⚠ opencode not installed/, "fleet applied config for it before, so the card says so");
+
+  const quiet = (await bridgeFor(makeConfig(), { hosts: every(ok({ agents: [claude, opencode], notInstalled: [] })) })).frame();
+  assert.doesNotMatch(quiet, /opencode/, "not installed and nothing applied for it: the card does not mention it");
+
+  const older = (await bridgeFor(makeConfig(), { hosts: every(ok({ agents: null, notInstalled: null })) })).frame();
+  assert.match(older, /claude 2\.1\.4\s+opencode 1\.4\.2/, "a host on an older fleet sends neither and shows every agent");
 });

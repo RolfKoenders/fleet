@@ -175,7 +175,7 @@ function commandTable(out: string): { name: string; usage: string }[] {
 
 const mentions = (out: string): string[] => [...recipes(out).matchAll(/`fleet ([^`]+)`/g)].map((m) => m[1]!);
 
-test("the primer has a Recipes section with the seven jobs, in the JSON as well", () => {
+test("the primer has a Recipes section with the eight jobs, in the JSON as well", () => {
   const s = setup();
   const out = s.run().stdout;
   assert.deepEqual([...blocks(out).keys()], [
@@ -186,6 +186,7 @@ test("the primer has a Recipes section with the seven jobs, in the JSON as well"
     "Set up this machine (onboarding)",
     "Review a skill source update",
     "Move the tool pin",
+    "Remove an agent's config from a host",
   ]);
   const doc = JSON.parse(s.run(["--json"]).stdout);
   assert.deepEqual(doc.recipes.map((r: { title: string }) => r.title), [...blocks(out).keys()]);

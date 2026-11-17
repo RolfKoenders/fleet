@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, readlinkSync, rmSync,
 import { dirname, join } from "node:path";
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { git, installFakeSsh, linkFleetSkill, makeClone, makeHome, makeSource, publish, runFleet, tempDir, writeExecutable } from "./helpers.ts";
+import { NODE, git, installStubAgents, installFakeSsh, linkFleetSkill, makeClone, makeHome, makeSource, publish, runFleet, tempDir, writeExecutable } from "./helpers.ts";
 import type { SshPlan } from "./helpers.ts";
 import { EVENT_VERSION } from "../src/events.ts";
 import { EXIT } from "../src/exit.ts";
@@ -81,6 +81,7 @@ function setup(opts: Setup = {}) {
     writeFileSync(join(mhome, ".config/fleet/config"), `${join(base, "fleet")}\n`);
     linkFleetSkill(mhome, join(base, "fleet"));
     mkdirSync(join(mhome, ".local/bin"), { recursive: true });
+    installStubAgents(mhome);
     symlinkSync(join(base, "fleet/bin/fleet"), join(mhome, ".local/bin/fleet"));
     return mhome;
   };
@@ -606,7 +607,7 @@ test("what a push prints on stdout and in --json does not depend on how stderr i
 test("ctrl-c: the summary so far, exit 130, and the push lock is let go", async () => {
   const s = setup({ hosts: { alpha: "me@alpha", slow: "me@slow", zed: "me@zed" }, ssh: { "me@alpha": OK, "me@slow": { ...OK, delay: 8_000 }, "me@zed": OK } });
   const child = spawn(join(s.clone, "bin/fleet"), ["push"], {
-    env: { PATH: "/usr/bin:/bin", HOME: s.home, FLEET_NODE: process.execPath, FLEET_CONFIG: s.clone, GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_SYSTEM: "/dev/null", GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@example.com", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@example.com" },
+    env: { PATH: "/usr/bin:/bin", HOME: s.home, FLEET_NODE: NODE, FLEET_CONFIG: s.clone, GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_SYSTEM: "/dev/null", GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@example.com", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@example.com" },
     stdio: ["ignore", "pipe", "pipe"],
   });
   let [stdout, stderr] = ["", ""];
@@ -782,7 +783,7 @@ test("a push that stopped on a conflict still has a journal, with the result", (
 test("ctrl-c keeps a partial journal, marked as interrupted", async () => {
   const s = setup({ hosts: { alpha: "me@alpha", slow: "me@slow" }, ssh: { "me@alpha": OK, "me@slow": { ...OK, delay: 8_000 } } });
   const child = spawn(join(s.clone, "bin/fleet"), ["push"], {
-    env: { PATH: "/usr/bin:/bin", HOME: s.home, FLEET_NODE: process.execPath, FLEET_CONFIG: s.clone, GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_SYSTEM: "/dev/null", GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@example.com", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@example.com" },
+    env: { PATH: "/usr/bin:/bin", HOME: s.home, FLEET_NODE: NODE, FLEET_CONFIG: s.clone, GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_SYSTEM: "/dev/null", GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@example.com", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@example.com" },
     stdio: ["ignore", "pipe", "pipe"],
   });
   const closed = new Promise<number | null>((resolve) => child.once("close", resolve));
