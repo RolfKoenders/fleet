@@ -1,7 +1,8 @@
 import { existsSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
-import { SKILL_DIR } from "./agents/index.ts";
+import { agentOf, AGENT_IDS, AGENTS, hostAgents, isAgentId, leftAlone, SKILL_TARGETS, skillTargets } from "./agents/index.ts";
+import type { Agent, AgentId, Registered } from "./agents/index.ts";
 import { parseCatalog, pickBundles } from "./catalog.ts";
 import type { Catalog } from "./catalog.ts";
 import { mcpKeys, parseMcpCatalog } from "./mcp.ts";
@@ -43,6 +44,12 @@ export type Config = {
   secrets: string[];
   /** The skills in the picked bundles, which `files` links into the skills directory. Empty when `conflicts` is not. */
   skills: string[];
+  /** The agents this host gets: the ones its host file names, else the ones in `LoadOptions.agents`, else every agent. */
+  agents: Registered[];
+  /** The agents the host file or the defaults name in `agents`, or null when they name none. */
+  pin: AgentId[] | null;
+  /** Agents left out of `agents` that the config has keys or files for, which were dropped. */
+  unmet: AgentId[];
 };
 
 export type LoadOptions = {
@@ -51,14 +58,19 @@ export type LoadOptions = {
   sources?: SourceMode | "none";
   /** Texts for config files, keyed by repo-relative path (`hosts/laptop.yaml`), read instead of the files on disk. */
   overlay?: Readonly<Record<string, string>>;
+  /**
+   * The agents found on the host. When given, config for an agent a host does not get is dropped (see `Config.agents`);
+   * when not, every agent's config is kept, which is what checking a config for a host other than this one needs.
+   */
+  agents?: readonly Agent[];
 };
 
 type UnresolvedRecord = { source: string; target: string };
 
-const SHARED_KEYS = ["vars", "bundles", "exclude", "mcp", "settings", "files"];
+const SHARED_KEYS = ["vars", "bundles", "exclude", "mcp", "settings", "files", "agents"];
 const HOST_ONLY_KEYS = ["ssh", "age", "admin"];
 
-type Checked = { records: UnresolvedRecord[]; declared: Declared[]; vars: Record<string, string> };
+type Checked = { records: UnresolvedRecord[]; declared: Declared[]; vars: Record<string, string>; agents: AgentId[] | null };
 
 function checkFile(path: string, doc: Obj, hostFile: boolean, problems: string[]): Checked {
   const allowed = hostFile ? [...SHARED_KEYS, ...HOST_ONLY_KEYS] : SHARED_KEYS;
@@ -66,7 +78,7 @@ function checkFile(path: string, doc: Obj, hostFile: boolean, problems: string[]
     if (!allowed.includes(key)) problems.push(`${path}: unknown key '${key}'`);
   }
 
-  const { vars, bundles, exclude, mcp, settings, files, ssh, age, admin } = doc;
+  const { vars, bundles, exclude, mcp, settings, files, agents, ssh, age, admin } = doc;
   const ownVars: Record<string, string> = {};
   if (vars !== undefined) {
     if (!isObject(vars) || !Object.values(vars).every((v) => typeof v === "string")) {
@@ -93,6 +105,13 @@ function checkFile(path: string, doc: Obj, hostFile: boolean, problems: string[]
       }
     }
   }
+  let pin: AgentId[] | null = null;
+  if (agents !== undefined) {
+    const unknown = isStringList(agents) ? agents.filter((id) => !isAgentId(id)) : [];
+    if (!isStringList(agents) || agents.length === 0) problems.push(`${path}: 'agents' must be a list of ${AGENT_IDS.join(", ")}`);
+    else if (unknown.length > 0) problems.push(`${path}: 'agents' names ${unknown.map((id) => `'${id}'`).join(", ")}, which fleet does not know (${AGENT_IDS.join(", ")})`);
+    else pin = AGENT_IDS.filter((id) => agents.includes(id));
+  }
   const declared: Declared[] = [];
   if (settings !== undefined) {
     if (!isObject(settings)) {
@@ -111,10 +130,10 @@ function checkFile(path: string, doc: Obj, hostFile: boolean, problems: string[]
   if (admin !== undefined && typeof admin !== "boolean") problems.push(`${path}: 'admin' must be true or false`);
 
   const records: UnresolvedRecord[] = [];
-  if (files === undefined) return { records, declared, vars: ownVars };
+  if (files === undefined) return { records, declared, vars: ownVars, agents: pin };
   if (!Array.isArray(files)) {
     problems.push(`${path}: 'files' must be a list`);
-    return { records, declared, vars: ownVars };
+    return { records, declared, vars: ownVars, agents: pin };
   }
   const seen = new Set<string>();
   files.forEach((entry, i) => {
@@ -141,7 +160,7 @@ function checkFile(path: string, doc: Obj, hostFile: boolean, problems: string[]
     seen.add(target);
     records.push({ source, target });
   });
-  return { records, declared, vars: ownVars };
+  return { records, declared, vars: ownVars, agents: pin };
 }
 
 const listOf = (doc: Obj | null, key: string): string[] => (doc && isStringList(doc[key]) ? (doc[key] as string[]) : []);
@@ -175,8 +194,8 @@ function resolveSkills(catalog: Catalog, skills: string[], home: string, problem
   return resolved;
 }
 
-/** The one skill every apply installs from the tool, whatever the config says. */
-export const FLEET_SKILL_TARGET = `${SKILL_DIR}/fleet`;
+/** Where the one skill every apply installs from the tool goes, in each skills directory fleet links into. */
+export const FLEET_SKILL_TARGETS = SKILL_TARGETS.map((dir) => `${dir}/fleet`);
 
 /**
  * Reads `fleet.yaml`, `hosts/_defaults.yaml`, `hosts/<host>.yaml` and `catalog/skills.yaml` under the
@@ -196,7 +215,7 @@ export function loadConfig(configDir: string, host: string, options: LoadOptions
   const catalog = parseCatalog(configDir, problems, overlay);
   readPin(configDir, problems, overlay);
 
-  const empty: Checked = { records: [], declared: [], vars: {} };
+  const empty: Checked = { records: [], declared: [], vars: {}, agents: null };
   const checkedDefaults = defaults ? checkFile(defaultsPath, defaults, false, problems) : empty;
   const checkedHost = own ? checkFile(hostPath, own, true, problems) : empty;
   const vars = { ...checkedDefaults.vars, ...checkedHost.vars, HOME: home };
@@ -218,13 +237,24 @@ export function loadConfig(configDir: string, host: string, options: LoadOptions
   ).flatMap((name) => servers.get(name) ?? []);
   keys.push(...mcpKeys(pickedServers, vars, probedNode(), problems));
 
+  // A host file's list replaces the defaults', as every shared key does.
+  const pin = checkedHost.agents ?? checkedDefaults.agents;
+  const on = options.agents === undefined ? [...AGENTS] : hostAgents(pin, options.agents);
+  const unmet = new Set<AgentId>();
+  const keep = (path: string): boolean => {
+    if (!leftAlone(path, on)) return true;
+    unmet.add(agentOf(path)!.id);
+    return false;
+  };
+
   const merged = new Map<string, UnresolvedRecord>();
   for (const record of [...checkedDefaults.records, ...checkedHost.records]) merged.set(record.target, record);
 
   const fleetSkill = join(managedToolDir(home), "skills/fleet");
-  const files: FileRecord[] = existsSync(fleetSkill) ? [{ source: fleetSkill, target: FLEET_SKILL_TARGET }] : [];
+  const targets = skillTargets(on);
+  const files: FileRecord[] = existsSync(fleetSkill) ? targets.map((dir) => ({ source: fleetSkill, target: `${dir}/fleet` })) : [];
   for (const { source, target } of merged.values()) {
-    if (target === FLEET_SKILL_TARGET) {
+    if (FLEET_SKILL_TARGETS.includes(target)) {
       problems.push(`files: target '${target}' is the fleet skill, which every apply installs from the tool; a config cannot set it`);
       continue;
     }
@@ -235,7 +265,7 @@ export function loadConfig(configDir: string, host: string, options: LoadOptions
       problems.push(`files: source '${source}' for ${target} does not exist in the config repo`);
       continue;
     }
-    files.push({ source: absolute, target });
+    if (keep(target)) files.push({ source: absolute, target });
   }
 
   for (const [path, doc, key] of [[defaultsPath, defaults, "bundles"], [defaultsPath, defaults, "exclude"], [hostPath, own, "bundles"], [hostPath, own, "exclude"]] as const) {
@@ -259,14 +289,16 @@ export function loadConfig(configDir: string, host: string, options: LoadOptions
     }
     if (problems.length === 0 && conflicts.length === 0) {
       for (const [skill, dir] of resolveSkills(catalog, skills, home, problems)) {
-        const target = `${SKILL_DIR}/${skill}`;
-        if (merged.has(target)) problems.push(`skill '${skill}' and a files record both target ${target}`);
-        else files.push({ source: dir, target });
+        const clash = SKILL_TARGETS.map((root) => `${root}/${skill}`).find((target) => merged.has(target));
+        if (clash !== undefined) problems.push(`skill '${skill}' and a files record both target ${clash}`);
+        else files.push(...targets.map((root) => ({ source: dir, target: `${root}/${skill}` })));
       }
     }
   }
 
   if (problems.length > 0) throw new InvalidConfigError(problems);
-  const secrets = [...new Set(keys.flatMap((key) => secretNames(key.value)))].sort();
-  return conflicts.length > 0 ? { files: [], keys: [], conflicts, secrets: [], skills: [] } : { files, keys, conflicts, secrets, skills };
+  const kept = keys.filter((key) => keep(key.file));
+  const secrets = [...new Set(kept.flatMap((key) => secretNames(key.value)))].sort();
+  const left = AGENT_IDS.filter((id) => unmet.has(id));
+  return conflicts.length > 0 ? { files: [], keys: [], conflicts, secrets: [], skills: [], agents: on, pin, unmet: [] } : { files, keys: kept, conflicts, secrets, skills, agents: on, pin, unmet: left };
 }

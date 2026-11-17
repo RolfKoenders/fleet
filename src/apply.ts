@@ -1,7 +1,8 @@
 import { mkdirSync, rmSync, symlinkSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname } from "node:path";
-import { having, mergedFiles, writtenByBinary } from "./agents/index.ts";
+import { having, leftAlone, mergedFiles, writtenByBinary } from "./agents/index.ts";
+import type { AgentId } from "./agents/index.ts";
 import { isManagedTool } from "./dirs.ts";
 import { InvalidConfigError, loadConfig } from "./config.ts";
 import { note, send } from "./events.ts";
@@ -9,6 +10,7 @@ import { addServer, ensurePrivate, findClaude, removeServer, serverName, shadowW
 import { findTool } from "./tools.ts";
 import { MissingToolError, repoState, syncRepo, UnreachableError } from "./git.ts";
 import { readHostName } from "./host.ts";
+import { detectAgents, notInstalledWarnings } from "./hostagents.ts";
 import { emptyKeyPlan, keyName, planKeys, writeKeys } from "./keys.ts";
 import type { KeyChange, KeyPlan, KeyRef } from "./keys.ts";
 import { acquireLock, LockedError } from "./lock.ts";
@@ -27,7 +29,8 @@ import { readState, writeState } from "./state.ts";
 import { placeTool } from "./toolclone.ts";
 import type { AppliedState, KeyRecord, LinkRecord } from "./state.ts";
 
-type Plan = { links: LinkPlan; keys: KeyPlan; warnings: string[] };
+/** `notInstalled` is the part of `warnings` about agents fleet has config for and cannot find. */
+type Plan = { links: LinkPlan; keys: KeyPlan; warnings: string[]; notInstalled: string[]; pin: AgentId[] | null };
 type Planned = { host: string; plan: Plan; state: AppliedState | null };
 
 const conflictsOf = (plan: Plan) => [...plan.keys.conflicts, ...plan.links.conflicts];
@@ -60,23 +63,34 @@ function prepare(configDir: string, home: string, sources: SourceMode, repoConfl
     return { code: "invalid", messages: ["fleet: no host name set; `fleet init <host>` writes one"] };
   }
   try {
-    const config = loadConfig(configDir, host, { home, sources, overlay });
+    const config = loadConfig(configDir, host, { home, sources, overlay, agents: detectAgents(home) });
     const state = readState(home);
     // A source that could not be put in place hides its skills, so planning would only invent removals.
     const repos = [...repoConflicts, ...config.conflicts];
-    if (repos.length > 0) return { host, plan: { links: { ...emptyPlan(), conflicts: repos }, keys: emptyKeyPlan(), warnings: [] }, state };
+    if (repos.length > 0) return { host, plan: { links: { ...emptyPlan(), conflicts: repos }, keys: emptyKeyPlan(), warnings: [], notInstalled: [], pin: config.pin }, state };
     const secrets = resolveSecrets(configDir, host, home, config.secrets);
     const rendered = renderKeys(config.keys, secrets);
-    // An agent whose binary writes its servers cannot be written while it is missing. Its servers wait, and the first apply after it is installed adds them.
-    const missing = having("mcp").filter((a) => a.mcp.needsBinary === true && findTool(a.binary, process.env, home) === null);
+    // What an agent that is not on the host has is left as it is: not planned, so never removed, and kept in the applied state.
+    const recorded = { keys: (state?.keys ?? []).filter((k) => !leftAlone(k.file, config.agents)), links: (state?.links ?? []).filter((l) => !leftAlone(l.target, config.agents)) };
+    const notInstalled = notInstalledWarnings(
+      config.agents,
+      config.pin,
+      config.unmet,
+      [...(state?.keys ?? []).map((k) => k.file), ...(state?.links ?? []).map((l) => l.target)],
+    );
+    // An agent whose binary writes its servers cannot be written while it is missing, even one the host file names. Its servers wait, and the first apply after it is installed adds them.
+    const missing = having("mcp", config.agents).filter((a) => a.mcp.needsBinary === true && findTool(a.binary, process.env, home) === null);
     const waits = (key: { file: string }): boolean => missing.some((a) => a.mcp.file === key.file);
     const desired = rendered.filter((key) => !waits(key));
-    const keys = planKeys(desired, state?.keys ?? [], home);
+    const keys = planKeys(desired, recorded.keys, home, config.agents);
     keys.removes = keys.removes.filter((key) => !waits(key));
     const plan = {
-      links: planLinks(config.files, state?.links ?? [], home),
+      links: planLinks(config.files, recorded.links, home),
       keys,
+      notInstalled,
+      pin: config.pin,
       warnings: [
+        ...notInstalled,
         ...missing.flatMap((a) => {
           const left = rendered.filter((key) => key.file === a.mcp.file).length;
           return left > 0 ? [`${a.binary} is not installed, so ${left} MCP server${left === 1 ? " is" : "s are"} left out of ${a.mcp.file} until it is`] : [];
@@ -139,12 +153,12 @@ function report(plan: Plan, verbs: Verbs, color: boolean): Result {
  * order `status --conflicts` lists them. A conflicted link or key is not pending. Reads the host and the clones as
  * they are, so it needs no network; a skill source that is not cloned yet is a result with its reason, not a clone.
  */
-export function planCounts(configDir: string, home: string): { pending: number; conflicts: Conflict[] } | Result {
+export function planCounts(configDir: string, home: string): { pending: number; conflicts: Conflict[]; notInstalled: string[]; pin: AgentId[] | null } | Result {
   const planned = prepare(configDir, home, "offline");
   if (isResult(planned)) return planned;
   const { links, keys } = planned.plan;
   const pending = links.creates.length + links.removes.length + keys.creates.length + keys.updates.length + keys.removes.length;
-  return { pending, conflicts: conflictsOf(planned.plan) };
+  return { pending, conflicts: conflictsOf(planned.plan), notInstalled: planned.plan.notInstalled, pin: planned.plan.pin };
 }
 
 /** The conflicts `diff` would list, read the way `status` reads them: offline, writing nothing. */

@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import { buildSandbox, destroy, fakeCallsLog, sandboxEnv } from "../src/demo/sandbox.ts";
 import { LAUNCHD_PLIST } from "../src/scheduler.ts";
 import { CONFIG_DIR } from "../src/init.ts";
-import { makeHome, repoRoot, runBin, tempDir, writeExecutable } from "./helpers.ts";
+import { NODE, makeHome, repoRoot, runBin, tempDir, writeExecutable } from "./helpers.ts";
 import { EXIT } from "../src/exit.ts";
 
 const bin = join(repoRoot, "bin/fleet");
@@ -148,7 +148,7 @@ test("destroy refuses a directory that is not a demo sandbox", () => {
 test("on a terminal, demo --shell starts a shell with a prompt marker and the tour, and deletes the sandbox on exit", { skip: spawnSync("script", ["--version"], { stdio: "ignore" }).status !== 0 && "script(1) from util-linux is not installed, so there is no pty to run in" }, () => {
   const d = decoy();
   const before = snapshot(d.home);
-  const env = { HOME: d.home, PATH: `${d.path}:/usr/bin:/bin`, TMPDIR: d.tmp, TERM: "dumb", FLEET_NODE: process.execPath };
+  const env = { HOME: d.home, PATH: `${d.path}:/usr/bin:/bin`, TMPDIR: d.tmp, TERM: "dumb", FLEET_NODE: NODE };
   const r = spawnSync("script", ["-qec", `${bin} demo --shell`, "/dev/null"], { input: "fleet status | head -1\nssh me@server hostname 2>&1 | head -1\nexit\n", encoding: "utf8", env, timeout: 90_000 });
   assert.match(r.stdout, /To try:/);
   assert.match(r.stdout, /\(fleet demo\) .*\$ /);

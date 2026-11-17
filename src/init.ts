@@ -169,7 +169,7 @@ node=
 for c in "\${FLEET_NODE:-}" "$HOME/.local/share/fnm/aliases/default/bin/node" "$HOME/.local/bin/node" "$(command -v node 2>/dev/null || true)" ${SHELL_NODE_CANDIDATES.join(" ")}; do
   if [ -n "$c" ] && [ -x "$c" ] && "$c" -e 'process.exit(process.features.typescript ? 0 : 1)' 2>/dev/null; then node=$c; break; fi
 done
-[ -n "$node" ] && echo node=ok
+[ -n "$node" ] && echo node=ok && PATH="$(dirname "$node"):$PATH"
 if have git; then
   echo git=ok
   git ls-remote --quiet -- ${q(ctx.url)} HEAD >/dev/null 2>&1 && echo repo=ok

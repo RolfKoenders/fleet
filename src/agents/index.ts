@@ -51,8 +51,41 @@ export function mcpEntryOf(key: { file: string; path: string }): { agent: Has<"m
 /** True for a key in a file whose writes go through an agent's own binary. */
 export const writtenByBinary = (key: { file: string }): boolean => having("mcp").some((a) => a.mcp.needsBinary === true && a.mcp.file === key.file);
 
-/** The directory fleet links skills into. An agent with no target of its own reads it too, so one directory serves them all. */
-export const SKILL_DIR: string = having("skills").flatMap((a) => (a.skills.target === null ? [] : [a.skills.target]))[0]!;
+/** Every directory fleet links skills into, over the registered agents. */
+export const SKILL_TARGETS: string[] = [...new Set(AGENTS.flatMap((a) => (a.skills === undefined || a.skills.target === null ? [] : [a.skills.target])))];
+
+/**
+ * The directories fleet links skills into for the agents on a host: each one's own target, and for an agent
+ * with none the directory it reads that another registered agent targets (opencode reads Claude's), so one
+ * directory serves both and a second is never linked for the one that reads it.
+ */
+export function skillTargets(agents: readonly Agent[]): string[] {
+  return [
+    ...new Set(
+      agents.flatMap((a) => {
+        if (a.skills === undefined) return [];
+        return a.skills.target !== null ? [a.skills.target] : a.skills.dirs.filter((d) => SKILL_TARGETS.includes(d));
+      }),
+    ),
+  ];
+}
+
+/**
+ * The agents a host gets: the ones its host file names when it names any, else the ones found on it. A named
+ * agent is set up whether or not it is installed.
+ */
+export const hostAgents = (pin: readonly string[] | null, detected: readonly Agent[]): Registered[] =>
+  pin === null ? AGENTS.filter((a) => detected.some((d) => d.id === a.id)) : AGENTS.filter((a) => pin.includes(a.id));
+
+/**
+ * True for a path fleet leaves as it is on a host that gets `on`: it belongs to an agent that is not among them,
+ * and no agent that is reads it as a skill directory.
+ */
+export function leftAlone(path: string, on: readonly Agent[]): boolean {
+  const owner = agentOf(path);
+  if (owner === null || on.some((a) => a.id === owner.id)) return false;
+  return !skillTargets(on).some((dir) => inside(path, dir));
+}
 
 const inHome = (dir: string): string => dir.slice(2);
 

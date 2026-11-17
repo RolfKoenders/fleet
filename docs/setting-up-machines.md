@@ -10,6 +10,32 @@ Every machine pulls from and pushes to your config repo, at the address the repo
 git config --global url."https://github.com/you/".insteadOf "git@github.com:you/"
 ```
 
+## Which agents a machine gets
+
+A machine gets the agents installed on it. Fleet looks for each agent's program (`claude`, `opencode`) on the usual paths and in the directory of the Node that fleet runs under, where `npm -g` puts agent CLIs. Install an agent and the next apply sets it up. An agent that is not installed is left alone: nothing of its is written, and what fleet applied for it earlier stays where it is. Fleet says so, so that a missing install does not go unnoticed:
+
+```
+warning opencode: not installed, its config is left as is. Install it, or pin `agents:`
+```
+
+To choose instead of detect, name the agents in the machine's host file. The list replaces the defaults' list, and a named agent is set up whether or not it is installed (Claude's MCP servers still wait for `claude`, because they are written through it):
+
+```yaml
+agents: [claude]
+```
+
+`fleet status` shows what a machine gets, as `agents: claude 2.1.4 (opencode not installed)`, and `fleet context` and `fleet doctor` cover only those agents.
+
+### Taking an agent's config off a machine
+
+Naming an agent out of a host file, or uninstalling it, only stops fleet from touching it. To remove what fleet put there:
+
+1. Take the agent's config out of the config repo for that machine: its `settings.<agent>` keys, the `files` records for its paths, and its servers (leave the name out of `mcp.include`, or take the agent out of the server's `only`).
+2. Run `fleet push` while the agent is still installed or named in `agents`. Apply removes the keys and links it recorded, and leaves what you made by hand.
+3. Then name the agents the machine keeps in its host file, such as `agents: [claude]`, and push again. Fleet leaves the other agent alone from then on and stops warning about it.
+
+Do it in this order: a pinned-out agent is never touched, so a pin first would leave its files in place.
+
 ## Servers
 
 The timer runs in a systemd user session. On a server, keep that session alive after you log out:

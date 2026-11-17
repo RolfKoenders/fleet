@@ -238,3 +238,36 @@ test("a remote that really runs fleet status answers with its own repo, tools an
   assert.equal(remote.status.tools.sops, "3.13.3");
   assert.deepEqual(toolCalls(mhome, "sops"), [["--version", "--disable-version-check"]], "the remote ran its own fake sops, once");
 });
+
+test("a remote host's agents are read as printable text for the agents this fleet knows, and a host that sends none is not an error", () => {
+  const agents = [
+    { id: "claude", version: "2.1.4\u001b", active: true, pinned: true },
+    { id: "opencode", version: null, active: false, pinned: false },
+    { id: "from-a-newer-fleet", version: "9.9.9", active: true, pinned: false },
+    { id: "claude" },
+    "nonsense",
+  ];
+  const s = setup([{ name: "a", ssh: "alice@a" }, { name: "b", ssh: "alice@b" }], {
+    "alice@a": { stdout: statusDoc({ agents, notInstalled: ["opencode: not installed, its config is left as is. Install it, or pin `agents:`", 7] }) },
+    "alice@b": OK,
+    "alice@laptop": OK,
+  });
+  const { r, doc } = s.json();
+  assert.equal(r.code, EXIT.ok, r.stderr);
+  assert.deepEqual(byHost(doc.hosts, "a").status.agents, [
+    { id: "claude", version: "2.1.4?", active: true, pinned: true },
+    { id: "opencode", version: null, active: false, pinned: false },
+  ]);
+  assert.deepEqual(byHost(doc.hosts, "a").status.notInstalled, ["opencode: not installed, its config is left as is. Install it, or pin `agents:`"]);
+  assert.equal(byHost(doc.hosts, "b").status.agents, null, "a host on an older fleet sends none");
+  assert.equal(byHost(doc.hosts, "b").status.notInstalled, null);
+  assert.equal(byHost(doc.hosts, "b").result, "ok");
+  const text = runFleet(s.clone, ["status", "--all"], { home: s.home }).stdout;
+  assert.match(text, /^ {2}agents: claude 2\.1\.4\? \(pinned\) \(opencode not installed\)$/m, "the text is the same as a host's own");
+  assert.equal(text.split("agents:").length, 3, "this host and the one that sent them, and not the older one");
+});
+
+test("this host in status --all carries its own agents", () => {
+  const s = setup([{ name: "a", ssh: "alice@a" }], { "alice@a": OK });
+  assert.deepEqual(byHost(s.json().doc.hosts, "laptop").status.agents.map((a: { id: string }) => a.id), ["claude", "opencode"]);
+});

@@ -110,7 +110,7 @@ The widget is a separate project: [fleet-omarchy](https://github.com/RolfKoender
 ## Requirements
 
 - Linux with systemd, or macOS 12.3 or newer with Homebrew (see [Setting up machines](docs/setting-up-machines.md#macos))
-- Claude Code or opencode
+- Claude Code or opencode. A machine gets the agents installed on it ([details](docs/setting-up-machines.md#which-agents-a-machine-gets))
 - Node 22.18 or newer
 - git
 - [sops](https://github.com/getsops/sops) 3.11 or newer

@@ -2,12 +2,13 @@ import { spawnSync } from "node:child_process";
 import { existsSync, lstatSync } from "node:fs";
 import { basename } from "node:path";
 import { homedir } from "node:os";
-import { isAgentId, mcpEntryOf, SKILL_DIR } from "./agents/index.ts";
+import { isAgentId, mcpEntryOf, SKILL_TARGETS } from "./agents/index.ts";
 import type { AgentId, Has } from "./agents/index.ts";
 import { failure } from "./apply.ts";
 import { loadConfig } from "./config.ts";
 import type { Config } from "./config.ts";
 import { readHostName } from "./host.ts";
+import { detectAgents } from "./hostagents.ts";
 import { probe } from "./mcpprobe.ts";
 import type { ProbeResult, ProbeTarget } from "./mcpprobe.ts";
 import { paint } from "./output.ts";
@@ -71,7 +72,7 @@ function skillLinks(home: string): Check {
     return { name, result: "problem", detail: "the applied state cannot be read" };
   }
   const dangling = links
-    .filter((l) => l.target.startsWith(`${SKILL_DIR}/`) && isLink(expandTarget(l.target, home)) && !existsSync(expandTarget(l.target, home)))
+    .filter((l) => SKILL_TARGETS.some((dir) => l.target.startsWith(`${dir}/`)) && isLink(expandTarget(l.target, home)) && !existsSync(expandTarget(l.target, home)))
     .map((l) => l.target);
   return dangling.length === 0 ? { name, result: "ok", detail: null } : { name, result: "problem", detail: `dangling: ${dangling.join(", ")}` };
 }
@@ -219,7 +220,7 @@ export async function doctor(configDir: string, color: boolean, timeoutSeconds: 
   let config: Config | null = null;
   let failed: Result | null = null;
   try {
-    config = loadConfig(configDir, host, { home, sources: "none" });
+    config = loadConfig(configDir, host, { home, sources: "none", agents: detectAgents(home) });
   } catch (error) {
     failed = failure(error);
     if (failed === null) throw error;

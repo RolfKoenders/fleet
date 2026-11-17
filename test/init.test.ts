@@ -3,7 +3,7 @@ import { chmodSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync,
 import { dirname, join } from "node:path";
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { bareToolPath, skipIfSystemWide, git, installFakeClaude, makeClone, makeHome, pinText, pinToHead, publish, runFleet, tempDir, writeExecutable } from "./helpers.ts";
+import { NODE, bareToolPath, skipIfSystemWide, git, installFakeClaude, makeClone, makeHome, pinText, pinToHead, publish, runFleet, tempDir, writeExecutable } from "./helpers.ts";
 import { EXIT } from "../src/exit.ts";
 import { findTool } from "../src/tools.ts";
 import { SERVICE, TIMER, newIdentity, identityOf, keyLine, setup } from "./initworld.ts";
@@ -252,7 +252,7 @@ test("the config repo's path is what the host's own fleet reads: its first apply
   const s = setup({ lab: WITH_FILE });
   withNote(s);
   assert.equal(s.run().code, EXIT.ok);
-  const r = spawnSync(join(s.lab, ".local/bin/fleet"), ["status", "--json"], { encoding: "utf8", env: { HOME: s.lab, PATH: "/usr/bin:/bin", FLEET_NODE: process.execPath } });
+  const r = spawnSync(join(s.lab, ".local/bin/fleet"), ["status", "--json"], { encoding: "utf8", env: { HOME: s.lab, PATH: "/usr/bin:/bin", FLEET_NODE: NODE } });
   assert.equal(r.status, 0, r.stderr);
   assert.equal(JSON.parse(r.stdout).pending, 0);
 });

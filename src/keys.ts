@@ -2,7 +2,8 @@ import { createHash } from "node:crypto";
 import { chmodSync, lstatSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { parseJsonc } from "./jsonc.ts";
-import { having, mergedFiles, writtenByBinary } from "./agents/index.ts";
+import { AGENTS, having, mergedFiles, writtenByBinary } from "./agents/index.ts";
+import type { Agent } from "./agents/index.ts";
 import { expandTarget } from "./plan.ts";
 import type { Conflict } from "./plan.ts";
 import type { DesiredKey } from "./settings.ts";
@@ -100,9 +101,9 @@ const exists = (path: string): boolean => {
 };
 
 /** Reads the host, never writes. */
-export function planKeys(desired: DesiredKey[], recorded: KeyRecord[], home: string): KeyPlan {
+export function planKeys(desired: DesiredKey[], recorded: KeyRecord[], home: string, agents: readonly Agent[] = AGENTS): KeyPlan {
   const plan = emptyKeyPlan();
-  for (const agent of having("settings")) {
+  for (const agent of having("settings", agents)) {
     const old = agent.settings.alsoLoaded;
     if (old === undefined || !exists(expandTarget(old, home))) continue;
     plan.conflicts.push({

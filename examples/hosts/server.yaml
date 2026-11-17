@@ -12,6 +12,10 @@ age: ""
 vars:
   DOCS_URL: https://docs.internal.example.com
 
+# The agents this host gets. Without this line it gets the ones installed on it, and an agent
+# that is not installed is left alone. A host file's list replaces the defaults' list.
+# agents: [claude]
+
 # Take a skill bundle or a server away, even though the defaults add it:
 # exclude: [core]
 # mcp:

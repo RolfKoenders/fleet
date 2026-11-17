@@ -188,7 +188,7 @@ test("it does not commit, and does not apply: the repo is only dirty in the cata
   assert.equal(git(s.clone, "rev-parse", "HEAD"), head);
   assert.equal(git(s.clone, "status", "--porcelain"), "M catalog/skills.yaml");
   assert.equal(git(s.clone, "rev-parse", "origin/main"), head);
-  for (const path of [".claude", ".local", ".config/opencode"]) assert.equal(existsSync(join(s.home, path)), false, path);
+  for (const path of [".claude", ".local/state", ".local/share", ".config/opencode"]) assert.equal(existsSync(join(s.home, path)), false, path);
 });
 
 test("an applied host keeps its source clone and links where they were until apply runs", () => {

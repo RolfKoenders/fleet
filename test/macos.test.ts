@@ -1,6 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { chmodSync, closeSync, existsSync, symlinkSync, mkdirSync, openSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync, writeSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { setup } from "./initworld.ts";
@@ -8,7 +8,7 @@ import type { S } from "./initworld.ts";
 import { installStatusTools, makeClone, makeHome, repoRoot, runFleet, writeExecutable, linuxOnly } from "./helpers.ts";
 import { EXIT } from "../src/exit.ts";
 import { CONFIG_DIR } from "../src/init.ts";
-import { HOMEBREW_BIN, HOMEBREW_KEG_NODES, probeDirs, SHELL_NODE_CANDIDATES, SHELL_PROBE_PATH } from "../src/tools.ts";
+import { HOMEBREW_BIN, HOMEBREW_KEG_NODES, probedNode, probeDirs, SHELL_NODE_CANDIDATES, SHELL_PROBE_PATH } from "../src/tools.ts";
 import { LAUNCHD_LABEL, LAUNCHD_PLIST, macosVersionProblem, parseOs } from "../src/scheduler.ts";
 import { LOG_KEEP, LOG_LIMIT, trimLog } from "../src/logtrim.ts";
 
@@ -202,7 +202,7 @@ process.exit(fs.existsSync(process.env.HOME + "/.fake-agent-loaded") ? 0 : 113);
 
 test("the shell scripts and the TypeScript name the same Homebrew places", () => {
   const dirs = probeDirs("/h");
-  assert.deepEqual(dirs, ["/h/.local/bin", "/h/.opencode/bin", "/usr/bin", "/usr/local/bin", HOMEBREW_BIN], "the Linux order is as it was, with Homebrew appended");
+  assert.deepEqual(dirs, ["/h/.local/bin", "/h/.opencode/bin", "/usr/bin", "/usr/local/bin", dirname(probedNode()), HOMEBREW_BIN], "the Linux order is as it was, with the directory of Node and then Homebrew appended");
   assert.equal(SHELL_PROBE_PATH, "$HOME/.local/bin:$HOME/.opencode/bin:/usr/bin:/usr/local/bin:/opt/homebrew/bin");
   const wanted = [`${HOMEBREW_BIN}/node`, ...HOMEBREW_KEG_NODES];
   assert.deepEqual(SHELL_NODE_CANDIDATES, wanted.map((p) => `"${p}"`));

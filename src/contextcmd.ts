@@ -2,6 +2,7 @@ import { homedir } from "node:os";
 import { currentDefinitions, measureContext } from "./context.ts";
 import { renderContext } from "./contextview.ts";
 import { readHostName } from "./host.ts";
+import { agentsOnHost } from "./hostagents.ts";
 import type { ContextReport } from "./context.ts";
 import type { Result } from "./output.ts";
 import { detectLevel } from "./tui/color.ts";
@@ -28,7 +29,7 @@ export function measureHere(configDir: string | null, home: string, now: Date): 
       messages.push(`fleet: the config could not be read, so a measurement cannot be compared with it (${(error as Error).message.split("\n")[0]})`);
     }
   }
-  const report = measureContext(home, { now, definitions });
+  const report = measureContext(home, { now, definitions, agents: agentsOnHost(configDir, host, home) });
   messages.push(...report.notes.map((n) => `fleet: ${n}`), ...report.agents.flatMap((a) => a.notes.map((n) => `fleet: ${a.agent}: ${n}`)));
   return { report, messages };
 }

@@ -136,6 +136,19 @@ export const RECIPES: Recipe[] = [
       "Hosts run the pinned commit, so this change reaches them only once published. Tell the user to review it and ask for `fleet push`; each host moves its fleet clone at its next apply. Do not run it for them.",
     ],
   },
+  {
+    id: "remove-agent",
+    title: "Remove an agent's config from a host",
+    files: ["hosts/_defaults.yaml or hosts/<host>.yaml (the agent's `settings`, `files` records and `mcp.include`, then `agents`)", "catalog/mcp.yaml (a server that has `only`)"],
+    steps: [
+      "A host gets the agents installed on it. Fleet leaves an agent that is not installed alone and never removes what it applied for it, so removal comes first, while the agent is still installed or named in the host file's `agents`.",
+      "Take everything of that agent out of the config for the host: its keys under `settings.<agent>`, the `files` records that target its paths (such as `~/.config/opencode/AGENTS.md`) and the servers it gets (take the name out of `mcp.include`, or the agent out of the server's `only`). Say which host, because the defaults reach every host.",
+      "Apply removes only what fleet recorded, and what someone made by hand there stays. The user uninstalls the agent themselves, after the push or before it.",
+      "Once that is pushed, name the agents the host keeps in its host file: `agents: [claude]`. Fleet then leaves the other agent alone and stops saying it is not installed. Do not pin first: a pinned-out agent is never touched, so nothing would be removed.",
+    ],
+    checks: ["`fleet diff` lists `remove` for each owned key and link of the agent, and no conflict. After the pin, `fleet diff` says `nothing to do` with no `not installed` warning, and `fleet status` shows the agent as `(<id> pinned out)` or `(<id> not installed)`."],
+    stops: ["Tell the user to review the change and ask for `fleet push` so the removal reaches the host, then to ask for it again after the pin is added."],
+  },
 ];
 
 /** The Recipes section's body: the rules, then each recipe under a `###` heading. */

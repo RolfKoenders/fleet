@@ -1,4 +1,7 @@
 import { having } from "../agents/index.ts";
+import type { AgentId } from "../agents/index.ts";
+import { detectAgents } from "../hostagents.ts";
+import { readCache } from "../tui/cache.ts";
 import { readHostName } from "../host.ts";
 import { LockedError, acquirePushLock } from "../lock.ts";
 import { loadModel } from "../tui/model.ts";
@@ -34,7 +37,7 @@ import type { Job } from "./jobs.ts";
  *   POST /api/push     Runs the real `fleet push` (the push lock is taken by that process), relaying its events to every
  *                      open stream as `push` events, and answers when it has ended. Body: `{}` or `{"message": "..."}`.
  *                      When another push is running it answers 409 with code `locked` and "a push is already running (pid N)".
- *   GET  /api/matrix   What each host gets, from the files on disk: `agents` (`{id, name}` of each agent a server can be for), hosts, bundles (with their skills), servers, and the
+ *   GET  /api/matrix   What each host gets, from the files on disk: `agents` (`{id, name, used}` of each agent a server can be for, `used` when this host has it, the bridge's memory of another host's status reports it or a host file names it), hosts, bundles (with their skills), servers, and the
  *                      cell of each host (`on`, `picked`, `excluded`), plus `outside`: uncommitted changes in the config repo.
  *   GET  /api/secrets  The secret names, which hosts can read each and which servers use it, and `table`: each name against each host as
  *                      `set`, `missing` or `unused`. Never a value.
@@ -154,7 +157,7 @@ export function routes(deps: ApiDeps): Route[] {
       path: "/api/matrix",
       handle: () => {
         const model = loadModel(deps.configDir, readHostName(deps.home));
-        return { status: 200, body: { ok: true, ...matrixDoc(model), outside: outside() } };
+        return { status: 200, body: { ok: true, ...matrixDoc(model, inUse(model)), outside: outside() } };
       },
     },
     {
@@ -236,7 +239,7 @@ export function routes(deps: ApiDeps): Route[] {
         const body = await req.json();
         const p = preview(deps.configDir, readHostName(deps.home), heldOps(body), showOf(body), { home: deps.home, staged: stagedOf(body) });
         const { before: _before, after, edited, ...rest } = p;
-        return { status: 200, body: { ok: true, ...rest, matrix: matrixDoc(after), secrets: secretsTable(deps.configDir, after, edited), outside: outside() } };
+        return { status: 200, body: { ok: true, ...rest, matrix: matrixDoc(after, inUse(after)), secrets: secretsTable(deps.configDir, after, edited), outside: outside() } };
       },
     },
     {
@@ -401,6 +404,17 @@ export function routes(deps: ApiDeps): Route[] {
     return ops;
   }
 
+  /**
+   * The agents a server form offers: those this host has, those another host last reported (the bridge's memory of its status) and
+   * those a host file names. With none known, every agent.
+   */
+  function inUse(model: ReturnType<typeof loadModel>): Set<AgentId> {
+    const used = new Set<AgentId>(detectAgents(deps.home).map((a) => a.id));
+    for (const { result } of Object.values(readCache(deps.home))) for (const a of result.status?.agents ?? []) if (a.active) used.add(a.id);
+    for (const host of model.hosts) for (const id of host.agents ?? []) used.add(id);
+    return used.size > 0 ? used : new Set(having("mcp").map((a) => a.id));
+  }
+
   function outside(): string[] {
     return outsideChanges(deps.configDir);
   }
@@ -415,7 +429,7 @@ export function routes(deps: ApiDeps): Route[] {
 const refused = (status: number, code: string, message: string, extra: Record<string, unknown> = {}): ApiResponse => ({ status, body: { ok: false, code, messages: [`fleet: ${message}`], ...extra } });
 
 /** The matrix as the page gets it: the bridge's model, without its directory. */
-const matrixDoc = (model: ReturnType<typeof loadModel>) => ({ agents: having("mcp").map((a) => ({ id: a.id, name: a.name })), self: model.self, hosts: model.hosts, bundles: model.bundles, servers: model.servers, sources: model.sources, problems: model.problems });
+const matrixDoc = (model: ReturnType<typeof loadModel>, used: ReadonlySet<AgentId>) => ({ agents: having("mcp").map((a) => ({ id: a.id, name: a.name, used: used.has(a.id) })), self: model.self, hosts: model.hosts, bundles: model.bundles, servers: model.servers, sources: model.sources, problems: model.problems });
 
 function showOf(body: unknown): string | null {
   const show = (body as Record<string, unknown>).show;

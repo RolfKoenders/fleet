@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { installFakeClaude, installFakeTool, installStatusTools, makeClone, makeHome, makeSource, publish, runFleet } from "./helpers.ts";
+import { NODE, installFakeClaude, installFakeTool, installStatusTools, makeClone, makeHome, makeSource, publish, runFleet } from "./helpers.ts";
 import type { Run } from "./helpers.ts";
 
 /**
@@ -104,7 +104,7 @@ function normalize(text: string, w: { clone: string; home: string; source: { rem
     [w.home, "<HOME>"],
   ];
   // Where Node is differs per machine, and it can be a directory the rest of the text also names (`/usr/bin`), so the two places it appears are replaced whole.
-  const bin = dirname(process.execPath);
+  const bin = dirname(NODE);
   let out = text.split(`${bin}:/usr/local/bin:/usr/bin:/bin`).join("<NODE_BIN>:/usr/local/bin:/usr/bin:/bin").split(`${bin}/npx`).join("<NODE_BIN>/npx");
   for (const [from, to] of pairs) out = out.split(from).join(to);
   return out
@@ -114,6 +114,18 @@ function normalize(text: string, w: { clone: string; home: string; source: { rem
     .replace(/\b[0-9a-f]{40}\b/g, "<SHA>")
     .replace(/\b[0-9a-f]{7,12}\b(?=[ ",)\n]|$)/g, (m) => (/\d/.test(m) && /[a-f]/.test(m) ? "<SHA>" : m));
 }
+
+/**
+ * What `status --json` printed before it had `agents` and `notInstalled`, which are the only difference an upgrade makes to
+ * these outputs. The stored files are from before, so the two fields are taken out here, and the tests of the status
+ * document check them.
+ */
+const withoutNewStatusFields = (r: Run): Run => {
+  const doc = JSON.parse(r.stdout) as Record<string, unknown>;
+  delete doc.agents;
+  delete doc.notInstalled;
+  return { ...r, stdout: `${JSON.stringify(doc, null, 2)}\n` };
+};
 
 /** The output of a run, as the golden file holds it. Everything that comes back, so a new stream shows up too. */
 const shown = (name: string, r: Run, w: Parameters<typeof normalize>[1]): string => `$ ${name}\nexit ${r.code}\n--- stdout\n${normalize(r.stdout, w)}--- stderr\n${normalize(r.stderr, w)}`;
@@ -142,7 +154,7 @@ test("golden: a first apply, as fleet diff, apply, context and status show it", 
   step("context", "--json");
   step("context");
   installStatusTools(w.home);
-  step("status", "--json");
+  out.push(shown("fleet status --json", withoutNewStatusFields(run("status", "--json")), w));
   check("first-apply.txt", out.join("\n"));
   // The files apply wrote, as a reader of the host would see them.
   check("first-apply-files.txt", ["~/.claude.json", "~/.claude/settings.json", "~/.config/opencode/opencode.jsonc"].map((f) => `=== ${f}\n${normalize(readFileSync(join(w.home, f.slice(2)), "utf8"), w)}\n`).join(""));

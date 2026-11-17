@@ -1,9 +1,10 @@
 import { homedir } from "node:os";
-import { mcpEntryOf, SKILL_DIR } from "./agents/index.ts";
+import { mcpEntryOf, SKILL_TARGETS } from "./agents/index.ts";
 import { withoutEmpty } from "./agents/shape.ts";
 import { failure } from "./apply.ts";
 import { loadConfig } from "./config.ts";
 import type { Config } from "./config.ts";
+import { detectAgents } from "./hostagents.ts";
 import { hashValue, keyName, lookup, readDoc } from "./keys.ts";
 import { acquireLock, LockedError } from "./lock.ts";
 import { paint } from "./output.ts";
@@ -117,14 +118,13 @@ function adoptMcp(configDir: string, host: string, home: string, config: Config,
 }
 
 function adoptSkill(home: string, config: Config, name: string): Adoption {
-  const target = `${SKILL_DIR}/${name}`;
-  const record = config.files.find((f) => f.target === target);
-  if (!config.skills.includes(name) || record === undefined) {
+  const records = config.files.filter((f) => SKILL_TARGETS.some((dir) => f.target === `${dir}/${name}`));
+  if (!config.skills.includes(name) || records.length === 0) {
     return invalid(`'${name}' is not in a bundle this host picks, so there is nothing to adopt. Pick its bundle in the host file first.`);
   }
-  const plan = planLinks([record], [], home);
+  const plan = planLinks(records, [], home);
   if (plan.conflicts.length > 0) return { conflicts: plan.conflicts };
-  if (plan.creates.length > 0) return invalid(`nothing to adopt: ${target} does not exist; 'fleet apply' creates it`);
+  if (plan.creates.length > 0) return invalid(`nothing to adopt: ${plan.creates[0]!.target} does not exist; 'fleet apply' creates it`);
   return { keys: [], links: plan.noops, left: [] };
 }
 
@@ -154,7 +154,7 @@ export function adopt(configDir: string, args: string[], color: boolean, home: s
   }
   try {
     // Sources are only read: a missing clone is cloned, as `diff` does, and nothing is moved.
-    const config = loadConfig(configDir, host, { home, sources: "diff" });
+    const config = loadConfig(configDir, host, { home, sources: "diff", agents: detectAgents(home) });
     if (config.conflicts.length > 0) return conflictResult(config.conflicts, color);
     const adoption = kind === "mcp" ? adoptMcp(configDir, host, home, config, name) : adoptSkill(home, config, name);
     if (isRefused(adoption)) return conflictResult(adoption.conflicts, color);
