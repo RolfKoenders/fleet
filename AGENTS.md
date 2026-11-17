@@ -14,6 +14,10 @@ Terms are defined in `GLOSSARY.md`. Use them as written there.
 - The landing page's terminal clips are recorded from the bridge: `npm run site:frames` rewrites `site/frames.js`, and a test fails when a change to the bridge makes the committed file stale. To add a clip, see the top of `scripts/site-frames/record.ts`.
 - The landing page's What's new section, release pill and `site/changelog/index.html` are generated from `CHANGELOG.md`: `npm run site:changelog` rewrites them, and a test fails when `CHANGELOG.md` changes without it.
 
+## Adding an agent
+
+What fleet knows about an agent is one module in `src/agents/` and one line in the registry in `src/agents/index.ts`. Nothing else names an agent: loop over `AGENTS`. `test/agents.conformance.test.ts` runs against every registered agent, so a new one gets it by being registered; the compiler also asks for its demo version line (`src/demo/fakes.ts`). Cite the agent's official documentation for every path and key in its module.
+
 ## Changelog
 
 Every user-facing change adds a line under `## Unreleased` in `CHANGELOG.md`, in the same commit or PR. Releases are described in `docs/releasing.md`.

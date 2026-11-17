@@ -3,6 +3,7 @@ import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { AGENTS } from "./agents/index.ts";
 import { failure } from "./apply.ts";
 import { loadConfig } from "./config.ts";
 import { repoState, runGit, UnreachableError } from "./git.ts";
@@ -179,8 +180,7 @@ if have sops; then
   echo "sops_version=$(sops ${SOPS_VERSION_ARGS.join(" ")} 2>/dev/null | head -n 1)"
 fi
 have age-keygen && echo age-keygen=ok
-have claude && echo claude=ok
-have opencode && echo opencode=ok
+${AGENTS.map((a) => `have ${a.binary} && echo ${a.id}=ok`).join("\n")}
 exit 0
 `;
   let facts: Map<string, string>;
@@ -219,11 +219,18 @@ exit 0
   }
   if (!facts.has("age-keygen")) items.push(CHECKLIST.age(os));
   if (items.length === 0) {
-    if (!facts.has("claude") && !facts.has("opencode")) ctx.messages.push(`fleet: ${ctx.host} has neither Claude Code nor opencode yet; fleet sets up their files, so install one to use them`);
+    if (!AGENTS.some((a) => facts.has(a.id))) ctx.messages.push(`fleet: ${ctx.host} has ${noAgents()} yet; fleet sets up their files, so install one to use them`);
     return { changed: false };
   }
   ctx.checklist.push(...items);
   return { stop: { code: "missing-prerequisite", messages: [`fleet: ${ctx.host} is missing ${items.length} prerequisite${items.length === 1 ? "" : "s"}; nothing was changed there`] } };
+}
+
+/** `neither Claude Code nor opencode`, for the warning that a host has no agent. */
+function noAgents(): string {
+  const names = AGENTS.map((a) => a.name);
+  if (names.length === 1) return `no ${names[0]}`;
+  return names.length === 2 ? `neither ${names[0]} nor ${names[1]}` : `none of ${names.slice(0, -1).join(", ")} or ${names.at(-1)}`;
 }
 
 // Step 2

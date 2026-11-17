@@ -1,3 +1,4 @@
+import { agentById, AGENTS } from "../agents/index.ts";
 import { KINDS, readTokens } from "../contextread.ts";
 import type { AgentContext, ContextItem, ContextKind, ContextPart, ContextReport } from "../context.ts";
 import { formatTokens } from "../tokens.ts";
@@ -12,7 +13,6 @@ import { isObject } from "../yamlfile.ts";
  * looks the same either way.
  */
 
-const AGENTS = ["claude", "opencode"] as const;
 const SIZED = 10;
 const UNSIZED = 6;
 const MAX_AGENTS = AGENTS.length;
@@ -78,8 +78,10 @@ function readItem(value: unknown): ContextItem | null {
 export function fromMemory(value: unknown): ContextReport | null {
   if (!isObject(value) || !Array.isArray(value.agents)) return null;
   const agents: AgentContext[] = [];
-  for (const a of value.agents.slice(0, MAX_AGENTS)) {
-    const name = isObject(a) ? AGENTS.find((n) => n === a.agent) : undefined;
+  // An agent this fleet does not know comes from a newer one: it is dropped before the cap, so it cannot crowd out one that is shown.
+  const known = value.agents.filter((a) => isObject(a) && agentById(a.agent) !== undefined);
+  for (const a of known.slice(0, MAX_AGENTS)) {
+    const name = isObject(a) ? agentById(a.agent)?.id : undefined;
     if (!isObject(a) || name === undefined) continue;
     const [instructions, skills, mcp] = [readPart(a.instructions), readPart(a.skills), readPart(a.mcp)];
     if (instructions === null || skills === null || mcp === null) continue;

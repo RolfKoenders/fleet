@@ -8,7 +8,7 @@ import { Headless } from "../../src/tui/headless.ts";
 import { loadModel } from "../../src/tui/model.ts";
 import { paintDiff } from "../../src/tui/buffer.ts";
 import { PARTS } from "../../src/contextview.ts";
-import { shown } from "../../src/tui/contextshown.ts";
+import { fromMemory, shown } from "../../src/tui/contextshown.ts";
 import { realProbe } from "../../src/tui/probe.ts";
 import type { Probe } from "../../src/tui/probe.ts";
 import { theme } from "../../src/tui/theme.ts";
@@ -327,4 +327,12 @@ test("probe: another host is asked with fleet context --json over ssh and read l
   const calls = readFileSync(join(w.home, "ssh-calls.log"), "utf8");
   assert.match(calls, /fleet context --json/);
   assert.doesNotMatch(calls, /doctor/);
+});
+
+test("the bridge's memory drops an agent fleet does not know before it caps the count, so one it knows is still shown", () => {
+  const part = { tokens: 1, count: 1, unmeasured: 0 };
+  const entry = (agent: string) => ({ agent, instructions: part, skills: part, mcp: part, items: [] });
+  const report = fromMemory({ agents: [entry("antigravity"), entry("someday"), entry("claude"), entry("opencode")] });
+  assert.deepEqual(report?.agents.map((a) => a.agent), ["claude", "opencode"]);
+  assert.equal(fromMemory({ agents: [entry("antigravity")] }), null, "nothing known is nothing to show");
 });

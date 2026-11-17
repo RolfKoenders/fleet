@@ -2,18 +2,18 @@ import { spawnSync } from "node:child_process";
 import { existsSync, lstatSync } from "node:fs";
 import { basename } from "node:path";
 import { homedir } from "node:os";
+import { isAgentId, mcpEntryOf, SKILL_DIR } from "./agents/index.ts";
+import type { AgentId, Has } from "./agents/index.ts";
 import { failure } from "./apply.ts";
 import { loadConfig } from "./config.ts";
 import type { Config } from "./config.ts";
 import { readHostName } from "./host.ts";
-import { CLAUDE_JSON } from "./mcp.ts";
 import { probe } from "./mcpprobe.ts";
 import type { ProbeResult, ProbeTarget } from "./mcpprobe.ts";
 import { paint } from "./output.ts";
 import type { Result } from "./output.ts";
 import { expandTarget } from "./plan.ts";
 import { renderKeys, resolveSecrets } from "./secrets.ts";
-import { SETTINGS_FILE } from "./settings.ts";
 import { saveDoctorResult } from "./doctorresult.ts";
 import { hashValue } from "./keys.ts";
 import { ageKeyPath } from "./sops.ts";
@@ -23,7 +23,7 @@ import { count, printable, timerState } from "./status.ts";
 import { hostTargets } from "./targets.ts";
 import { secretNames } from "./template.ts";
 import { estimateTokens, formatTokens } from "./tokens.ts";
-import { findTool } from "./tools.ts";
+import { findTool, probeExtraDirs } from "./tools.ts";
 import { isObject } from "./yamlfile.ts";
 import type { Obj } from "./yamlfile.ts";
 
@@ -43,7 +43,7 @@ const SERVER_RESULTS: ServerResult[] = ["ok", "auth-needed", "unreachable", "mis
  */
 export type ServerCheck = {
   server: string;
-  tool: "claude" | "opencode";
+  tool: AgentId;
   transport: "stdio" | "http" | "sse" | "remote";
   result: ServerResult;
   tools: number | null;
@@ -61,7 +61,7 @@ export type DoctorFields = { checks: Check[]; servers: ServerCheck[] };
 
 const shown = (path: string, home: string): string => (path.startsWith(`${home}/`) ? `~${path.slice(home.length)}` : path);
 
-/** Links fleet recorded under `~/.claude/skills` whose target is gone. */
+/** Links fleet recorded under the skills directory whose target is gone. */
 function skillLinks(home: string): Check {
   const name = "skill-links";
   let links;
@@ -71,7 +71,7 @@ function skillLinks(home: string): Check {
     return { name, result: "problem", detail: "the applied state cannot be read" };
   }
   const dangling = links
-    .filter((l) => l.target.startsWith("~/.claude/skills/") && isLink(expandTarget(l.target, home)) && !existsSync(expandTarget(l.target, home)))
+    .filter((l) => l.target.startsWith(`${SKILL_DIR}/`) && isLink(expandTarget(l.target, home)) && !existsSync(expandTarget(l.target, home)))
     .map((l) => l.target);
   return dangling.length === 0 ? { name, result: "ok", detail: null } : { name, result: "problem", detail: `dangling: ${dangling.join(", ")}` };
 }
@@ -117,31 +117,16 @@ function localChecks(home: string, usesSecrets: boolean | null): Check[] {
 
 // ---- servers ----
 
-export type Planned = { server: string; tool: "claude" | "opencode"; transport: ServerCheck["transport"]; target: ProbeTarget | null; credentials: boolean };
+export type Planned = { server: string; tool: AgentId; transport: ServerCheck["transport"]; target: ProbeTarget | null; credentials: boolean };
 
 /** A server's check, and the hash of its catalog entry as the config has it before any secret is filled in. */
 type Checked = { check: ServerCheck; definition: string };
 
-const strings = (v: unknown): string[] | null => (Array.isArray(v) && v.every((x) => typeof x === "string") ? (v as string[]) : null);
-const stringMap = (v: unknown): Record<string, string> => (isObject(v) ? (Object.fromEntries(Object.entries(v).filter(([, x]) => typeof x === "string")) as Record<string, string>) : {});
-
-/** What to probe for one rendered entry (the page probes an entry that is not on disk yet), in the shape `mcp.ts` renders for that tool. Null when the entry is not of that shape. */
-export function planEntry(server: string, tool: "claude" | "opencode", entry: unknown, cwd: string): Planned {
-  const bad = (transport: ServerCheck["transport"]): Planned => ({ server, tool, transport, target: null, credentials: false });
-  if (!isObject(entry)) return bad("stdio");
-  if (tool === "claude" && entry.type === "stdio" && typeof entry.command === "string") {
-    return { server, tool, transport: "stdio", target: { kind: "stdio", command: [entry.command, ...(strings(entry.args) ?? [])], env: stringMap(entry.env), cwd }, credentials: false };
-  }
-  if (tool === "opencode" && entry.type === "local") {
-    const command = strings(entry.command);
-    return command === null || command.length === 0 ? bad("stdio") : { server, tool, transport: "stdio", target: { kind: "stdio", command, env: stringMap(entry.environment), cwd }, credentials: false };
-  }
-  const transport = tool === "opencode" ? "remote" : entry.type === "sse" ? "sse" : "http";
-  if ((tool === "opencode" ? entry.type === "remote" : entry.type === "http" || entry.type === "sse") && typeof entry.url === "string") {
-    const headers = stringMap(entry.headers);
-    return { server, tool, transport, target: { kind: "network", transport, url: entry.url, headers }, credentials: Object.keys(headers).length > 0 };
-  }
-  return bad(transport);
+/** What to probe for one rendered entry (the page probes an entry that is not on disk yet), in the shape `agent` renders. Its `target` is null when the entry is not of that shape. */
+export function planEntry(server: string, agent: Has<"mcp">, entry: unknown, cwd: string): Planned {
+  const tool = agent.id;
+  const read = isObject(entry) ? agent.mcp.read(entry, cwd) : null;
+  return read === null ? { server, tool, transport: "stdio", target: null, credentials: false } : { server, tool, transport: read.transport, target: read.target, credentials: read.credentials };
 }
 
 /** Text that is safe to show: no secret value in it, and only printable characters. */
@@ -155,16 +140,16 @@ const isNpx = (target: ProbeTarget): boolean => target.kind === "stdio" && basen
 const NPX_HINT = "npx may still be downloading the package; retry with a higher --timeout";
 
 async function checkServers(config: Config, configDir: string, host: string, home: string, timeoutMs: number): Promise<Checked[]> {
-  const keys = config.keys.filter((k) => (k.file === CLAUDE_JSON && k.path.startsWith("mcpServers.")) || (k.file === SETTINGS_FILE.opencode && k.path.startsWith("mcp.")));
+  const keys = config.keys.filter((k) => mcpEntryOf(k) !== null);
   // Only the secrets the servers use are decrypted.
   const names = [...new Set(keys.flatMap((k) => secretNames(k.value)))].sort();
   const secrets = resolveSecrets(configDir, host, home, names);
   const secretValues = [...secrets.values()];
-  const extraDirs = [`${home}/.local/bin`, `${home}/.opencode/bin`, "/usr/bin", "/usr/local/bin"];
+  const extraDirs = probeExtraDirs(home);
 
   const planned = renderKeys(keys, secrets).map((k) => {
-    const claude = k.file === CLAUDE_JSON;
-    return planEntry(k.path.slice(claude ? "mcpServers.".length : "mcp.".length), claude ? "claude" : "opencode", k.value, home);
+    const { agent, name } = mcpEntryOf(k)!;
+    return planEntry(name, agent, k.value, home);
   });
   const records = await Promise.all(
     planned.map(async (p, i): Promise<Checked> => {
@@ -284,7 +269,7 @@ const checkOf = (v: unknown): Check | null =>
   isObject(v) && printable(v.name) !== null ? { name: printable(v.name)!, result: v.result === "ok" || v.result === "unknown" ? v.result : "problem", detail: printable(v.detail) } : null;
 const serverOf = (v: unknown): ServerCheck | null => {
   if (!isObject(v) || printable(v.server) === null) return null;
-  const tool = v.tool === "claude" || v.tool === "opencode" ? v.tool : null;
+  const tool = isAgentId(v.tool) ? v.tool : null;
   const transport = (["stdio", "http", "sse", "remote"] as const).find((t) => t === v.transport) ?? null;
   if (tool === null || transport === null) return null;
   const result = asServerResult(v.result);
@@ -295,7 +280,8 @@ const serverOf = (v: unknown): ServerCheck | null => {
 function fromDocument(doc: Obj): DoctorFields | null {
   if (!Array.isArray(doc.checks) || !Array.isArray(doc.servers)) return null;
   const checks = doc.checks.map(checkOf);
-  const servers = doc.servers.map(serverOf);
+  // A server of an agent this fleet does not know comes from a newer fleet: it is left out, and the rest is read.
+  const servers = doc.servers.filter((v) => !(isObject(v) && typeof v.tool === "string" && !isAgentId(v.tool))).map(serverOf);
   if (checks.includes(null) || servers.includes(null)) return null;
   return { checks: checks as Check[], servers: servers as ServerCheck[] };
 }

@@ -203,6 +203,9 @@ function statusScreen() {
 
 const mono = (/** @type {string} */ t) => h("span", { class: "m" }, t);
 
+/** The agents a server can be for, in the order the server lists them. */
+const agentList = () => /** @type {{ id: string, name: string }[]} */ (model.base?.agents ?? []);
+
 /** The matrix as the page shows it: the server's answer for the held edits when there is one, else the files on disk. */
 const shownMatrix = () => model.preview?.matrix ?? model.base;
 
@@ -381,7 +384,7 @@ let openerId = "";
  * @param {import("./adding.js").AddKind} kind @param {string} [opener] the id of what gets the focus back, when it is not what has it now
  */
 function openAdd(kind, opener = "") {
-  openForm(freshAdd(kind), opener);
+  openForm(freshAdd(kind, agentList()), opener);
 }
 
 /**
@@ -389,7 +392,7 @@ function openAdd(kind, opener = "") {
  * @param {import("./adding.js").AddKind} kind @param {string} name @param {string} [opener]
  */
 function openEdit(kind, name, opener = "") {
-  if (openForm(freshEdit(kind, name), opener)) loadEdit();
+  if (openForm(freshEdit(kind, name, agentList()), opener)) loadEdit();
 }
 
 /** Tab wraps inside the dialog: from its last control to its first, and back. @param {HTMLDialogElement} dialog */
@@ -459,7 +462,7 @@ async function loadEdit() {
     const s = startOf(f.kind, name, doc, own);
     f.edit = { ...f.edit, state: s.state, error: s.error, reason: s.reason, path: doc.path, text: doc.text ?? "", base: s.base };
     if (s.state === "ready") {
-      if (f.kind === "server") f.server = serverFormOf(name, s.value);
+      if (f.kind === "server") f.server = serverFormOf(name, s.value, agentList());
       else if (f.kind === "source") f.source = sourceFormOf(name, s.value);
       else if (f.kind === "host") f.host = hostFormOf(name, s.value);
       else f.bundle = bundleFormOf(name, s.value, skillOptions());
@@ -740,7 +743,7 @@ function serverFields(f) {
       h("button", { type: "button", id: "f-addrow", class: "btn ghost small", onclick: () => { s.rows.push({ key: "", mode: "secret", value: "" }); edited(); } }, net ? "+ Add a header" : "+ Add a variable"),
       h("div", { class: "help" }, "A secret is stored encrypted, by name. This form never sees its value: set it under Secrets."),
     ),
-    h("div", { class: "field" }, h("label", {}, "Agents"), h("div", { class: "row" }, check("f-c", "Claude Code", s.claude, (v) => (s.claude = v)), check("f-o", "opencode", s.opencode, (v) => (s.opencode = v)))),
+    h("div", { class: "field" }, h("label", {}, "Agents"), h("div", { class: "row" }, ...agentList().map((/** @type {{ id: string, name: string }} */ a) => check(`f-agent-${a.id}`, a.name, s.agents[a.id] === true, (v) => (s.agents[a.id] = v))))),
   ];
 }
 

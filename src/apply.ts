@@ -1,10 +1,11 @@
 import { mkdirSync, rmSync, symlinkSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname } from "node:path";
+import { having, mergedFiles, writtenByBinary } from "./agents/index.ts";
 import { isManagedTool } from "./dirs.ts";
 import { InvalidConfigError, loadConfig } from "./config.ts";
 import { note, send } from "./events.ts";
-import { addServer, ensurePrivate, findClaude, isClaudeServer, removeServer, serverName, shadowWarnings } from "./claudemcp.ts";
+import { addServer, ensurePrivate, findClaude, removeServer, serverName, shadowWarnings } from "./claudemcp.ts";
 import { findTool } from "./tools.ts";
 import { MissingToolError, repoState, syncRepo, UnreachableError } from "./git.ts";
 import { readHostName } from "./host.ts";
@@ -19,7 +20,6 @@ import type { Conflict, LinkPlan } from "./plan.ts";
 import { trimLog } from "./logtrim.ts";
 import { relaunch, relaunched } from "./relaunch.ts";
 import { renderKeys, resolveSecrets } from "./secrets.ts";
-import { SETTINGS_FILE } from "./settings.ts";
 import { NeedsSecretError } from "./sops.ts";
 import { repoConflict } from "./sources.ts";
 import type { SourceMode } from "./sources.ts";
@@ -67,18 +67,21 @@ function prepare(configDir: string, home: string, sources: SourceMode, repoConfl
     if (repos.length > 0) return { host, plan: { links: { ...emptyPlan(), conflicts: repos }, keys: emptyKeyPlan(), warnings: [] }, state };
     const secrets = resolveSecrets(configDir, host, home, config.secrets);
     const rendered = renderKeys(config.keys, secrets);
-    // Only `claude` can write its servers. Without it they wait, and the first apply after it is installed adds them.
-    const hasClaude = findTool("claude", process.env, home) !== null;
-    const desired = hasClaude ? rendered : rendered.filter((key) => !isClaudeServer(key));
+    // An agent whose binary writes its servers cannot be written while it is missing. Its servers wait, and the first apply after it is installed adds them.
+    const missing = having("mcp").filter((a) => a.mcp.needsBinary === true && findTool(a.binary, process.env, home) === null);
+    const waits = (key: { file: string }): boolean => missing.some((a) => a.mcp.file === key.file);
+    const desired = rendered.filter((key) => !waits(key));
     const keys = planKeys(desired, state?.keys ?? [], home);
-    if (!hasClaude) keys.removes = keys.removes.filter((key) => !isClaudeServer(key));
-    const left = rendered.length - desired.length;
+    keys.removes = keys.removes.filter((key) => !waits(key));
     const plan = {
       links: planLinks(config.files, state?.links ?? [], home),
       keys,
       warnings: [
-        ...(left > 0 ? [`claude is not installed, so ${left} MCP server${left === 1 ? " is" : "s are"} left out of ~/.claude.json until it is`] : []),
-        ...shadowWarnings(desired.filter(isClaudeServer).map((key) => serverName(key)), home),
+        ...missing.flatMap((a) => {
+          const left = rendered.filter((key) => key.file === a.mcp.file).length;
+          return left > 0 ? [`${a.binary} is not installed, so ${left} MCP server${left === 1 ? " is" : "s are"} left out of ${a.mcp.file} until it is`] : [];
+        }),
+        ...shadowWarnings(desired.filter(writtenByBinary).map((key) => serverName(key)), home),
       ],
     };
     return { host, plan, state };
@@ -252,8 +255,8 @@ export function apply(toolDir: string, configDir: string, color: boolean, home: 
       );
     };
 
-    const claudeSets = [...plan.keys.creates, ...plan.keys.updates].filter(isClaudeServer);
-    const claudeRemoves = plan.keys.removes.filter(isClaudeServer);
+    const claudeSets = [...plan.keys.creates, ...plan.keys.updates].filter(writtenByBinary);
+    const claudeRemoves = plan.keys.removes.filter(writtenByBinary);
     let claude = "";
     if (claudeSets.length + claudeRemoves.length > 0) {
       try {
@@ -265,13 +268,14 @@ export function apply(toolDir: string, configDir: string, color: boolean, home: 
     }
 
     // What the write stage will do, so a reader can show `n of`: one step per settings file, per `claude` call, per link.
-    const settingsFiles = Object.values(SETTINGS_FILE).filter((file) => plan.keys.removes.some((k) => k.file === file) || [...plan.keys.creates, ...plan.keys.updates].some((k) => k.file === file));
+    const directFiles = mergedFiles().filter((file) => !writtenByBinary({ file }));
+    const settingsFiles = directFiles.filter((file) => plan.keys.removes.some((k) => k.file === file) || [...plan.keys.creates, ...plan.keys.updates].some((k) => k.file === file));
     const of = settingsFiles.length + claudeRemoves.length + claudeSets.length + plan.links.creates.length + plan.links.removes.length;
     let n = 0;
     const done = (step: string, target: string) => send({ event: "step", host: name, step, target, n: ++n, of });
     send({ event: "stage", host: name, stage: "write", of });
 
-    for (const file of Object.values(SETTINGS_FILE)) {
+    for (const file of directFiles) {
       const removes = plan.keys.removes.filter((k) => k.file === file);
       const sets = [...plan.keys.creates, ...plan.keys.updates].filter((k) => k.file === file);
       if (removes.length + sets.length === 0) continue;

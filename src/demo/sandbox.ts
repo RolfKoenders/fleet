@@ -2,6 +2,8 @@ import { execFileSync } from "node:child_process";
 import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, join, sep } from "node:path";
+import { AGENTS } from "../agents/index.ts";
+import type { AgentId } from "../agents/index.ts";
 import { currentDefinitions } from "../context.ts";
 import { saveDoctorResult } from "../doctorresult.ts";
 import type { RunServer } from "../doctorresult.ts";
@@ -12,7 +14,7 @@ import { CONFIG_DIR } from "../init.ts";
 
 /**
  * The demo's world: a throwaway directory that holds every host's home, local bare repos standing in for GitHub,
- * and fakes for the tools that would reach outside it (`ssh`, `claude`, `opencode`, `sops`, `systemctl`, `launchctl`).
+ * and fakes for the tools that would reach outside it (`ssh`, each agent's binary, `sops`, `systemctl`, `launchctl`).
  * Nothing in it is derived from the real home: every path comes from `root`, and the environment a command
  * runs with is built here from a short allowlist, never from the caller's.
  */
@@ -124,7 +126,7 @@ function seedDoctorResult(sandbox: Sandbox, host: DemoHost): void {
   const config = host === sandbox.admin ? sandbox.config : join(host.home, CONFIG_DIR);
   const run: RunServer[] = [];
   for (const [key, definition] of currentDefinitions(config, host.name, host.home)) {
-    const [agent, name] = key.split("\0") as ["claude" | "opencode", string];
+    const [agent, name] = key.split("\0") as [AgentId, string];
     const measured = SERVER_SIZES[name];
     run.push({ name, agent, result: "ok", tools: measured?.tools ?? null, size: measured?.size ?? null, definition });
   }
@@ -140,7 +142,7 @@ function addHandMadeSkill(host: DemoHost): void {
 function installFakes(sandbox: Sandbox, toolDir: string): void {
   const dir = join(sandbox.root, "fakes");
   mkdirSync(dir, { recursive: true });
-  for (const name of ["ssh", "claude", "opencode", "sops", "systemctl", "launchctl"]) {
+  for (const name of ["ssh", ...AGENTS.map((a) => a.binary), "sops", "systemctl", "launchctl"]) {
     const script = join(dir, name);
     writeFileSync(script, `#!/bin/sh\nFLEET_DEMO_ROOT=${quote(sandbox.root)} exec ${quote(process.execPath)} ${quote(join(toolDir, "src/demo/fakes.ts"))} ${name} "$@"\n`);
     chmodSync(script, 0o755);

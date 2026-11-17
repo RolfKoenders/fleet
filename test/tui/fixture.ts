@@ -11,7 +11,7 @@ import { sourceDir } from "../../src/sources.ts";
 import { agentContext } from "../../src/context.ts";
 import type { ContextItem, ContextKind, ContextReport } from "../../src/context.ts";
 import type { HostContext } from "../../src/contextall.ts";
-import type { Tool } from "../../src/settings.ts";
+import type { AgentId } from "../../src/agents/index.ts";
 import type { StatusFields } from "../../src/status.ts";
 import { makeHome, repoRoot, tempDir } from "../helpers.ts";
 
@@ -43,7 +43,7 @@ export const ok = (over: Partial<StatusFields> = {}): HostResult => ({ result: "
 export const item = (kind: ContextKind, name: string, tokens: number | null, fromConfig = true, doctor: string | null = null): ContextItem => ({ kind, name, path: kind === "mcp" ? null : name, tokens, fromConfig, measurement: null, doctor });
 
 /** A startup context made of the items of each agent. */
-export const contextOf = (agents: Partial<Record<Tool, ContextItem[]>>): ContextReport => ({ agents: (Object.entries(agents) as [Tool, ContextItem[]][]).map(([agent, items]) => agentContext(agent, items, [])), notes: [] });
+export const contextOf = (agents: Partial<Record<AgentId, ContextItem[]>>): ContextReport => ({ agents: (Object.entries(agents) as [AgentId, ContextItem[]][]).map(([agent, items]) => agentContext(agent, items, [])), notes: [] });
 
 /**
  * Made-up startup contexts for the hosts of `makeConfig`: `laptop` is the heaviest and has a server nobody measured

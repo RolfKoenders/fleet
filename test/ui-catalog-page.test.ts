@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { bundleDraft, checkLines, cloneKey, COMMAND_SECRET, confirmText, opWarnings, secretsOf, serverDraft, skillChoices, sourceDraft, splitCommand, takeBack, typedSkills, unpinned } from "../src/ui/static/catalog.js";
 import { clickCell, opLabel, suggestMessage } from "../src/ui/static/matrix.js";
 
-const server = (over: Record<string, unknown> = {}) => ({ name: "linear", kind: "command", command: "npx -y @linear/mcp-server@0.4.1", url: "", rows: [], claude: true, opencode: true, ...over }) as any;
+const server = (over: Record<string, unknown> = {}) => ({ name: "linear", kind: "command", command: "npx -y @linear/mcp-server@0.4.1", url: "", rows: [], agents: { claude: true, opencode: true }, ...over }) as any;
 
 test("a command is split like a shell would, quotes included, and an open quote is no command", () => {
   assert.deepEqual(splitCommand("npx -y  @a/b@1.0.0"), ["npx", "-y", "@a/b@1.0.0"]);
@@ -25,7 +25,7 @@ test("npx and uvx with no version are unpinned, and a version, a path or another
 });
 
 test("a server form becomes the edit it holds: a command, a URL, plain and secret environment, and the agents", () => {
-  const d = serverDraft(server({ rows: [{ key: "LINEAR_API_KEY", mode: "secret", value: "" }, { key: "REGION", mode: "plain", value: "eu" }, { key: "", mode: "plain", value: "" }], claude: false }), ["docs"]);
+  const d = serverDraft(server({ rows: [{ key: "LINEAR_API_KEY", mode: "secret", value: "" }, { key: "REGION", mode: "plain", value: "eu" }, { key: "", mode: "plain", value: "" }], agents: { claude: false, opencode: true } }), ["docs"]);
   assert.deepEqual(d.problems, []);
   assert.deepEqual(d.op, { op: "addServer", name: "linear", entry: { command: ["npx", "-y", "@linear/mcp-server@0.4.1"], env: { LINEAR_API_KEY: "secret:LINEAR_API_KEY", REGION: "eu" }, only: ["opencode"] } });
   assert.deepEqual(d.warnings, []);
@@ -65,7 +65,7 @@ test("a server form says what is missing, and nothing is held until it is right"
   assert.match(problems({ rows: [{ key: "A", mode: "plain", value: "" }] }), /A needs a value/);
   assert.match(problems({ rows: [{ key: "A", mode: "plain", value: "1" }, { key: "A", mode: "plain", value: "2" }] }), /A is set twice/);
   assert.match(problems({ kind: "http", url: "https://x.example", rows: [{ key: "Authorization", mode: "secret", value: "" }] }), /secret name/);
-  assert.match(problems({ claude: false, opencode: false }), /at least one agent/);
+  assert.match(problems({ agents: { claude: false, opencode: false } }), /at least one agent/);
 });
 
 test("a skill source is added from a clone: it pins the head commit, tracks the branch, and reviews by default", () => {

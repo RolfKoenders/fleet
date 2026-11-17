@@ -4,6 +4,10 @@ What changed in fleet, newest first. Each version lists what you can do now, wha
 
 ## Unreleased
 
+### Fixed
+
+- `fleet doctor --all` and the bridge no longer fail on a host whose fleet knows an agent this one does not: that agent's servers are left out of the doctor grid, and the bridge's context view skips the agent, instead of rejecting the host's whole answer.
+
 ## 2.5.0 - 2026-11-15
 
 ### Added

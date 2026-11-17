@@ -1,3 +1,4 @@
+import { AGENTS } from "../../agents/index.ts";
 import { drawBox } from "../buffer.ts";
 import type { Canvas, Style } from "../buffer.ts";
 import type { ContextItem, ContextKind, ContextReport } from "../../context.ts";
@@ -16,7 +17,8 @@ import type { Seg } from "./ui.ts";
  */
 
 const HOST_W = 12;
-const AGENT_W = 9;
+/** The longest agent name and a space. */
+const AGENT_W = Math.max(...AGENTS.map((a) => a.id.length)) + 1;
 const TOTAL_W = 9;
 const MAX_BAR = 40;
 const MIN_BAR = 10;

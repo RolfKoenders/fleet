@@ -6,6 +6,7 @@ import { lineDiff, splitLines } from "./diff.js";
 import { blankHost, hostDraft } from "./hosts.js";
 
 /** @typedef {"server" | "source" | "bundle" | "host"} AddKind */
+/** @typedef {{ id: string, name: string }} Agent An agent a server can be for, as the server lists them. */
 /** @typedef {import("./diff.js").DiffLine} DiffLine */
 /**
  * What the pane shows: the file it is about, a tag, and one of: what is missing, a wait, a refusal, or the diff.
@@ -134,10 +135,10 @@ export const closable = (kind, init, editing = false) => editing || !(kind === "
  * `edit` is set when the dialog edits an item that is there: the form is prefilled from it and its name stays.
  */
 
-/** @param {AddKind} kind @returns {AddState} */
-export const freshAdd = (kind) => ({
+/** @param {AddKind} kind @param {Agent[]} agents the agents a server can be for @returns {AddState} */
+export const freshAdd = (kind, agents) => ({
   kind,
-  server: { name: "", kind: "command", command: "", url: "", rows: [{ key: "", mode: "secret", value: "" }], claude: true, opencode: true },
+  server: { name: "", kind: "command", command: "", url: "", rows: [{ key: "", mode: "secret", value: "" }], agents: Object.fromEntries(agents.map((a) => [a.id, true])) },
   source: { name: "", repo: "", path: ".", branch: "", mode: "pin", review: true },
   bundle: { name: "", picked: [], extra: "" },
   host: blankHost(),

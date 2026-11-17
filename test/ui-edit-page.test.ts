@@ -6,6 +6,8 @@ import { closable } from "../src/ui/static/adding.js";
 import { opLabel, suggestMessage } from "../src/ui/static/matrix.js";
 import { itemLines } from "../src/ui/static/yamlview.js";
 
+const AGENTS = [{ id: "claude", name: "Claude Code" }, { id: "opencode", name: "opencode" }];
+
 const SHA = "a".repeat(40);
 const NEW = "b".repeat(40);
 const pinned = { repo: "https://example.com/s.git", commit: SHA, track: "main", path: "skills", review: true };
@@ -20,20 +22,20 @@ test("a command is written in the form so that it splits back to the same list",
 });
 
 test("a server form starts from the entry: command or URL, rows with secrets by name, and the agents", () => {
-  const cmd = serverFormOf("docs", { command: ["npx", "-y", "pkg@1.0.0"], env: { TOKEN: "secret:DOCS_TOKEN", REGION: "eu", MIXED: "a secret:X b" }, only: ["claude"] });
+  const cmd = serverFormOf("docs", { command: ["npx", "-y", "pkg@1.0.0"], env: { TOKEN: "secret:DOCS_TOKEN", REGION: "eu", MIXED: "a secret:X b" }, only: ["claude"] }, AGENTS);
   assert.deepEqual(cmd, {
     name: "docs", kind: "command", command: "npx -y pkg@1.0.0", url: "",
     rows: [{ key: "TOKEN", mode: "secret", value: "DOCS_TOKEN" }, { key: "REGION", mode: "plain", value: "eu" }, { key: "MIXED", mode: "plain", value: "a secret:X b" }],
-    claude: true, opencode: false,
+    agents: { claude: true, opencode: false },
   });
-  const net = serverFormOf("t", { transport: "sse", url: "https://t.example/mcp", headers: { Authorization: "secret:T" } });
-  assert.deepEqual([net.kind, net.url, net.rows, net.claude, net.opencode], ["sse", "https://t.example/mcp", [{ key: "Authorization", mode: "secret", value: "T" }], true, true]);
-  assert.equal(serverFormOf("t", { transport: "http", url: "https://t" }).kind, "http");
+  const net = serverFormOf("t", { transport: "sse", url: "https://t.example/mcp", headers: { Authorization: "secret:T" } }, AGENTS);
+  assert.deepEqual([net.kind, net.url, net.rows, net.agents.claude, net.agents.opencode], ["sse", "https://t.example/mcp", [{ key: "Authorization", mode: "secret", value: "T" }], true, true]);
+  assert.equal(serverFormOf("t", { transport: "http", url: "https://t" }, AGENTS).kind, "http");
 });
 
 test("an unchanged server form is no edit; a changed one holds only the fields that changed, with what they were", () => {
   const base = { command: ["npx", "-y", "pkg@1.0.0"], env: { TOKEN: "secret:DOCS_TOKEN", REGION: "eu" }, only: ["claude"] };
-  const form = serverFormOf("docs", base);
+  const form = serverFormOf("docs", base, AGENTS);
   const same = serverDraft(form, [], [], base);
   assert.deepEqual([same.op, same.problems, same.unchanged], [null, [], true]);
   const moved = serverDraft({ ...form, command: "npx -y pkg@1.1.0", rows: [form.rows[0]!, { key: "REGION", mode: "plain", value: "us" }, { key: "EXTRA", mode: "secret", value: "" }] }, [], [], base);
@@ -55,19 +57,19 @@ test("an unchanged server form is no edit; a changed one holds only the fields t
       { key: "env", from: base.env, to: null },
     ].sort((a, b) => ["command", "transport", "url", "env"].indexOf(a.key) - ["command", "transport", "url", "env"].indexOf(b.key)),
   });
-  const agents = serverDraft({ ...form, opencode: true }, [], [], base);
+  const agents = serverDraft({ ...form, agents: { claude: true, opencode: true } }, [], [], base);
   assert.deepEqual(agents.op, { op: "editServer", name: "docs", changes: [{ key: "only", from: ["claude"], to: null }] });
 });
 
 test("a field the file already has is not held to a rule it may have been written without, but a changed one is", () => {
   // The loader takes a {{ vars.X }} in a URL (it has spaces), a variable name the form would not offer, and an unpinned command.
   const base = { transport: "http", url: "https://{{ vars.HOST }}/mcp", headers: { "x-lower": "v" } };
-  const form = serverFormOf("t", base);
+  const form = serverFormOf("t", base, AGENTS);
   assert.deepEqual(serverDraft(form, [], [], base).problems, []);
   assert.equal(serverDraft({ ...form, rows: [...form.rows, { key: "X-Two", mode: "plain", value: "2" }] }, [], [], base).problems.length, 0);
   assert.match(serverDraft({ ...form, url: "https://a b" }, [], [], base).problems[0]!, /space/);
   const cmd = { command: ["npx", "some-package"] };
-  const f = serverFormOf("c", cmd);
+  const f = serverFormOf("c", cmd, AGENTS);
   assert.deepEqual(serverDraft(f, [], [], cmd).warnings, [], "an unpinned command that is not touched is not warned about again");
   assert.equal(serverDraft({ ...f, command: "npx other-package" }, [], [], cmd).warnings.length, 1);
   assert.deepEqual(opWarnings({ op: "editServer", name: "c", changes: [{ key: "command", from: ["x"], to: ["npx", "pkg"] }] }).length, 1);
@@ -76,8 +78,8 @@ test("a field the file already has is not held to a rule it may have been writte
 
 test("the name is not checked in an edit, and a secret in the command is still refused", () => {
   const base = { command: ["x"] };
-  assert.equal(serverDraft({ ...serverFormOf("docs", base), command: "x secret:A" }, ["docs"], [], base).problems[0], "'command' cannot refer to a secret, a command line is visible to every user; use 'env'");
-  assert.deepEqual(serverDraft(serverFormOf("docs", base), ["docs"], [], base).problems, []);
+  assert.equal(serverDraft({ ...serverFormOf("docs", base, AGENTS), command: "x secret:A" }, ["docs"], [], base).problems[0], "'command' cannot refer to a secret, a command line is visible to every user; use 'env'");
+  assert.deepEqual(serverDraft(serverFormOf("docs", base, AGENTS), ["docs"], [], base).problems, []);
 });
 
 test("a source form starts from the entry; a followed one offers review on for when it is pinned", () => {
@@ -204,11 +206,11 @@ test("an edit joins To push in place of the item's own, an unpushed addition is 
 
 test("the server check of an edit runs the whole entry as it would be", () => {
   const base = { command: ["a"], env: { K: "v" } };
-  const d = serverDraft({ ...serverFormOf("x", base), command: "b" }, [], [], base);
+  const d = serverDraft({ ...serverFormOf("x", base, AGENTS), command: "b" }, [], [], base);
   assert.deepEqual(serverAsAdded(d, base, "x"), { op: "addServer", name: "x", entry: { command: ["b"], env: { K: "v" } } });
-  assert.deepEqual(serverAsAdded(serverDraft(serverFormOf("x", base), [], [], base), base, "x"), { op: "addServer", name: "x", entry: base });
+  assert.deepEqual(serverAsAdded(serverDraft(serverFormOf("x", base, AGENTS), [], [], base), base, "x"), { op: "addServer", name: "x", entry: base });
   assert.equal(serverAsAdded({ op: null, problems: ["x"], warnings: [] }, base, "x"), null);
-  const added = serverDraft(serverFormOf("n", { command: ["a"] }), [], []);
+  const added = serverDraft(serverFormOf("n", { command: ["a"] }, AGENTS), [], []);
   assert.equal(serverAsAdded(added, null, "n")?.op, "addServer");
 });
 
@@ -241,7 +243,7 @@ test("the dialog says Edit, always closes, and an item fleet cannot change is sh
   assert.deepEqual(Object.values(EDIT), ["Edit MCP server", "Edit skill source", "Edit skill bundle", "Edit host"]);
   assert.equal(closable("host", { running: true }), false);
   assert.equal(closable("host", { running: true }, true), true, "an edit runs nothing, so a running init is no reason to keep it open");
-  const f = freshEdit("server", "docs");
+  const f = freshEdit("server", "docs", AGENTS);
   assert.deepEqual([f.kind, f.edit?.name, f.edit?.state], ["server", "docs", "loading"]);
   const text = "# top\nservers:\n  a:\n    command: [x]\n  docs: &d\n    command: [y]\n    env:\n      K: v\n  z:\n    command: [q]\n";
   assert.deepEqual(readOnlyLines(text, "server", "docs"), ["  docs: &d", "    command: [y]", "    env:", "      K: v"]);

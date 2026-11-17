@@ -1,4 +1,5 @@
 import { homedir } from "node:os";
+import { sayAgents } from "./agents/index.ts";
 import { EXIT } from "./exit.ts";
 import type { ExitName } from "./exit.ts";
 import type { Result } from "./output.ts";
@@ -11,10 +12,11 @@ export type PrimerCommand = { name: string; usage: string; summary: string; effe
 /** The glossary in one sentence per term, in the order of GLOSSARY.md. */
 const TERMS: [string, string][] = [
   ["Host", "One machine fleet manages, as one agent user on it (`laptop` as `alice`, `server` as `deploy`)."],
+  ["Agent", "A coding agent fleet sets up on a host, such as Claude Code or opencode."],
   ["Agent user", "The OS user on a host whose agent setup fleet manages; other users there are not fleet's business."],
   ["Config repo", "The private repo a user keeps their catalog, host files, shared instructions and encrypted secrets in."],
   ["Fleet clone", "The copy of the fleet tool a host runs from, kept at the commit its config pins; nobody works in it."],
-  ["Catalog", "Where every MCP server and skill source is defined once, independent of host and tool."],
+  ["Catalog", "Where every MCP server and skill source is defined once, independent of host and agent."],
   ["Host file", "What one host gets, picked from the catalog and layered on the defaults."],
   ["Skill source", "A repo, at a pinned commit or on a followed branch, that skills are taken from."],
   ["Bundle", "A named group of skills that a host file picks as a unit."],
@@ -38,7 +40,7 @@ const EXIT_MEANING: Record<ExitName, string> = {
   conflict: "One or more conflicts; nothing written",
   unreachable: "A host or GitHub could not be reached",
   "needs-secret": "A key, secret or sops is missing or too old",
-  "missing-prerequisite": "Node, git, sops, age-keygen, claude or opencode is missing",
+  "missing-prerequisite": `Node, git, sops, age-keygen, ${sayAgents((a) => a.binary)} is missing`,
   locked: "Another apply or push is running",
   unhealthy: "`fleet doctor` ran and found a failed check",
 };
@@ -71,7 +73,7 @@ export function agent(toolDir: string, configDir: string | null, commands: Prime
   const here = hostSection(toolDir, configDir, home);
   const markdown = `# fleet
 
-Fleet makes each host match its config: shared instructions, skills, MCP servers, Claude and opencode settings, and secrets. The config is a repo of its own, ${configDir === null ? "which is not set on this machine yet (\`fleet init\` writes \`~/.config/fleet/config\`)" : `kept here at \`${configDir}\``}. The tool is not in it: this host runs fleet from the fleet clone at \`${toolDir}\`, at the commit the config pins in \`fleet.yaml\`. Fleet changes the host to match the config, never the other way round, so edit agent config through the config repo, not in place, and never edit in the fleet clone.
+Fleet makes each host match its config: shared instructions, skills, MCP servers, ${sayAgents((a) => a.name, "and")} settings, and secrets. The config is a repo of its own, ${configDir === null ? "which is not set on this machine yet (\`fleet init\` writes \`~/.config/fleet/config\`)" : `kept here at \`${configDir}\``}. The tool is not in it: this host runs fleet from the fleet clone at \`${toolDir}\`, at the commit the config pins in \`fleet.yaml\`. Fleet changes the host to match the config, never the other way round, so edit agent config through the config repo, not in place, and never edit in the fleet clone.
 
 Pass \`--json\` when you will read the output: one JSON document on stdout, with \`ok\`, \`code\`, \`host\` and \`messages\` beside the command's own fields.
 

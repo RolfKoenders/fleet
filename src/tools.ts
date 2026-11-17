@@ -1,6 +1,7 @@
 import { accessSync, constants } from "node:fs";
 import { homedir } from "node:os";
 import { delimiter, join } from "node:path";
+import { binDirs } from "./agents/index.ts";
 
 /**
  * Homebrew keeps its binaries in `/opt/homebrew/bin` on Apple Silicon and `/usr/local/bin` on Intel, which
@@ -11,11 +12,16 @@ import { delimiter, join } from "node:path";
 export const HOMEBREW_BIN = "/opt/homebrew/bin";
 export const HOMEBREW_KEG_NODES = ["/opt/homebrew", "/usr/local"].flatMap((prefix) => [26, 24, 22].map((v) => `${prefix}/opt/node@${v}/bin/node`));
 
-/** The directories searched before `PATH`, in order. The home ones come first, so a host's own copy wins. */
-export const probeDirs = (home: string = homedir()): string[] => [join(home, ".local/bin"), join(home, ".opencode/bin"), "/usr/bin", "/usr/local/bin", HOMEBREW_BIN];
+const AGENT_BIN_DIRS = binDirs();
+
+/** The directories searched for a program that is not found on `PATH`, apart from Homebrew's. The home ones come first, so a host's own copy wins. */
+export const probeExtraDirs = (home: string = homedir()): string[] => [join(home, ".local/bin"), ...AGENT_BIN_DIRS.map((dir) => join(home, dir)), "/usr/bin", "/usr/local/bin"];
+
+/** The directories searched before `PATH`, in order. */
+export const probeDirs = (home: string = homedir()): string[] => [...probeExtraDirs(home), HOMEBREW_BIN];
 
 /** The same directories as a shell `PATH` prefix, with `$HOME` left for the shell to expand. */
-export const SHELL_PROBE_PATH = ["$HOME/.local/bin", "$HOME/.opencode/bin", "/usr/bin", "/usr/local/bin", HOMEBREW_BIN].join(":");
+export const SHELL_PROBE_PATH = ["$HOME/.local/bin", ...AGENT_BIN_DIRS.map((dir) => `$HOME/${dir}`), "/usr/bin", "/usr/local/bin", HOMEBREW_BIN].join(":");
 
 /** Node candidates a shell script tries after the fnm alias and `~/.local/bin/node`, as quoted words. */
 export const SHELL_NODE_CANDIDATES = [`${HOMEBREW_BIN}/node`, ...HOMEBREW_KEG_NODES].map((p) => `"${p}"`);

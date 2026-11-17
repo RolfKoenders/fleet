@@ -1,17 +1,17 @@
 import { homedir } from "node:os";
+import { mcpEntryOf, SKILL_DIR } from "./agents/index.ts";
+import { withoutEmpty } from "./agents/shape.ts";
 import { failure } from "./apply.ts";
 import { loadConfig } from "./config.ts";
 import type { Config } from "./config.ts";
 import { hashValue, keyName, lookup, readDoc } from "./keys.ts";
 import { acquireLock, LockedError } from "./lock.ts";
-import { CLAUDE_JSON, withoutEmpty } from "./mcp.ts";
 import { paint } from "./output.ts";
 import type { Result } from "./output.ts";
 import { expandTarget, planLinks } from "./plan.ts";
 import type { Conflict } from "./plan.ts";
 import { readHostName } from "./host.ts";
 import { renderKeys, resolveSecrets } from "./secrets.ts";
-import { SETTINGS_FILE } from "./settings.ts";
 import type { DesiredKey } from "./settings.ts";
 import { readState, writeState } from "./state.ts";
 import type { KeyRecord, LinkRecord } from "./state.ts";
@@ -74,9 +74,7 @@ function mismatch(key: DesiredKey, detail: string, name: string): Conflict {
 }
 
 function adoptMcp(configDir: string, host: string, home: string, config: Config, name: string): Adoption {
-  const keys = config.keys.filter(
-    (k) => (k.file === CLAUDE_JSON && k.path === `mcpServers.${name}`) || (k.file === SETTINGS_FILE.opencode && k.path === `mcp.${name}`),
-  );
+  const keys = config.keys.filter((k) => mcpEntryOf(k)?.name === name);
   if (keys.length === 0) return invalid(`'${name}' is not picked by this host, so there is nothing to adopt. Pick it in the host file (mcp.include) first.`);
 
   const secrets = resolveSecrets(configDir, host, home, [...new Set(keys.flatMap((k) => secretNames(k.value)))].sort());
@@ -119,7 +117,7 @@ function adoptMcp(configDir: string, host: string, home: string, config: Config,
 }
 
 function adoptSkill(home: string, config: Config, name: string): Adoption {
-  const target = `~/.claude/skills/${name}`;
+  const target = `${SKILL_DIR}/${name}`;
   const record = config.files.find((f) => f.target === target);
   if (!config.skills.includes(name) || record === undefined) {
     return invalid(`'${name}' is not in a bundle this host picks, so there is nothing to adopt. Pick its bundle in the host file first.`);

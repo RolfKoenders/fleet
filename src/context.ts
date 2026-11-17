@@ -2,15 +2,13 @@ import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { load } from "../vendor/js-yaml.mjs";
-import { AGENT_LOCATIONS } from "./agentpaths.ts";
+import { AGENTS, mcpEntryOf } from "./agents/index.ts";
+import type { AgentId, Registered } from "./agents/index.ts";
 import { loadConfig } from "./config.ts";
 import { readDoctorResult } from "./doctorresult.ts";
 import type { MeasuredServer } from "./doctorresult.ts";
 import { hashValue, readDoc } from "./keys.ts";
-import { CLAUDE_JSON } from "./mcp.ts";
 import { expandTarget } from "./plan.ts";
-import { SETTINGS_FILE } from "./settings.ts";
-import type { Tool } from "./settings.ts";
 import { readState } from "./state.ts";
 import type { AppliedState } from "./state.ts";
 import { estimateTokens } from "./tokens.ts";
@@ -69,7 +67,7 @@ export type ContextPart = {
 };
 
 export type AgentContext = {
-  agent: Tool;
+  agent: AgentId;
   /** The three parts added up. A lower bound when `complete` is false. */
   tokens: number;
   /** False when some server has no measurement, so `tokens` leaves it out. */
@@ -94,7 +92,7 @@ export type MeasureOptions = {
   definitions?: Map<string, string> | null;
 };
 
-export const definitionKey = (agent: Tool, name: string): string => `${agent}\0${name}`;
+export const definitionKey = (agent: AgentId, name: string): string => `${agent}\0${name}`;
 
 // ---- paths ----
 
@@ -182,13 +180,14 @@ function settingsKey(file: string, key: string, home: string): { value: unknown 
 
 // ---- instructions ----
 
-function instructionItems(agent: Tool, home: string, applied: Applied, notes: string[]): ContextItem[] {
-  const where = AGENT_LOCATIONS[agent];
-  const paths = new Set<string>(where.instructionFiles.map((f) => absolute(f, home)));
-  for (const dir of where.instructionDirs) for (const f of filesBelow(absolute(dir, home), (n) => n.endsWith(".md"))) paths.add(f);
+function instructionItems(agent: Registered, home: string, applied: Applied, notes: string[]): ContextItem[] {
+  const where = agent.instructions;
+  if (where === undefined) return [];
+  const paths = new Set<string>(where.files.map((f) => absolute(f, home)));
+  for (const dir of where.dirs) for (const f of filesBelow(absolute(dir, home), (n) => n.endsWith(".md"))) paths.add(f);
 
-  if (where.instructionsSetting !== null) {
-    const setting = settingsKey(where.instructionsSetting, "instructions", home);
+  if (where.setting !== null) {
+    const setting = settingsKey(where.setting, "instructions", home);
     if ("problem" in setting) notes.push(setting.problem);
     else if (Array.isArray(setting.value)) {
       for (const entry of setting.value) {
@@ -242,12 +241,13 @@ function findSkills(dir: string, nested: boolean, depth = 0): FoundSkill[] {
   return found;
 }
 
-function skillItems(agent: Tool, home: string, applied: Applied, notes: string[]): ContextItem[] {
-  const where = AGENT_LOCATIONS[agent];
-  const nested = agent === "opencode";
-  const dirs = where.skillDirs.map((d) => absolute(d, home));
-  if (where.skillsSetting !== null) {
-    const setting = settingsKey(where.skillsSetting, "skills", home);
+function skillItems(agent: Registered, home: string, applied: Applied, notes: string[]): ContextItem[] {
+  const where = agent.skills;
+  if (where === undefined) return [];
+  const nested = where.nested === true;
+  const dirs = where.dirs.map((d) => absolute(d, home));
+  if (where.setting !== null) {
+    const setting = settingsKey(where.setting, "skills", home);
     if ("problem" in setting) notes.push(setting.problem);
     else if (Array.isArray(setting.value)) {
       for (const entry of setting.value) {
@@ -269,9 +269,8 @@ function skillItems(agent: Tool, home: string, applied: Applied, notes: string[]
       return [];
     }
     const description = typeof meta.description === "string" ? meta.description : "";
-    const optedOut = meta["disable-model-invocation"] === true || (nested && isObject(meta.metadata) && meta.metadata["opencode/autoinvoke"] === false);
-    // Neither agent offers a skill the model may not invoke, and opencode offers none without a description.
-    if (optedOut || (nested && description === "")) return [];
+    // An agent offers no skill the model may not invoke.
+    if (where.hidden?.(meta) === true) return [];
     const name = typeof meta.name === "string" ? meta.name : skill.id;
     const path = tilde(skill.path, home);
     return [{ kind: "skills", name: skill.id, path, tokens: estimateTokens(name.length + description.length), fromConfig: applied.fromConfig(path), measurement: null, doctor: null }];
@@ -280,7 +279,7 @@ function skillItems(agent: Tool, home: string, applied: Applied, notes: string[]
 
 // ---- MCP servers ----
 
-function measurementOf(agent: Tool, name: string, doctor: MeasuredServer[], options: MeasureOptions, now: Date): { tokens: number; measurement: Measurement } | null {
+function measurementOf(agent: AgentId, name: string, doctor: MeasuredServer[], options: MeasureOptions, now: Date): { tokens: number; measurement: Measurement } | null {
   const m = doctor.find((s) => s.agent === agent && s.name === name);
   if (m === undefined || m.size === null || m.measuredAt === null) return null;
   const at = Date.parse(m.measuredAt);
@@ -292,8 +291,9 @@ function measurementOf(agent: Tool, name: string, doctor: MeasuredServer[], opti
   };
 }
 
-function mcpItems(agent: Tool, home: string, applied: Applied, doctor: MeasuredServer[], options: MeasureOptions, now: Date, notes: string[]): ContextItem[] {
-  const { file, key } = AGENT_LOCATIONS[agent].mcp;
+function mcpItems(agent: Registered, home: string, applied: Applied, doctor: MeasuredServer[], options: MeasureOptions, now: Date, notes: string[]): ContextItem[] {
+  if (agent.mcp === undefined) return [];
+  const { file, key, skip } = agent.mcp;
   const setting = settingsKey(file, key, home);
   if ("problem" in setting) {
     notes.push(setting.problem);
@@ -301,11 +301,10 @@ function mcpItems(agent: Tool, home: string, applied: Applied, doctor: MeasuredS
   }
   if (!isObject(setting.value)) return [];
   return Object.entries(setting.value)
-    // opencode skips a server that is switched off.
-    .filter(([, entry]) => !(agent === "opencode" && isObject(entry) && entry.enabled === false))
+    .filter(([, entry]) => skip?.(entry) !== true)
     .map(([name]): ContextItem => {
-      const measured = measurementOf(agent, name, doctor, options, now);
-      const checked = doctor.find((s) => s.agent === agent && s.name === name)?.result ?? null;
+      const measured = measurementOf(agent.id, name, doctor, options, now);
+      const checked = doctor.find((s) => s.agent === agent.id && s.name === name)?.result ?? null;
       return { kind: "mcp", name, path: null, tokens: measured?.tokens ?? null, fromConfig: applied.hasKey(file, `${key}.${name}`), measurement: measured?.measurement ?? null, doctor: checked };
     })
     .sort((a, b) => a.name.localeCompare(b.name));
@@ -319,7 +318,7 @@ function part(items: ContextItem[], kind: ContextKind): ContextPart {
 }
 
 /** An agent's totals from its items, so a report read back from another host adds up the way one measured here does. */
-export function agentContext(agent: Tool, items: ContextItem[], notes: string[]): AgentContext {
+export function agentContext(agent: AgentId, items: ContextItem[], notes: string[]): AgentContext {
   const [instructions, skills, mcp] = [part(items, "instructions"), part(items, "skills"), part(items, "mcp")];
   return { agent, tokens: instructions.tokens + skills.tokens + mcp.tokens, complete: mcp.unmeasured === 0, instructions, skills, mcp, items, notes };
 }
@@ -330,10 +329,10 @@ export function measureContext(home: string = homedir(), options: MeasureOptions
   const doctor = readDoctorResult(home)?.servers ?? [];
   const hostNotes: string[] = [];
   const applied = appliedBy(home, hostNotes);
-  const agents = (["claude", "opencode"] as const).map((agent): AgentContext => {
+  const agents = AGENTS.map((agent): AgentContext => {
     const notes: string[] = [];
     const items = [...instructionItems(agent, home, applied, notes), ...skillItems(agent, home, applied, notes), ...mcpItems(agent, home, applied, doctor, options, now, notes)];
-    return agentContext(agent, items, notes);
+    return agentContext(agent.id, items, notes);
   });
   return { agents, notes: hostNotes };
 }
@@ -346,8 +345,8 @@ export function currentDefinitions(configDir: string, host: string, home: string
   const config = loadConfig(configDir, host, { home, sources: "none" });
   const map = new Map<string, string>();
   for (const key of config.keys) {
-    if (key.file === CLAUDE_JSON && key.path.startsWith("mcpServers.")) map.set(definitionKey("claude", key.path.slice("mcpServers.".length)), hashValue(key.value));
-    else if (key.file === SETTINGS_FILE.opencode && key.path.startsWith("mcp.")) map.set(definitionKey("opencode", key.path.slice("mcp.".length)), hashValue(key.value));
+    const entry = mcpEntryOf(key);
+    if (entry !== null) map.set(definitionKey(entry.agent.id, entry.name), hashValue(key.value));
   }
   return map;
 }

@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { binDirs } from "./agents/index.ts";
 
 /**
  * What runs `fleet apply` every 30 minutes on a host. Linux uses a systemd user timer, macOS a launchd
@@ -89,6 +90,9 @@ echo enabled
  * counterpart of `OnBootSec`. `$HOME` is filled in by the shell that writes the file, because launchd does
  * not expand it. The PATH holds Homebrew, because a LaunchAgent starts with only /usr/bin:/bin:/usr/sbin:/sbin.
  */
+/** What the timer finds programs on: the agents' own install directories first, since it has no shell profile. */
+const LAUNCHD_PATH = ["$HOME/.local/bin", ...binDirs().map((dir) => `$HOME/${dir}`), "/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(":");
+
 const PLIST = `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -110,7 +114,7 @@ const PLIST = `<?xml version="1.0" encoding="UTF-8"?>
   <key>EnvironmentVariables</key>
   <dict>
     <key>PATH</key>
-    <string>$HOME/.local/bin:$HOME/.opencode/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    <string>${LAUNCHD_PATH}</string>
   </dict>
   <key>StandardOutPath</key>
   <string>$HOME/${LAUNCHD_LOG}</string>

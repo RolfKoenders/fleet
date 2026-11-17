@@ -8,6 +8,10 @@ Fleet describes how every machine that runs coding agents should be set up, and 
 One machine fleet manages, as one agent user on it (`laptop` as `alice`, `server` as `deploy`).
 _Avoid_: Machine, server, node, box
 
+**Agent**:
+A coding agent fleet sets up on a host, such as Claude Code or opencode.
+_Avoid_: Tool, assistant
+
 **Agent user**:
 The OS user on a host whose agent setup fleet manages. Other users on the same host are not fleet's business.
 _Avoid_: Account
@@ -23,7 +27,7 @@ The copy of the fleet tool a host runs from, kept at the commit its config pins.
 _Avoid_: Tool repo
 
 **Catalog**:
-The place where every MCP server and skill source is defined once, independent of host and tool.
+The place where every MCP server and skill source is defined once, independent of host and agent.
 _Avoid_: Registry, inventory
 
 **Host file**:

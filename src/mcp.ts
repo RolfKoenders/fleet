@@ -1,17 +1,12 @@
-import { MCP_URL_CREDENTIALS, URL_SPACE, urlHoldsCredentials } from "./redact.ts";
 import { dirname, join } from "node:path";
-import { SETTINGS_FILE } from "./settings.ts";
-import type { DesiredKey, Tool } from "./settings.ts";
+import { AGENTS, having } from "./agents/index.ts";
+import type { Agent, AgentId, Has } from "./agents/index.ts";
+import { MCP_URL_CREDENTIALS, URL_SPACE, urlHoldsCredentials } from "./redact.ts";
+import type { DesiredKey } from "./settings.ts";
 import { fillVars, hasSecretRef } from "./template.ts";
 import { isObject, isStringList, parseFile } from "./yamlfile.ts";
 import type { Overlay } from "./yamlfile.ts";
 import type { Obj } from "./yamlfile.ts";
-
-/** Where Claude keeps its user-scope servers. Fleet writes its entries holding Claude's lock; see `claudemcp.ts`. */
-export const CLAUDE_JSON = "~/.claude.json";
-
-const SERVER_PATH: Record<Tool, string> = { claude: "mcpServers", opencode: "mcp" };
-const SERVER_FILE: Record<Tool, string> = { claude: CLAUDE_JSON, opencode: SETTINGS_FILE.opencode };
 
 export type Server = {
   name: string;
@@ -22,14 +17,25 @@ export type Server = {
   transport: "http" | "sse" | null;
   url: string | null;
   headers: Record<string, string>;
-  only: Tool[];
+  /** The agents it is rendered for. */
+  only: AgentId[];
 };
 
 const SERVER_KEYS = ["command", "env", "transport", "url", "headers", "only"];
 const SERVER_NAME = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
-const TOOLS: Tool[] = ["claude", "opencode"];
 
 const isStringMap = (v: unknown): v is Record<string, string> => isObject(v) && Object.values(v).every((x) => typeof x === "string");
+
+/** What is wrong with an `only` list, or null when it is absent or names agents that can be given MCP servers. */
+export function onlyProblem(only: unknown, agents: readonly Agent[] = AGENTS): string | null {
+  if (only === undefined) return null;
+  const can = having("mcp", agents).map((a) => a.id);
+  if (!isStringList(only) || only.length === 0) return `'only' must be a list of ${can.join(", ")}`;
+  const unknown = only.filter((id) => !agents.some((a) => a.id === id));
+  if (unknown.length > 0) return `'only' must be a list of ${can.join(", ")}`;
+  const unable = only.filter((id) => !can.includes(id as AgentId));
+  return unable.length === 0 ? null : `'only' names ${unable.join(", ")}, which fleet cannot give MCP servers`;
+}
 
 function parseServer(at: string, name: string, raw: unknown, problems: string[]): Server | null {
   if (!SERVER_NAME.test(name)) {
@@ -64,9 +70,8 @@ function parseServer(at: string, name: string, raw: unknown, problems: string[])
   for (const [key, value] of [["env", env], ["headers", headers]] as const) {
     if (value !== undefined && !isStringMap(value)) problems.push(`${where}: '${key}' must be a map of strings`);
   }
-  if (only !== undefined && (!isStringList(only) || only.length === 0 || only.some((t) => !TOOLS.includes(t as Tool)))) {
-    problems.push(`${where}: 'only' must be a list of claude, opencode`);
-  }
+  const badOnly = onlyProblem(only);
+  if (badOnly !== null) problems.push(`${where}: ${badOnly}`);
   if (problems.length > before) return null;
   return {
     name,
@@ -75,7 +80,7 @@ function parseServer(at: string, name: string, raw: unknown, problems: string[])
     transport: (transport as "http" | "sse" | undefined) ?? null,
     url: (url as string | undefined) ?? null,
     headers: (headers as Record<string, string> | undefined) ?? {},
-    only: (only as Tool[] | undefined) ?? TOOLS,
+    only: (only as AgentId[] | undefined) ?? having("mcp").map((a) => a.id),
   };
 }
 
@@ -105,9 +110,6 @@ function fillServer(server: Server, vars: Record<string, string>): { server: Ser
   return { server: { ...server, ...(value as Pick<Server, "command" | "env" | "url" | "headers">) }, unknown };
 }
 
-export const withoutEmpty = (entry: Obj): Obj =>
-  Object.fromEntries(Object.entries(entry).filter(([, v]) => !(Array.isArray(v) ? v.length === 0 : isObject(v) && Object.keys(v).length === 0)));
-
 /**
  * Program, arguments and environment as the server runs them. A first element of `npx` becomes
  * the `npx` beside Node, with a `PATH` that finds that Node, because a GUI-launched tool has no fnm.
@@ -118,18 +120,14 @@ function launch(command: string[], env: Record<string, string>, node: string): {
   return { command: [join(bin, "npx"), ...command.slice(1)], env: { ...env, PATH: `${bin}:/usr/local/bin:/usr/bin:/bin` } };
 }
 
-export function renderFor(tool: Tool, server: Server, node: string): Obj {
-  if (server.command !== null) {
-    const { command, env } = launch(server.command, server.env, node);
-    return tool === "claude"
-      ? withoutEmpty({ type: "stdio", command: command[0], args: command.slice(1), env })
-      : withoutEmpty({ type: "local", command, environment: env });
-  }
-  return withoutEmpty({ type: tool === "claude" ? server.transport : "remote", url: server.url, headers: server.headers });
+/** The entry `agent` gets for `server`, after `launch` has made its command run from the timer. */
+export function renderFor(agent: Has<"mcp">, server: Server, node: string): Obj {
+  if (server.command === null) return agent.mcp.render(server);
+  return agent.mcp.render({ ...server, ...launch(server.command, server.env, node) });
 }
 
 /**
- * The owned keys for the picked servers: one per server per tool it renders to. Variables are
+ * The owned keys for the picked servers: one per server per agent it renders to. Variables are
  * filled here and problems reported; `secret:NAME` is left for the secrets step.
  */
 export function mcpKeys(servers: Server[], vars: Record<string, string>, node: string, problems: string[]): DesiredKey[] {
@@ -137,8 +135,9 @@ export function mcpKeys(servers: Server[], vars: Record<string, string>, node: s
   for (const picked of servers) {
     const { server, unknown } = fillServer(picked, vars);
     for (const name of unknown) problems.push(`catalog/mcp.yaml: server '${server.name}': {{ vars.${name} }} is not defined in any 'vars'`);
-    for (const tool of server.only) {
-      keys.push({ file: SERVER_FILE[tool], path: `${SERVER_PATH[tool]}.${server.name}`, value: renderFor(tool, server, node) });
+    for (const id of server.only) {
+      const agent = having("mcp").find((a) => a.id === id)!;
+      keys.push({ file: agent.mcp.file, path: `${agent.mcp.key}.${server.name}`, value: renderFor(agent, server, node) });
     }
   }
   return keys;

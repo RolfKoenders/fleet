@@ -1,9 +1,9 @@
 import { spawnSync } from "node:child_process";
 import { chmodSync, mkdirSync, rmdirSync, statSync } from "node:fs";
+import { CLAUDE_JSON } from "./agents/index.ts";
 import { MissingToolError } from "./git.ts";
 import { readDoc, writeKeys } from "./keys.ts";
 import type { KeyChange } from "./keys.ts";
-import { CLAUDE_JSON } from "./mcp.ts";
 import { expandTarget } from "./plan.ts";
 import { firstLine } from "./sops.ts";
 import type { KeyRecord } from "./state.ts";
@@ -17,8 +17,6 @@ const PREFIX = "mcpServers.";
 const LOCK_WAIT_MS = 5000;
 /** A lock this old was left by a process that died: a writer holds it for milliseconds. */
 const LOCK_STALE_MS = 10_000;
-
-export const isClaudeServer = (key: { file: string }): boolean => key.file === CLAUDE_JSON;
 
 export const serverName = (key: { path: string }): string => key.path.slice(PREFIX.length);
 

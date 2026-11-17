@@ -2,6 +2,8 @@ import { spawnSync } from "node:child_process";
 import { readdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { AGENT_IDS, AGENTS } from "./agents/index.ts";
+import type { AgentId } from "./agents/index.ts";
 import { planConflicts, planCounts } from "./apply.ts";
 import { MissingToolError, repoState } from "./git.ts";
 import type { RepoState } from "./git.ts";
@@ -17,7 +19,7 @@ import { isObject } from "./yamlfile.ts";
 import type { Obj } from "./yamlfile.ts";
 
 /** A version fleet could read, or null. The Node that runs fleet is `node`; `t3` is the newest installed T3 Code. */
-export type ToolVersions = { claude: string | null; opencode: string | null; sops: string | null; node: string | null; t3: string | null };
+export type ToolVersions = { [K in AgentId]: string | null } & { sops: string | null; node: string | null; t3: string | null };
 
 /** What `fleet status --json` reports about one host, besides `host`. Null is "could not be read". */
 export type StatusFields = {
@@ -40,7 +42,7 @@ export type ConflictName = { kind: string; path: string };
 /** Enough to name what is wrong; the full list is `status --conflicts`. */
 export const CONFLICT_LIST_MAX = 5;
 
-const TOOL_NAMES = ["claude", "opencode", "sops", "node", "t3"] as const;
+const TOOL_NAMES = [...AGENT_IDS, "sops", "node", "t3"] as const;
 const TIMEOUT_MS = 15_000;
 
 /** The first dotted version in a tool's output, such as `2.1.4` from `2.1.4 (Claude Code)`. */
@@ -171,8 +173,7 @@ function collect(toolDir: string, configDir: string, home: string, host: string 
     timer: timerState(home),
     ...changeCounts(configDir, home, host, messages),
     tools: {
-      claude: toolVersion("claude", ["--version"], home),
-      opencode: toolVersion("opencode", ["--version"], home),
+      ...(Object.fromEntries(AGENTS.map((a) => [a.id, toolVersion(a.binary, a.version, home)])) as { [K in AgentId]: string | null }),
       sops: toolVersion("sops", SOPS_VERSION_ARGS, home),
       node: parseVersion(process.version),
       t3: t3Version(home),

@@ -2,10 +2,9 @@ import { createHash } from "node:crypto";
 import { chmodSync, lstatSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { parseJsonc } from "./jsonc.ts";
-import { CLAUDE_JSON } from "./mcp.ts";
+import { having, mergedFiles, writtenByBinary } from "./agents/index.ts";
 import { expandTarget } from "./plan.ts";
 import type { Conflict } from "./plan.ts";
-import { SETTINGS_FILE } from "./settings.ts";
 import type { DesiredKey } from "./settings.ts";
 import type { KeyRecord } from "./state.ts";
 import { isObject } from "./yamlfile.ts";
@@ -32,8 +31,6 @@ export type KeyPlan = {
 export const emptyKeyPlan = (): KeyPlan => ({ creates: [], updates: [], removes: [], noops: [], forgets: [], conflicts: [] });
 
 export const keyName = (ref: KeyRef): string => `${ref.file} ${ref.path}`;
-
-const OLD_OPENCODE_FILE = "~/.config/opencode/opencode.json";
 
 const canonical = (value: unknown): unknown => {
   if (Array.isArray(value)) return value.map(canonical);
@@ -105,15 +102,17 @@ const exists = (path: string): boolean => {
 /** Reads the host, never writes. */
 export function planKeys(desired: DesiredKey[], recorded: KeyRecord[], home: string): KeyPlan {
   const plan = emptyKeyPlan();
-  if (exists(expandTarget(OLD_OPENCODE_FILE, home))) {
+  for (const agent of having("settings")) {
+    const old = agent.settings.alsoLoaded;
+    if (old === undefined || !exists(expandTarget(old, home))) continue;
     plan.conflicts.push({
       kind: "key",
-      path: OLD_OPENCODE_FILE,
-      detail: `${OLD_OPENCODE_FILE} exists, and opencode loads both it and ${SETTINGS_FILE.opencode}`,
-      fix: `Move its settings into the host file and delete it (rm ${OLD_OPENCODE_FILE}), then run 'fleet apply'.`,
+      path: old,
+      detail: `${old} exists, and ${agent.name} loads both it and ${agent.settings.file}`,
+      fix: `Move its settings into the host file and delete it (rm ${old}), then run 'fleet apply'.`,
     });
   }
-  for (const file of [...Object.values(SETTINGS_FILE), CLAUDE_JSON]) {
+  for (const file of mergedFiles()) {
     const wanted = desired.filter((k) => k.file === file);
     const had = recorded.filter((k) => k.file === file);
     if (wanted.length > 0 || had.length > 0) planFile(file, wanted, had, home, plan);
@@ -180,8 +179,8 @@ function planFile(file: string, desired: DesiredKey[], recorded: KeyRecord[], ho
     }
   }
 
-  // Fleet never rewrites ~/.claude.json, so comments in it cost nothing.
-  if (!read.plain && file !== CLAUDE_JSON && local.creates.length + local.updates.length + local.removes.length > 0) {
+  // Fleet never rewrites a file its agent's binary writes (`~/.claude.json`), so comments in it cost nothing.
+  if (!read.plain && !writtenByBinary({ file }) && local.creates.length + local.updates.length + local.removes.length > 0) {
     local.creates = [];
     local.updates = [];
     local.removes = [];

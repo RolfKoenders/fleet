@@ -11,6 +11,7 @@ import { itemLines } from "./yamlview.js";
 /** @typedef {import("./adding.js").AddKind} Kind */
 /** @typedef {import("./matrix.js").Op} Op */
 /** @typedef {import("./adding.js").Pane} Pane */
+/** @typedef {import("./adding.js").Agent} Agent */
 
 /** What each Edit dialog is called, and the button that keeps the edit. */
 export const EDIT = {
@@ -30,9 +31,9 @@ export const EDIT_DROP_LABEL = "Take off To push";
 
 /**
  * The state of an Edit dialog of `kind` before the item has been read.
- * @param {Kind} kind @param {string} name
+ * @param {Kind} kind @param {string} name @param {Agent[]} agents
  */
-export const freshEdit = (kind, name) => ({ ...freshAdd(kind), edit: /** @type {EditState} */ ({ name, state: "loading", error: null, reason: null, path: "", text: "", base: null }) });
+export const freshEdit = (kind, name, agents) => ({ ...freshAdd(kind, agents), edit: /** @type {EditState} */ ({ name, state: "loading", error: null, reason: null, path: "", text: "", base: null }) });
 
 const ADDS = { server: "addServer", source: "addSource", bundle: "addBundle" };
 const EDITS = { server: "editServer", source: "editSource", bundle: "editBundle", host: "editHost" };
@@ -78,10 +79,10 @@ const rowsOf = (map) =>
 
 /**
  * The server form for an entry as the file has it.
- * @param {string} name @param {Record<string, any>} e
+ * @param {string} name @param {Record<string, any>} e @param {Agent[]} agents the agents a server can be for, as the server lists them
  * @returns {import("./catalog.js").ServerForm}
  */
-export function serverFormOf(name, e) {
+export function serverFormOf(name, e, agents) {
   const net = e.transport !== undefined || e.url !== undefined;
   return {
     name,
@@ -89,8 +90,7 @@ export function serverFormOf(name, e) {
     command: Array.isArray(e.command) ? joinCommand(e.command) : "",
     url: typeof e.url === "string" ? e.url : "",
     rows: rowsOf(net ? e.headers : e.env),
-    claude: e.only === undefined || e.only.includes("claude"),
-    opencode: e.only === undefined || e.only.includes("opencode"),
+    agents: Object.fromEntries(agents.map((a) => [a.id, e.only === undefined || e.only.includes(a.id)])),
   };
 }
 
