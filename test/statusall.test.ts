@@ -248,7 +248,7 @@ test("a remote host's agents are read as printable text for the agents this flee
     "nonsense",
   ];
   const s = setup([{ name: "a", ssh: "alice@a" }, { name: "b", ssh: "alice@b" }], {
-    "alice@a": { stdout: statusDoc({ agents, notInstalled: ["opencode: not installed, its config is left as is. Install it, or pin `agents:`", 7] }) },
+    "alice@a": { stdout: statusDoc({ agents, notInstalled: ["opencode", "from-a-newer-fleet", "claude", "claude", 7] }) },
     "alice@b": OK,
     "alice@laptop": OK,
   });
@@ -258,7 +258,7 @@ test("a remote host's agents are read as printable text for the agents this flee
     { id: "claude", version: "2.1.4?", active: true, pinned: true },
     { id: "opencode", version: null, active: false, pinned: false },
   ]);
-  assert.deepEqual(byHost(doc.hosts, "a").status.notInstalled, ["opencode: not installed, its config is left as is. Install it, or pin `agents:`"]);
+  assert.deepEqual(byHost(doc.hosts, "a").status.notInstalled, ["claude", "opencode"], "ids this fleet knows, once each, in registry order");
   assert.equal(byHost(doc.hosts, "b").status.agents, null, "a host on an older fleet sends none");
   assert.equal(byHost(doc.hosts, "b").status.notInstalled, null);
   assert.equal(byHost(doc.hosts, "b").result, "ok");

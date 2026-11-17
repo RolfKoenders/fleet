@@ -12,7 +12,7 @@ git config --global url."https://github.com/you/".insteadOf "git@github.com:you/
 
 ## Which agents a machine gets
 
-A machine gets the agents installed on it. Fleet looks for each agent's program (`claude`, `opencode`) on the usual paths and in the directory of the Node that fleet runs under, where `npm -g` puts agent CLIs. Install an agent and the next apply sets it up. An agent that is not installed is left alone: nothing of its is written, and what fleet applied for it earlier stays where it is. Fleet says so, so that a missing install does not go unnoticed:
+A machine gets the agents installed on it. Fleet looks for each agent's program (`claude`, `opencode`) on the usual paths and in the directory of the Node that fleet runs under, where `npm -g` puts agent CLIs. Install an agent and the next apply sets it up. An agent that is not installed is left alone: nothing of its is written, and what fleet applied for it earlier stays where it is. An agent you never had is never mentioned, however many agents the shared config names. One you had, and fleet applied config for, is mentioned, so that a lost install does not go unnoticed:
 
 ```
 warning opencode: not installed, its config is left as is. Install it, or pin `agents:`

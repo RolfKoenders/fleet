@@ -1,5 +1,4 @@
 import { AGENTS } from "../../agents/index.ts";
-import { notInstalledWarning } from "../../hostagents.ts";
 import { BOLD, DIM, drawBox } from "../buffer.ts";
 import type { BorderKind, Canvas, Style } from "../buffer.ts";
 import { mix } from "../color.ts";
@@ -138,7 +137,7 @@ function drawCard(c: Canvas, x: number, y: number, w: number, host: HostInfo, li
   line(3, [["clone ", s.muted], [`${fleet.branch ?? "detached"}@${fleet.sha.slice(0, 7)}`, s.sub], [fleet.clean ? " clean" : " dirty", fleet.clean ? s.ok : s.warn], [sync, s.warn]]);
   // Only the agents this host gets, and a word for one fleet has config for and cannot find. A host on an older fleet sends neither, and shows them all.
   const gets = AGENTS.filter((a) => status.agents === null || status.agents.some((x) => x.id === a.id && x.active));
-  const missing = AGENTS.filter((a) => status.notInstalled?.includes(notInstalledWarning(a)) === true);
+  const missing = AGENTS.filter((a) => status.notInstalled?.includes(a.id) === true);
   line(4, [...gets.flatMap((a) => tool(a.id, t[a.id])), ...missing.flatMap((a): Seg[] => [[`⚠ ${a.id} not installed`, s.warn], [gap, s.faint]])]);
   line(5, [...tool("sops", t.sops), ...tool("node", t.node), ...tool("t3", t.t3)]);
   line(6, config);

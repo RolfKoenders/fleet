@@ -11,14 +11,14 @@ export const detectAgents = (home: string = homedir(), env: NodeJS.ProcessEnv = 
 export const notInstalledWarning = (agent: Agent): string => `${agent.name}: not installed, its config is left as is. Install it, or pin \`agents:\``;
 
 /**
- * One warning per agent that fleet has config for and cannot find: something wanted for it (`wanted`, the agents whose
- * config was dropped) or something it applied earlier (`applied`, `~/` paths), and no binary and no `agents:` list in
- * the host file. What the agent has on the host is left as it is.
+ * The agents fleet applied config for earlier (`applied`, `~/` paths) and cannot find now: no binary and no `agents:` list in
+ * the host file. What they have on the host is left as it is. An agent the host never had config applied for is not named,
+ * however much the shared config says about it, so nobody hears about an agent they do not use.
  */
-export function notInstalledWarnings(on: readonly Agent[], pin: readonly string[] | null, wanted: readonly Registered["id"][], applied: readonly string[]): string[] {
+export function notInstalledAgents(on: readonly Agent[], pin: readonly string[] | null, applied: readonly string[]): Registered["id"][] {
   if (pin !== null) return [];
   const had = new Set(applied.filter((path) => leftAlone(path, on)).map((path) => agentOf(path)?.id));
-  return AGENTS.filter((a) => !on.some((o) => o.id === a.id) && (wanted.includes(a.id) || had.has(a.id))).map(notInstalledWarning);
+  return AGENTS.filter((a) => had.has(a.id) && !on.some((o) => o.id === a.id)).map((a) => a.id);
 }
 
 /**

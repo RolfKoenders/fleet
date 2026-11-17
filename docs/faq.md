@@ -14,7 +14,7 @@ No. It leaves other entries in `~/.claude/skills` alone, and in a settings file 
 
 ## Why does fleet say an agent is not installed?
 
-A machine gets the agents installed on it, and fleet found none of `<agent>` but has config for it, either in the config or from an earlier apply. It leaves everything of that agent alone until it is installed, and says so on each apply, diff and status. If the machine should not have the agent at all, name the agents it keeps in its host file: `agents: [claude]`. See [setting up machines](setting-up-machines.md#which-agents-a-machine-gets), which also covers removing an agent's config.
+A machine gets the agents installed on it, and fleet found none of `<agent>` although it applied config for it on this machine earlier. (An agent that was never set up here is not mentioned, however much the config says about it.) It leaves everything of that agent alone until it is installed, and says so on each apply, diff and status. If the machine should not have the agent at all, name the agents it keeps in its host file: `agents: [claude]`. See [setting up machines](setting-up-machines.md#which-agents-a-machine-gets), which also covers removing an agent's config.
 
 ## When does a change reach a machine?
 

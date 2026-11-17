@@ -1,7 +1,7 @@
 import { existsSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
-import { agentOf, AGENT_IDS, AGENTS, hostAgents, isAgentId, leftAlone, SKILL_TARGETS, skillTargets } from "./agents/index.ts";
+import { AGENT_IDS, AGENTS, hostAgents, isAgentId, leftAlone, SKILL_TARGETS, skillTargets } from "./agents/index.ts";
 import type { Agent, AgentId, Registered } from "./agents/index.ts";
 import { parseCatalog, pickBundles } from "./catalog.ts";
 import type { Catalog } from "./catalog.ts";
@@ -48,8 +48,6 @@ export type Config = {
   agents: Registered[];
   /** The agents the host file or the defaults name in `agents`, or null when they name none. */
   pin: AgentId[] | null;
-  /** Agents left out of `agents` that the config has keys or files for, which were dropped. */
-  unmet: AgentId[];
 };
 
 export type LoadOptions = {
@@ -240,12 +238,7 @@ export function loadConfig(configDir: string, host: string, options: LoadOptions
   // A host file's list replaces the defaults', as every shared key does.
   const pin = checkedHost.agents ?? checkedDefaults.agents;
   const on = options.agents === undefined ? [...AGENTS] : hostAgents(pin, options.agents);
-  const unmet = new Set<AgentId>();
-  const keep = (path: string): boolean => {
-    if (!leftAlone(path, on)) return true;
-    unmet.add(agentOf(path)!.id);
-    return false;
-  };
+  const keep = (path: string): boolean => !leftAlone(path, on);
 
   const merged = new Map<string, UnresolvedRecord>();
   for (const record of [...checkedDefaults.records, ...checkedHost.records]) merged.set(record.target, record);
@@ -299,6 +292,5 @@ export function loadConfig(configDir: string, host: string, options: LoadOptions
   if (problems.length > 0) throw new InvalidConfigError(problems);
   const kept = keys.filter((key) => keep(key.file));
   const secrets = [...new Set(kept.flatMap((key) => secretNames(key.value)))].sort();
-  const left = AGENT_IDS.filter((id) => unmet.has(id));
-  return conflicts.length > 0 ? { files: [], keys: [], conflicts, secrets: [], skills: [], agents: on, pin, unmet: [] } : { files, keys: kept, conflicts, secrets, skills, agents: on, pin, unmet: left };
+  return conflicts.length > 0 ? { files: [], keys: [], conflicts, secrets: [], skills: [], agents: on, pin } : { files, keys: kept, conflicts, secrets, skills, agents: on, pin };
 }

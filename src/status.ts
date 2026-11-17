@@ -8,7 +8,7 @@ import { planConflicts, planCounts } from "./apply.ts";
 import { MissingToolError, repoState } from "./git.ts";
 import type { RepoState } from "./git.ts";
 import { readHostName } from "./host.ts";
-import { detectAgents } from "./hostagents.ts";
+import { detectAgents, notInstalledWarning } from "./hostagents.ts";
 import { paint } from "./output.ts";
 import type { Result } from "./output.ts";
 import { statusOs, timerWord } from "./scheduler.ts";
@@ -42,8 +42,8 @@ export type StatusFields = {
   conflictList: ConflictName[] | null;
   /** Every agent fleet knows, as this host has it. Null when the host's fleet does not send it. */
   agents: AgentStatus[] | null;
-  /** Agents fleet has config for and cannot find on the host, as `apply` words them. Null when the host's fleet does not send it. */
-  notInstalled: string[] | null;
+  /** The ids of agents fleet applied config for earlier and cannot find on the host now. Ids, not sentences, so a reader words them itself. Null when the host's fleet does not send it. */
+  notInstalled: AgentId[] | null;
   tools: ToolVersions;
 };
 
@@ -125,7 +125,7 @@ const reasons = (result: Result): string => {
   return `${all.slice(0, 3).join("; ")}${all.length > 3 ? ` (and ${all.length - 3} more)` : ""}`;
 };
 
-type Counted = Pick<StatusFields, "pending" | "conflicts" | "conflictList"> & { pin: AgentId[] | null; notInstalled: string[] };
+type Counted = Pick<StatusFields, "pending" | "conflicts" | "conflictList"> & { pin: AgentId[] | null; notInstalled: AgentId[] };
 
 function changeCounts(configDir: string, home: string, host: string | null, messages: string[]): Counted {
   const unknown = { pending: null, conflicts: null, conflictList: null, pin: null, notInstalled: [] };
@@ -194,7 +194,7 @@ function collect(toolDir: string, configDir: string, home: string, host: string 
   const { pin, notInstalled, ...counts } = changeCounts(configDir, home, host, messages);
   const versions = Object.fromEntries(AGENTS.map((a) => [a.id, toolVersion(a.binary, a.version, home)])) as { [K in AgentId]: string | null };
   const on = hostAgents(pin, detectAgents(home));
-  messages.push(...notInstalled.map((w) => `fleet: ${w}`));
+  messages.push(...AGENTS.filter((a) => notInstalled.includes(a.id)).map((a) => `fleet: ${notInstalledWarning(a)}`));
   return {
     repos: { fleet },
     applied: appliedAge(home, messages),
@@ -287,7 +287,7 @@ export function statusFromDocument(doc: Obj): StatusFields | null {
     conflicts: count(doc.conflicts),
     conflictList: conflictNames(doc.conflictList),
     agents: agentStatuses(doc.agents),
-    notInstalled: Array.isArray(doc.notInstalled) ? doc.notInstalled.flatMap((w) => printable(w) ?? []).slice(0, AGENT_IDS.length) : null,
+    notInstalled: Array.isArray(doc.notInstalled) ? AGENT_IDS.filter((id) => (doc.notInstalled as unknown[]).includes(id)) : null,
     tools: Object.fromEntries(TOOL_NAMES.map((name) => [name, printable(tools[name])])) as ToolVersions,
   };
 }

@@ -125,7 +125,6 @@ test("loadConfig drops config for an agent the host does not get only when it is
 
   const onlyClaude = load([claude]);
   assert.deepEqual(onlyClaude.agents.map((a) => a.id), ["claude"]);
-  assert.deepEqual(onlyClaude.unmet, ["opencode"]);
   assert.equal(onlyClaude.keys.some((k) => k.file === "~/.config/opencode/opencode.jsonc"), false);
   assert.equal(files([claude]).includes("~/.config/opencode/AGENTS.md"), false);
   assert.equal(files([claude]).includes("~/notes.md"), true, "a path no agent owns always applies");
@@ -157,20 +156,25 @@ test("agents: names the agents the host gets; a host file's list replaces the de
 
 // ---- apply ----
 
-test("with only claude installed, apply writes nothing under ~/.config/opencode and says opencode is left as is", { skip: skipIfSystemWide("opencode") }, () => {
+test("with only claude installed, apply writes nothing under ~/.config/opencode and nothing anywhere mentions opencode, though the config names it", { skip: skipIfSystemWide("opencode") }, () => {
   const w = world();
+  installStatusTools(w.home);
   removeAgent(w.home, "opencode");
   const r = w.run("apply");
   assert.equal(r.code, 0, r.stderr);
-  assert.match(r.stdout, NOT_INSTALLED("opencode"));
+  assert.doesNotMatch(r.stdout + r.stderr, /not installed/, "an agent this host never had is not worth a word");
   assert.equal(w.exists(".config/opencode"), false);
   assert.equal(w.exists(".claude/CLAUDE.md"), true);
   assert.equal(w.exists("notes.md"), true);
   assert.equal(JSON.parse(readFileSync(join(w.home, ".claude.json"), "utf8")).mcpServers.everywhere.url, "https://a.example.com/mcp");
   assert.equal(w.state().keys.some((k) => k.file.startsWith("~/.config/opencode")), false);
-  assert.match(w.run("diff").stdout, NOT_INSTALLED("opencode"));
-  const doc = JSON.parse(w.run("diff", "--json").stdout);
-  assert.deepEqual(doc.warnings, ["opencode: not installed, its config is left as is. Install it, or pin `agents:`"]);
+  const diff = w.run("diff");
+  assert.doesNotMatch(diff.stdout + diff.stderr, /not installed/);
+  assert.deepEqual(JSON.parse(w.run("diff", "--json").stdout).warnings ?? [], []);
+  const status = w.run("status");
+  assert.doesNotMatch(status.stderr, /not installed/);
+  assert.match(status.stdout, /^agents: claude 2\.1\.4 \(opencode not installed\)$/m, "the agents line still says what is installed");
+  assert.deepEqual(JSON.parse(w.run("status", "--json").stdout).notInstalled, []);
 });
 
 test("installing opencode makes the next apply set it up", { skip: skipIfSystemWide("opencode") }, () => {
@@ -206,6 +210,7 @@ test("removing a binary leaves its files and applied state alone, with the warni
   assert.equal(diff.code, 0, diff.stderr);
   assert.doesNotMatch(diff.stdout, /remove /, "nothing is planned for removal");
   assert.match(diff.stdout, NOT_INSTALLED("opencode"), "it is said, because applied state is held for opencode");
+  assert.deepEqual(JSON.parse(w.run("diff", "--json").stdout).warnings, ["opencode: not installed, its config is left as is. Install it, or pin `agents:`"]);
   const r = w.run("apply");
   assert.equal(r.code, 0, r.stderr);
   assert.match(r.stdout, NOT_INSTALLED("opencode"));
@@ -301,7 +306,7 @@ test("status text and JSON name the host's agents, and `tools` is as it was", { 
     { id: "opencode", version: null, active: false, pinned: false },
   ]);
   assert.equal(one.tools.opencode, null);
-  assert.deepEqual(one.notInstalled, ["opencode: not installed, its config is left as is. Install it, or pin `agents:`"]);
+  assert.deepEqual(one.notInstalled, ["opencode"], "ids, so the reader words it itself; opencode was applied before, so it is named");
   const text = w.run("status");
   assert.match(text.stdout, /^agents: claude 2\.1\.4 \(opencode not installed\)$/m);
   assert.match(text.stderr, /fleet: opencode: not installed, its config is left as is\. Install it, or pin `agents:`/, "the warning is loud in status too");
