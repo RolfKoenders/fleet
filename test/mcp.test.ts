@@ -259,15 +259,15 @@ test("a project-scoped server with the same name is a warning that names the pro
   assert.match(diff.stdout, /warning .*\/work\/tracker/);
 });
 
-test("without claude and with no agents pinned, apply leaves all of Claude's config alone, sets up opencode and warns", { skip: skipIfSystemWide("claude") }, () => {
+test("without claude and with no agents pinned, apply leaves all of Claude's config alone and sets up opencode, and says nothing until claude has been set up and goes away", { skip: skipIfSystemWide("claude") }, () => {
   const s = setup({ catalog: BOTH, host: "mcp:\n  include: [everywhere]\nsettings:\n  claude:\n    env:\n      A: b\n", installClaude: false });
   const r = s.run(["apply"]);
   assert.equal(r.code, EXIT.ok, r.stderr);
-  assert.match(r.stdout, /warning Claude Code: not installed, its config is left as is\. Install it, or pin `agents:`/);
+  assert.doesNotMatch(r.stdout + r.stderr, /not installed/, "this host never had Claude set up, so there is nothing to warn about");
   assert.ok(s.readJson(".config/opencode/opencode.jsonc").mcp.everywhere);
   assert.throws(() => readFileSync(join(s.home, ".claude.json")));
   assert.throws(() => readFileSync(join(s.home, ".claude/settings.json")), "Claude's settings are left alone too");
-  assert.match(s.run(["diff"]).stdout, /Claude Code: not installed/);
+  assert.doesNotMatch(s.run(["diff"]).stdout, /not installed/);
 
   installFakeClaude(s.home);
   const after = s.run(["apply"]);
@@ -275,6 +275,9 @@ test("without claude and with no agents pinned, apply leaves all of Claude's con
   assert.doesNotMatch(after.stdout, /not installed/);
   assert.ok(s.readJson(".claude.json").mcpServers.everywhere);
   assert.equal(s.readJson(".claude/settings.json").env.A, "b");
+
+  removeAgent(s.home, "claude");
+  assert.match(s.run(["diff"]).stdout, /warning Claude Code: not installed, its config is left as is\. Install it, or pin `agents:`/, "now fleet has applied config for it, so losing it is worth a word");
 });
 
 test("a host file that names claude while it is missing still gets everything but Claude's servers, which wait for the binary", { skip: skipIfSystemWide("claude") }, () => {
