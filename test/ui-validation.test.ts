@@ -25,7 +25,7 @@ const refusal = (fn: () => unknown): string | null => {
     return (error as Error).message;
   }
 };
-const serverForm = (over: Record<string, unknown> = {}) => ({ name: "web", kind: "http" as const, command: "", url: "https://example.com/mcp", rows: [], claude: true, opencode: true, ...over });
+const serverForm = (over: Record<string, unknown> = {}) => ({ name: "web", kind: "http" as const, command: "", url: "https://example.com/mcp", rows: [], agents: { claude: true, opencode: true }, ...over });
 const serverOps = (name: string, entry: Record<string, unknown>) => () => opsOf({ ops: [{ op: "addServer", name, entry }] });
 const sourceForm = (over: Record<string, unknown> = {}) => ({ name: "docs", repo: "https://example.com/x.git", path: "", branch: "", mode: "pin" as const, review: false, ...over });
 const cloned = (f: ReturnType<typeof sourceForm>) => ({ key: client.cloneKey(f), repo: f.repo, path: f.path || ".", branch: null, commit: "a".repeat(40), skills: ["s"], problem: null, id: "1", headBranch: "main" });

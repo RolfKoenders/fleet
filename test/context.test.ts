@@ -396,7 +396,7 @@ test("symlinks are followed: a skill that is a link to a directory counts", () =
 });
 
 test("the code that measures imports nothing that starts a process or reads a secret", () => {
-  for (const file of ["context.ts", "contextcmd.ts", "contextread.ts", "contextview.ts", "agentpaths.ts"]) {
+  for (const file of ["context.ts", "contextcmd.ts", "contextread.ts", "contextview.ts", "agents/index.ts", "agents/claude.ts", "agents/opencode.ts", "agents/shape.ts"]) {
     const imports = [...readFileSync(join(import.meta.dirname, "../src", file), "utf8").matchAll(/^import .* from "(.+)";$/gm)].map((m) => m[1]);
     for (const forbidden of ["node:child_process", "./mcpprobe.ts", "./secrets.ts", "./sops.ts", "./secretscli.ts", "./doctor.ts"]) {
       assert.equal(imports.includes(forbidden), false, `${file} imports ${forbidden}`);

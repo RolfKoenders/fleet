@@ -72,6 +72,7 @@ test("matrix: one row per bundle and server, one cell per host, saying defaults,
     assert.deepEqual(cell(m, "bundles", "core", "laptop"), { on: true, picked: "defaults", excluded: null });
     assert.deepEqual(cell(m, "bundles", "extra", "laptop"), { on: true, picked: "host", excluded: null });
     assert.deepEqual(cell(m, "bundles", "core", "remote"), { on: false, picked: "defaults", excluded: "host" });
+    assert.deepEqual(m.agents, [{ id: "claude", name: "Claude Code" }, { id: "opencode", name: "opencode" }], "the agents a server can be for, from the registry");
     assert.deepEqual(m.outside, []);
   });
 });

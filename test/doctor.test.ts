@@ -698,6 +698,18 @@ test("--all: what a remote host sends is cut to known fields and printable text"
   assert.equal(human.stdout.includes("\u0007"), false);
 });
 
+test("--all: a server of an agent this fleet does not know is left out, and the rest of the host's answer is read", () => {
+  const unknown = { server: "alpha", tool: "antigravity", transport: "stdio", result: "ok", tools: 3, latencyMs: 9, protocol: null, detail: null, fails: false };
+  const known = { server: "beta", tool: "opencode", transport: "remote", result: "ok", tools: 5, latencyMs: 12, protocol: null, detail: null, fails: false };
+  const s = setupAll({ "me@a": { stdout: docOf({ servers: [unknown, known] }) } }, { a: "ssh: me@a\n" });
+  const { r, doc } = s.all();
+  assert.equal(r.code, EXIT.ok, r.stderr);
+  const a = (doc as unknown as { hosts: { host: string; result: string; doctor: Doc | null }[] }).hosts.find((h) => h.host === "a")!;
+  assert.equal(a.result, "ok", "one unknown agent does not reject the whole document");
+  assert.deepEqual(a.doctor!.servers.map((x) => [x.server, x.tool]), [["beta", "opencode"]]);
+  assert.doesNotMatch(r.stderr, /not a fleet doctor document/);
+});
+
 test("--all text is a grid with a column per host and details below", () => {
   const s = setupAll(
     {

@@ -1,6 +1,8 @@
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { agentById } from "./agents/index.ts";
+import type { AgentId } from "./agents/index.ts";
 import { stateDir, writePrivateJson } from "./state.ts";
 import { count, printable } from "./status.ts";
 import { isObject } from "./yamlfile.ts";
@@ -17,7 +19,7 @@ import { isObject } from "./yamlfile.ts";
 export type MeasuredServer = {
   name: string;
   /** Which agent's entry of the server this is. */
-  agent: "claude" | "opencode";
+  agent: AgentId;
   /** What the most recent run found, whether or not the server answered. */
   result: string;
   /**
@@ -38,10 +40,8 @@ export type HostDoctorResult = { version: 1; host: string; servers: MeasuredServ
 
 const resultPath = (home: string): string => join(stateDir(home), "doctor.json");
 
-const AGENTS = ["claude", "opencode"] as const;
-
 function measuredOf(v: unknown): MeasuredServer | null {
-  const agent = isObject(v) ? AGENTS.find((a) => a === v.agent) : undefined;
+  const agent = isObject(v) ? agentById(v.agent)?.id : undefined;
   const name = isObject(v) ? printable(v.name) : null;
   if (!isObject(v) || agent === undefined || name === null || name === "") return null;
   return {
@@ -68,7 +68,7 @@ export function readDoctorResult(home: string = homedir()): HostDoctorResult | n
 }
 
 /** One server as this run found it. `size` is null when it did not answer. */
-export type RunServer = { name: string; agent: "claude" | "opencode"; result: string; tools: number | null; size: number | null; definition: string };
+export type RunServer = { name: string; agent: AgentId; result: string; tools: number | null; size: number | null; definition: string };
 
 /**
  * Saves this run. A server that answered is measured now. One that did not keeps its last good measurement

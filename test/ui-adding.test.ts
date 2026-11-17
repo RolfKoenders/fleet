@@ -103,8 +103,8 @@ test("Esc and Cancel close the dialog, except while a host is being set up", () 
 });
 
 test("a dialog starts blank every time, and no two share a form", () => {
-  const a = freshAdd("server");
-  const b = freshAdd("server");
+  const a = freshAdd("server", []);
+  const b = freshAdd("server", []);
   a.server.rows.push({ key: "X", mode: "plain", value: "1" });
   a.bundle.picked.push("alpha");
   assert.equal(b.server.rows.length, 1);

@@ -1,6 +1,8 @@
 import { spawnSync } from "node:child_process";
 import { appendFileSync, chmodSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { AGENTS } from "../agents/index.ts";
+import type { AgentId } from "../agents/index.ts";
 import { LAUNCHD_LABEL } from "../scheduler.ts";
 import { fakeCallsLog, sandboxEnv } from "./sandbox.ts";
 
@@ -19,11 +21,13 @@ if (root === undefined || home === undefined) {
 }
 appendFileSync(fakeCallsLog(root), `${JSON.stringify({ tool, home, args })}\n`);
 
-function claude(): number {
-  if (args.length === 1 && args[0] === "--version") {
-    console.log("2.1.4 (Claude Code)");
-    return 0;
-  }
+/** What each agent prints for its version. A new agent fails to compile until it has a line. */
+const VERSIONS: Record<AgentId, string> = { claude: "2.1.4 (Claude Code)", opencode: "1.4.2" };
+
+/** What an agent's fake does beyond printing its version. Only an agent whose binary writes its servers needs one. */
+const OTHER_CALLS: Partial<Record<AgentId, () => number>> = { claude: removeServer };
+
+function removeServer(): number {
   const file = join(home!, ".claude.json");
   const [group, verb, scope, user, name, json] = args;
   if (group !== "mcp" || scope !== "--scope" || user !== "user" || name === undefined) return 2;
@@ -66,9 +70,8 @@ function ssh(): number {
 }
 
 const FAKES: Record<string, () => number> = {
-  claude,
+  ...Object.fromEntries(AGENTS.map((a) => [a.binary, () => (args.join(" ") === a.version.join(" ") ? (console.log(VERSIONS[a.id]), 0) : (OTHER_CALLS[a.id] ?? (() => 2))())])),
   ssh,
-  opencode: () => (args[0] === "--version" ? (console.log("1.4.2"), 0) : 2),
   // The demo has no secrets, so it never decrypts anything; status only asks for the version.
   sops: () => (args[0] === "--version" ? (console.log("sops 3.13.3"), 0) : (console.error("fake sops: the demo uses no secrets"), 1)),
   systemctl: () => (args.join(" ") === "--user is-active fleet.timer" ? (console.log("active"), 0) : 2),

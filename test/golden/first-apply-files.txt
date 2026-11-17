@@ -1,0 +1,123 @@
+=== ~/.claude.json
+{
+  "numStartups": 3,
+  "mcpServers": {
+    "handmade": {
+      "type": "http",
+      "url": "https://hand.example.com"
+    },
+    "docs": {
+      "type": "stdio",
+      "command": "<NODE_BIN>/npx",
+      "args": [
+        "-y",
+        "@example/docs-mcp@1.0.0"
+      ],
+      "env": {
+        "DOCS_BASE_URL": "https://docs.example.com",
+        "PATH": "<NODE_BIN>:/usr/local/bin:/usr/bin:/bin"
+      }
+    },
+    "tracker": {
+      "type": "http",
+      "url": "https://tracker.example.com/mcp",
+      "headers": {
+        "X-Team": "platform"
+      }
+    },
+    "events": {
+      "type": "sse",
+      "url": "https://events.example.com/sse"
+    },
+    "claude-only": {
+      "type": "stdio",
+      "command": "node",
+      "args": [
+        "server.js"
+      ]
+    },
+    "stale": {
+      "type": "http",
+      "url": "https://stale.example.com/mcp"
+    }
+  }
+}
+
+=== ~/.claude/settings.json
+{
+  "model": "opus",
+  "permissions": {
+    "allow": [
+      "Bash(ls)"
+    ],
+    "defaultMode": "plan"
+  },
+  "attribution": {
+    "commit": "",
+    "pr": ""
+  },
+  "env": {
+    "DISABLE_TELEMETRY": "1"
+  }
+}
+
+=== ~/.config/opencode/opencode.jsonc
+{
+  "theme": "dark",
+  "mcp": {
+    "mine": {
+      "type": "local",
+      "command": [
+        "x"
+      ]
+    },
+    "off": {
+      "type": "remote",
+      "url": "https://off.example.com",
+      "enabled": false
+    },
+    "docs": {
+      "type": "local",
+      "command": [
+        "<NODE_BIN>/npx",
+        "-y",
+        "@example/docs-mcp@1.0.0"
+      ],
+      "environment": {
+        "DOCS_BASE_URL": "https://docs.example.com",
+        "PATH": "<NODE_BIN>:/usr/local/bin:/usr/bin:/bin"
+      }
+    },
+    "tracker": {
+      "type": "remote",
+      "url": "https://tracker.example.com/mcp",
+      "headers": {
+        "X-Team": "platform"
+      }
+    },
+    "events": {
+      "type": "remote",
+      "url": "https://events.example.com/sse"
+    },
+    "local-tool": {
+      "type": "local",
+      "command": [
+        "/usr/local/bin/tool",
+        "--serve"
+      ],
+      "environment": {
+        "MODE": "fast"
+      }
+    },
+    "stale": {
+      "type": "remote",
+      "url": "https://stale.example.com/mcp"
+    }
+  },
+  "autoupdate": false,
+  "share": "disabled",
+  "permission": {
+    "bash": "ask"
+  }
+}
+

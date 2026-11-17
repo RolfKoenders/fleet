@@ -1,3 +1,4 @@
+import { AGENTS } from "../../agents/index.ts";
 import { BOLD, DIM, drawBox } from "../buffer.ts";
 import type { BorderKind, Canvas, Style } from "../buffer.ts";
 import { mix } from "../color.ts";
@@ -134,7 +135,7 @@ function drawCard(c: Canvas, x: number, y: number, w: number, host: HostInfo, li
   sides(line, 1, iw, [["timer ", s.muted], [status.timer ?? "unknown", timerStyle]], contextSegs(state.contexts[host.name]));
   line(2, [["pending ", s.muted], num(status.pending, s.warn), ["   conflicts ", s.muted], num(status.conflicts, s.bad)]);
   line(3, [["clone ", s.muted], [`${fleet.branch ?? "detached"}@${fleet.sha.slice(0, 7)}`, s.sub], [fleet.clean ? " clean" : " dirty", fleet.clean ? s.ok : s.warn], [sync, s.warn]]);
-  line(4, [...tool("claude", t.claude), ...tool("opencode", t.opencode)]);
+  line(4, AGENTS.flatMap((a) => tool(a.id, t[a.id])));
   line(5, [...tool("sops", t.sops), ...tool("node", t.node), ...tool("t3", t.t3)]);
   line(6, config);
   if (dimmed) c.paint(ix, y + 1, iw, 6, { attr: DIM });

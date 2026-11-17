@@ -1,12 +1,13 @@
 import { existsSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
+import { SKILL_DIR } from "./agents/index.ts";
 import { parseCatalog, pickBundles } from "./catalog.ts";
 import type { Catalog } from "./catalog.ts";
 import { mcpKeys, parseMcpCatalog } from "./mcp.ts";
 import type { Conflict } from "./plan.ts";
-import { declareSettings, mergeSettings } from "./settings.ts";
-import type { Declared, DesiredKey, Tool } from "./settings.ts";
+import { declareSettings, mergeSettings, settingsAgent } from "./settings.ts";
+import type { Declared, DesiredKey } from "./settings.ts";
 import { findSkills, placeSource } from "./sources.ts";
 import type { SourceMode } from "./sources.ts";
 import { managedToolDir } from "./dirs.ts";
@@ -40,7 +41,7 @@ export type Config = {
   conflicts: Conflict[];
   /** The secret names the owned keys refer to as `secret:NAME`, still unresolved in `keys`. */
   secrets: string[];
-  /** The skills in the picked bundles, which `files` links into `~/.claude/skills`. Empty when `conflicts` is not. */
+  /** The skills in the picked bundles, which `files` links into the skills directory. Empty when `conflicts` is not. */
   skills: string[];
 };
 
@@ -98,9 +99,10 @@ function checkFile(path: string, doc: Obj, hostFile: boolean, problems: string[]
       problems.push(`${path}: 'settings' must be a map`);
     } else {
       for (const [key, value] of Object.entries(settings)) {
-        if (key !== "claude" && key !== "opencode") problems.push(`${path}: unknown key 'settings.${key}'`);
+        const agent = settingsAgent(key);
+        if (typeof agent === "string") problems.push(`${path}: ${agent}`);
         else if (!isObject(value)) problems.push(`${path}: 'settings.${key}' must be a map`);
-        else declared.push(...declareSettings(value, key as Tool, path, problems));
+        else declared.push(...declareSettings(value, agent, path, problems));
       }
     }
   }
@@ -174,7 +176,7 @@ function resolveSkills(catalog: Catalog, skills: string[], home: string, problem
 }
 
 /** The one skill every apply installs from the tool, whatever the config says. */
-export const FLEET_SKILL_TARGET = "~/.claude/skills/fleet";
+export const FLEET_SKILL_TARGET = `${SKILL_DIR}/fleet`;
 
 /**
  * Reads `fleet.yaml`, `hosts/_defaults.yaml`, `hosts/<host>.yaml` and `catalog/skills.yaml` under the
@@ -257,7 +259,7 @@ export function loadConfig(configDir: string, host: string, options: LoadOptions
     }
     if (problems.length === 0 && conflicts.length === 0) {
       for (const [skill, dir] of resolveSkills(catalog, skills, home, problems)) {
-        const target = `~/.claude/skills/${skill}`;
+        const target = `${SKILL_DIR}/${skill}`;
         if (merged.has(target)) problems.push(`skill '${skill}' and a files record both target ${target}`);
         else files.push({ source: dir, target });
       }

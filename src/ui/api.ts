@@ -1,3 +1,4 @@
+import { having } from "../agents/index.ts";
 import { readHostName } from "../host.ts";
 import { LockedError, acquirePushLock } from "../lock.ts";
 import { loadModel } from "../tui/model.ts";
@@ -33,7 +34,7 @@ import type { Job } from "./jobs.ts";
  *   POST /api/push     Runs the real `fleet push` (the push lock is taken by that process), relaying its events to every
  *                      open stream as `push` events, and answers when it has ended. Body: `{}` or `{"message": "..."}`.
  *                      When another push is running it answers 409 with code `locked` and "a push is already running (pid N)".
- *   GET  /api/matrix   What each host gets, from the files on disk: hosts, bundles (with their skills), servers, and the
+ *   GET  /api/matrix   What each host gets, from the files on disk: `agents` (`{id, name}` of each agent a server can be for), hosts, bundles (with their skills), servers, and the
  *                      cell of each host (`on`, `picked`, `excluded`), plus `outside`: uncommitted changes in the config repo.
  *   GET  /api/secrets  The secret names, which hosts can read each and which servers use it, and `table`: each name against each host as
  *                      `set`, `missing` or `unused`. Never a value.
@@ -414,7 +415,7 @@ export function routes(deps: ApiDeps): Route[] {
 const refused = (status: number, code: string, message: string, extra: Record<string, unknown> = {}): ApiResponse => ({ status, body: { ok: false, code, messages: [`fleet: ${message}`], ...extra } });
 
 /** The matrix as the page gets it: the bridge's model, without its directory. */
-const matrixDoc = (model: ReturnType<typeof loadModel>) => ({ self: model.self, hosts: model.hosts, bundles: model.bundles, servers: model.servers, sources: model.sources, problems: model.problems });
+const matrixDoc = (model: ReturnType<typeof loadModel>) => ({ agents: having("mcp").map((a) => ({ id: a.id, name: a.name })), self: model.self, hosts: model.hosts, bundles: model.bundles, servers: model.servers, sources: model.sources, problems: model.problems });
 
 function showOf(body: unknown): string | null {
   const show = (body as Record<string, unknown>).show;

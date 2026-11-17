@@ -6,7 +6,7 @@
 /**
  * @typedef {{ key: string, mode: "secret" | "plain", value: string }} Row
  * One environment variable (or header): a plain value, or a secret by name. A secret row with no name uses the variable's own.
- * @typedef {{ name: string, kind: "command" | "http" | "sse", command: string, url: string, rows: Row[], claude: boolean, opencode: boolean }} ServerForm
+ * @typedef {{ name: string, kind: "command" | "http" | "sse", command: string, url: string, rows: Row[], agents: Record<string, boolean> }} ServerForm
  * @typedef {{ name: string, repo: string, path: string, branch: string, mode: "pin" | "follow", review: boolean }} SourceForm
  * @typedef {{ name: string, picked: string[], extra: string }} BundleForm
  * @typedef {{ key: string, repo: string, path: string, branch: string | null, commit: string, skills: string[], problem: string | null, id: string, headBranch: string | null }} Cloned
@@ -270,8 +270,10 @@ export function serverDraft(f, taken, held = [], base = null) {
     else vars[key] = row.value;
   }
   if (Object.keys(vars).length > 0) entry[f.kind === "command" ? "env" : "headers"] = vars;
-  if (!f.claude && !f.opencode) problems.push("pick at least one agent");
-  else if (!(f.claude && f.opencode)) entry.only = [f.claude ? "claude" : "opencode"];
+  const ids = Object.keys(f.agents);
+  const picked = ids.filter((id) => f.agents[id]);
+  if (ids.length > 0 && picked.length === 0) problems.push("pick at least one agent");
+  else if (picked.length < ids.length) entry.only = picked;
   if (base === null) return { op: problems.length === 0 ? { op: "addServer", name, entry } : null, problems, warnings };
   const changes = entryChanges(base, entry, SERVER_FIELDS);
   return { op: problems.length === 0 && changes.length > 0 ? { op: "editServer", name, changes } : null, problems, warnings, unchanged: problems.length === 0 && changes.length === 0 };

@@ -1,28 +1,13 @@
+import { agentById, AGENTS } from "./agents/index.ts";
+import type { Agent, Has } from "./agents/index.ts";
 import { isObject } from "./yamlfile.ts";
 import type { Obj } from "./yamlfile.ts";
 
-export type Tool = "claude" | "opencode";
-
-/** The merged file each tool's `settings` map is written into. */
-export const SETTINGS_FILE: Record<Tool, string> = {
-  claude: "~/.claude/settings.json",
-  opencode: "~/.config/opencode/opencode.jsonc",
-};
-
-/**
- * Paths no host file may own, with everything below them. All are top-level keys.
- * `mcpServers` is listed because Claude keeps its servers in `~/.claude.json`, not here.
- */
-const DENIED: Record<Tool, string[]> = {
-  claude: [
-    "model", "modelSettings", "effortLevel", "advisorModel", "fastMode", "alwaysThinkingEnabled", "tui",
-    "remoteControlAtStartup", "agentPushNotifEnabled", "skipDangerousModePermissionPrompt", "theme", "mcpServers",
-  ],
-  opencode: ["$schema", "mcp"],
-};
+/** The merged file each agent's `settings` map is written into. */
+export const settingsFile = (id: string): string => (agentById(id) as Has<"settings">).settings.file;
 
 /** One owned key as a host file declares it: a dotted path and the whole value at it. */
-export type Declared = { tool: Tool; path: string; value: unknown };
+export type Declared = { agent: string; path: string; value: unknown };
 
 /**
  * One owned key as the config resolves it, naming the file it lives in. `display` is the
@@ -48,25 +33,43 @@ function flatten(map: Obj, prefix: string[], out: [string[], unknown][]): void {
   }
 }
 
-export function declareSettings(map: Obj, tool: Tool, file: string, problems: string[]): Declared[] {
+/** Why a declared path may not be owned: it is, is inside, or holds a path the agent never lets fleet own. Null when it may. */
+function deniedBy(path: string, denied: string[]): string | null {
+  for (const d of denied) {
+    if (path === d || path.startsWith(`${d}.`)) return `fleet never owns '${d}'`;
+    if (d.startsWith(`${path}.`)) return `it holds '${d}', which fleet never owns; declare the members it may own instead`;
+  }
+  return null;
+}
+
+export function declareSettings(map: Obj, agent: Has<"settings", Agent>, file: string, problems: string[]): Declared[] {
   const leaves: [string[], unknown][] = [];
   flatten(map, [], leaves);
   const declared: Declared[] = [];
   for (const [segments, value] of leaves) {
     const path = segments.join(".");
-    const at = `${file}: settings.${tool}.${path}`;
+    const at = `${file}: settings.${agent.id}.${path}`;
     const badSegment = segments.find((s) => s === "" || s.includes(".") || s === "__proto__");
+    const denied = badSegment === undefined ? deniedBy(path, agent.settings.denied) : null;
     if (badSegment !== undefined) {
       problems.push(`${at}: key '${badSegment}' cannot be owned: keys must be non-empty, without '.', and not '__proto__'`);
-    } else if (DENIED[tool].includes(segments[0]!)) {
-      problems.push(`${at}: not allowed, fleet never owns '${segments[0]}'`);
+    } else if (denied !== null) {
+      problems.push(`${at}: not allowed, ${denied}`);
     } else {
       const reason = notJson(value);
       if (reason !== null) problems.push(`${at}: ${reason}`);
-      else declared.push({ tool, path, value });
+      else declared.push({ agent: agent.id, path, value });
     }
   }
   return declared;
+}
+
+/** The agent a `settings` key of a host file names, or what is wrong with the key. */
+export function settingsAgent(key: string, agents: readonly Agent[] = AGENTS): Has<"settings", Agent> | string {
+  const agent = agents.find((a) => a.id === key);
+  if (agent === undefined) return `unknown key 'settings.${key}'`;
+  if (agent.settings === undefined) return `'settings.${key}': ${agent.name} has no settings file fleet can merge`;
+  return agent as Has<"settings", Agent>;
 }
 
 /**
@@ -75,14 +78,14 @@ export function declareSettings(map: Obj, tool: Tool, file: string, problems: st
  */
 export function mergeSettings(defaults: Declared[], host: Declared[], problems: string[]): DesiredKey[] {
   const merged = new Map<string, Declared>();
-  for (const key of [...defaults, ...host]) merged.set(`${key.tool}\0${key.path}`, key);
+  for (const key of [...defaults, ...host]) merged.set(`${key.agent}\0${key.path}`, key);
   const keys = [...merged.values()];
   for (const a of keys) {
     for (const b of keys) {
-      if (a.tool === b.tool && b.path.startsWith(`${a.path}.`)) {
-        problems.push(`settings.${a.tool}: '${a.path}' and '${b.path}' overlap; declare the whole value or its members, not both`);
+      if (a.agent === b.agent && b.path.startsWith(`${a.path}.`)) {
+        problems.push(`settings.${a.agent}: '${a.path}' and '${b.path}' overlap; declare the whole value or its members, not both`);
       }
     }
   }
-  return keys.map(({ tool, path, value }) => ({ file: SETTINGS_FILE[tool], path, value }));
+  return keys.map(({ agent, path, value }) => ({ file: settingsFile(agent), path, value }));
 }

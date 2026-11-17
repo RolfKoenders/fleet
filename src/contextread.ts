@@ -1,3 +1,5 @@
+import { AGENTS } from "./agents/index.ts";
+import type { AgentId } from "./agents/index.ts";
 import { agentContext } from "./context.ts";
 import type { AgentContext, ContextItem, ContextKind, ContextReport, Measurement } from "./context.ts";
 import { count, printable } from "./status.ts";
@@ -11,7 +13,6 @@ import type { Obj } from "./yamlfile.ts";
 
 export type ContextRead = { ok: true; report: ContextReport } | { ok: false; reason: string };
 
-const AGENTS = ["claude", "opencode"] as const;
 export const KINDS: ContextKind[] = ["instructions", "skills", "mcp"];
 const MAX_ITEMS = 2000;
 const MAX_NOTES = 50;
@@ -41,7 +42,7 @@ function item(value: unknown): ContextItem | null {
 
 const notes = (value: unknown): string[] => (Array.isArray(value) ? value.slice(0, MAX_NOTES).flatMap((n) => printable(n) ?? []) : []);
 
-function agent(name: (typeof AGENTS)[number], value: Obj): AgentContext {
+function agent(name: AgentId, value: Obj): AgentContext {
   const items = (Array.isArray(value.items) ? value.items.slice(0, MAX_ITEMS) : []).flatMap((i) => item(i) ?? []);
   // Totals are made from the items, not taken from the host, so a bar always agrees with the list under it.
   return agentContext(name, items, notes(value.notes));
@@ -66,9 +67,9 @@ export function readContextReport(stdout: string): ContextRead {
     const first = Array.isArray(doc.messages) ? printable(doc.messages[0]) : null;
     return { ok: false, reason: typeof doc.code === "string" && doc.code !== "ok" ? `its context gave ${printable(doc.code)}${first === null ? "" : `: ${first}`}` : "its output was not a fleet context document" };
   }
-  const agents = AGENTS.flatMap((name) => {
-    const found = listed.find((a: unknown) => isObject(a) && a.agent === name);
-    return isObject(found) ? [agent(name, found)] : [];
+  const agents = AGENTS.flatMap(({ id }) => {
+    const found = listed.find((a: unknown) => isObject(a) && a.agent === id);
+    return isObject(found) ? [agent(id, found)] : [];
   });
   if (agents.length === 0) return { ok: false, reason: "its context named no agent fleet knows" };
   return { ok: true, report: { agents, notes: notes(doc.notes) } };

@@ -1,3 +1,4 @@
+import { having } from "../../agents/index.ts";
 import { drawBox } from "../buffer.ts";
 import type { Canvas, Style } from "../buffer.ts";
 import type { State } from "../app.ts";
@@ -35,7 +36,7 @@ function facts(state: State, item: CatalogItem): Line[] {
   const got: Line = [`hosts that get it: ${hosts.length > 0 ? hosts.join(", ") : "none"}`, s.text];
   if (item.kind === "server") {
     const v = item.server;
-    return [[`transport: ${v.transport}${v.only.length < 2 ? `, only for ${v.only.join(", ")}` : ""}`, s.text], [`secret names: ${v.secrets.length > 0 ? v.secrets.join(", ") : "none"}`, s.text], got];
+    return [[`transport: ${v.transport}${v.only.length < having("mcp").length ? `, only for ${v.only.join(", ")}` : ""}`, s.text], [`secret names: ${v.secrets.length > 0 ? v.secrets.join(", ") : "none"}`, s.text], got];
   }
   const k = item.skill;
   const src: Line = k.source ? [`source: ${k.source.name}, ${k.source.pin}${k.source.review ? ", review" : ""}`, s.text] : [k.notCloned.length > 0 ? `source: not cloned (${k.notCloned.join(", ")}); the bridge never clones, fleet apply does` : "source: no cloned source holds it", s.warn];
