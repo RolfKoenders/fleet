@@ -202,8 +202,8 @@ process.exit(fs.existsSync(process.env.HOME + "/.fake-agent-loaded") ? 0 : 113);
 
 test("the shell scripts and the TypeScript name the same Homebrew places", () => {
   const dirs = probeDirs("/h");
-  assert.deepEqual(dirs, ["/h/.local/bin", "/h/.opencode/bin", "/usr/bin", "/usr/local/bin", dirname(probedNode()), HOMEBREW_BIN], "the Linux order is as it was, with the directory of Node and then Homebrew appended");
-  assert.equal(SHELL_PROBE_PATH, "$HOME/.local/bin:$HOME/.opencode/bin:/usr/bin:/usr/local/bin:/opt/homebrew/bin");
+  assert.deepEqual(dirs, ["/h/.local/bin", "/h/.opencode/bin", "/h/.local/share/mise/shims", "/usr/bin", "/usr/local/bin", dirname(probedNode()), HOMEBREW_BIN], "the Linux order is as it was, with the directory of Node and then Homebrew appended");
+  assert.equal(SHELL_PROBE_PATH, "$HOME/.local/bin:$HOME/.opencode/bin:$HOME/.local/share/mise/shims:/usr/bin:/usr/local/bin:/opt/homebrew/bin");
   const wanted = [`${HOMEBREW_BIN}/node`, ...HOMEBREW_KEG_NODES];
   assert.deepEqual(SHELL_NODE_CANDIDATES, wanted.map((p) => `"${p}"`));
   for (const file of ["bin/fleet", "install.sh"]) {

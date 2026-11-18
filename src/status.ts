@@ -8,19 +8,20 @@ import { planConflicts, planCounts } from "./apply.ts";
 import { MissingToolError, repoState } from "./git.ts";
 import type { RepoState } from "./git.ts";
 import { readHostName } from "./host.ts";
-import { detectAgents, notInstalledWarning } from "./hostagents.ts";
+import { appliedPaths, detectAgents, namedAgents, notInstalledWarning } from "./hostagents.ts";
 import { paint } from "./output.ts";
 import type { Result } from "./output.ts";
 import { statusOs, timerWord } from "./scheduler.ts";
 import { SOPS_VERSION_ARGS } from "./sops.ts";
 import { readState } from "./state.ts";
+import type { AppliedState } from "./state.ts";
 import { hostTargets } from "./targets.ts";
 import { findTool } from "./tools.ts";
 import { isObject } from "./yamlfile.ts";
 import type { Obj } from "./yamlfile.ts";
 
 /** A version fleet could read, or null. The Node that runs fleet is `node`; `t3` is the newest installed T3 Code. */
-export type ToolVersions = { [K in AgentId]: string | null } & { sops: string | null; node: string | null; t3: string | null };
+export type ToolVersions = { [K in AgentId]?: string | null } & { sops: string | null; node: string | null; t3: string | null };
 
 /**
  * One registered agent as this host has it. `active` is whether fleet sets it up here (the host file names it, or
@@ -54,6 +55,13 @@ export type ConflictName = { kind: string; path: string };
 export const CONFLICT_LIST_MAX = 5;
 
 const TOOL_NAMES = [...AGENT_IDS, "sops", "node", "t3"] as const;
+
+/**
+ * Compatibility for readers of `status --json`: `tools` has always had these two agent keys, null when the agent is not found,
+ * so they stay whatever the host has. Any agent added since has its key only where the host names it (see `namedAgents`).
+ * This list does not grow: a new agent is not added to it.
+ */
+const LEGACY_TOOL_KEYS: readonly AgentId[] = ["claude", "opencode"];
 const TIMEOUT_MS = 15_000;
 
 /** The first dotted version in a tool's output, such as `2.1.4` from `2.1.4 (Claude Code)`. */
@@ -103,6 +111,15 @@ export function timerState(home: string): string | null {
     },
     (name) => findTool(name, process.env, home),
   );
+}
+
+/** The applied state, or null when there is none or it cannot be read, which `appliedAge` says. */
+function readStateOr(home: string): AppliedState | null {
+  try {
+    return readState(home);
+  } catch {
+    return null;
+  }
 }
 
 function appliedAge(home: string, messages: string[]): StatusFields["applied"] {
@@ -178,7 +195,7 @@ function lines(fields: StatusFields, color: boolean, clone: string | null): stri
     `conflicts: ${fields.conflicts === null || fields.conflicts === 0 ? shown(fields.conflicts) : paint(color, "yellow", String(fields.conflicts))}`,
     ...(fields.agents === null ? [] : [agentsLine(fields.agents)]),
     "tools:",
-    ...TOOL_NAMES.map((name) => `  ${name}: ${shown(fields.tools[name])}`),
+    ...TOOL_NAMES.filter((name) => (isAgentId(name) && fields.agents !== null ? fields.agents.some((a) => a.id === name) : fields.tools[name] !== undefined)).map((name) => `  ${name}: ${shown(fields.tools[name])}`),
   ];
 }
 
@@ -192,18 +209,20 @@ function collect(toolDir: string, configDir: string, home: string, host: string 
     throw error;
   }
   const { pin, notInstalled, ...counts } = changeCounts(configDir, home, host, messages);
-  const versions = Object.fromEntries(AGENTS.map((a) => [a.id, toolVersion(a.binary, a.version, home)])) as { [K in AgentId]: string | null };
-  const on = hostAgents(pin, detectAgents(home));
+  const detected = detectAgents(home);
+  const on = hostAgents(pin, detected);
+  const named = namedAgents(on, detected, appliedPaths(readStateOr(home)));
+  const versions = Object.fromEntries(named.map((a) => [a.id, toolVersion(a.binary, a.version, home)])) as { [K in AgentId]?: string | null };
   messages.push(...AGENTS.filter((a) => notInstalled.includes(a.id)).map((a) => `fleet: ${notInstalledWarning(a)}`));
   return {
     repos: { fleet },
     applied: appliedAge(home, messages),
     timer: timerState(home),
     ...counts,
-    agents: AGENTS.map((a) => ({ id: a.id, version: versions[a.id], active: on.includes(a), pinned: pin?.includes(a.id) ?? false })),
+    agents: named.map((a) => ({ id: a.id, version: versions[a.id] ?? null, active: on.includes(a), pinned: pin?.includes(a.id) ?? false })),
     notInstalled,
     tools: {
-      ...versions,
+      ...Object.fromEntries([...LEGACY_TOOL_KEYS.map((id) => [id, null]), ...named.map((a) => [a.id, versions[a.id] ?? null])]),
       sops: toolVersion("sops", SOPS_VERSION_ARGS, home),
       node: parseVersion(process.version),
       t3: t3Version(home),
@@ -288,7 +307,7 @@ export function statusFromDocument(doc: Obj): StatusFields | null {
     conflictList: conflictNames(doc.conflictList),
     agents: agentStatuses(doc.agents),
     notInstalled: Array.isArray(doc.notInstalled) ? AGENT_IDS.filter((id) => (doc.notInstalled as unknown[]).includes(id)) : null,
-    tools: Object.fromEntries(TOOL_NAMES.map((name) => [name, printable(tools[name])])) as ToolVersions,
+    tools: Object.fromEntries(TOOL_NAMES.filter((name) => tools[name] !== undefined || !isAgentId(name)).map((name) => [name, printable(tools[name])])) as ToolVersions,
   };
 }
 

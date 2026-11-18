@@ -12,7 +12,7 @@ git config --global url."https://github.com/you/".insteadOf "git@github.com:you/
 
 ## Which agents a machine gets
 
-A machine gets the agents installed on it. Fleet looks for each agent's program (`claude`, `opencode`) on the usual paths and in the directory of the Node that fleet runs under, where `npm -g` puts agent CLIs. Install an agent and the next apply sets it up. An agent that is not installed is left alone: nothing of its is written, and what fleet applied for it earlier stays where it is. An agent you never had is never mentioned, however many agents the shared config names. One you had, and fleet applied config for, is mentioned, so that a lost install does not go unnoticed:
+A machine gets the agents installed on it. Fleet looks for each agent's program (`claude`, `opencode`, `agy`) on the usual paths, in the shims of mise (`~/.local/share/mise/shims`) and in the directory of the Node that fleet runs under, where `npm -g` puts agent CLIs. A program in `~/.local/bin` is preferred to a shim. Install an agent and the next apply sets it up. An agent that is not installed is left alone: nothing of its is written, and what fleet applied for it earlier stays where it is. An agent you never had is never mentioned, however many agents the shared config names. One you had, and fleet applied config for, is mentioned, so that a lost install does not go unnoticed:
 
 ```
 warning opencode: not installed, its config is left as is. Install it, or pin `agents:`
@@ -24,7 +24,17 @@ To choose instead of detect, name the agents in the machine's host file. The lis
 agents: [claude]
 ```
 
-`fleet status` shows what a machine gets, as `agents: claude 2.1.4 (opencode not installed)`, and `fleet context` and `fleet doctor` cover only those agents.
+`fleet status` shows what a machine gets, as `agents: claude 2.1.4 (opencode not installed)`, and `fleet context` and `fleet doctor` cover only those agents. `fleet status`, `status --json` and the bridge name an agent only on a machine that has it installed, names it in `agents:`, or applied config for it, so one you never used is not mentioned. `status --json` keeps the `claude` and `opencode` keys in `tools` as they were (null when not found); any other agent has its key only where it is named.
+
+### Antigravity CLI
+
+Antigravity CLI (`agy`) keeps its files in `~/.gemini`, a folder Gemini CLI uses too. Fleet only touches `~/.gemini/antigravity-cli`, `~/.gemini/config` and `~/.gemini/GEMINI.md`, and links skills into `~/.gemini/config/skills`, so what other tools put there stays. A skill of the same name that another tool linked there is a conflict, as anywhere else.
+
+It does not support SSE servers. An `sse` server with an `only` list that names `antigravity` is an error in the config. An `sse` server without one goes to the other agents, is left out of Antigravity's file, and a machine that has `agy` says so in one warning line:
+
+```
+warning Antigravity CLI does not support sse servers, so events is left out of ~/.gemini/config/mcp_config.json
+```
 
 ### Taking an agent's config off a machine
 

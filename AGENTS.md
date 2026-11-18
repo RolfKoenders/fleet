@@ -1,6 +1,6 @@
 # fleet
 
-Fleet describes how every machine that runs coding agents should be set up (shared instructions, skills, MCP servers, Claude Code and opencode settings, secrets) and makes each machine match that config. The tool lives in this repo. A user's own config is a separate private repo, and a commented example of one is in `examples/`; `fleet new <dir>` copies it.
+Fleet describes how every machine that runs coding agents should be set up (shared instructions, skills, MCP servers, your coding agents' settings, secrets) and makes each machine match that config. The tool lives in this repo. A user's own config is a separate private repo, and a commented example of one is in `examples/`; `fleet new <dir>` copies it.
 
 Terms are defined in `GLOSSARY.md`. Use them as written there.
 
@@ -16,7 +16,7 @@ Terms are defined in `GLOSSARY.md`. Use them as written there.
 
 ## Adding an agent
 
-What fleet knows about an agent is one module in `src/agents/` and one line in the registry in `src/agents/index.ts`. Nothing else names an agent: loop over `AGENTS`. `test/agents.conformance.test.ts` runs against every registered agent, so a new one gets it by being registered; the compiler also asks for its demo version line (`src/demo/fakes.ts`). Cite the agent's official documentation for every path and key in its module.
+What fleet knows about an agent is one module in `src/agents/` and one line in the registry in `src/agents/index.ts`. Nothing else names an agent: loop over `AGENTS`. `test/agents.conformance.test.ts` runs against every registered agent, so a new one gets it by being registered; the compiler also asks for its demo version line (`src/demo/fakes.ts`). Cite the agent's official documentation for every path and key in its module. The steps and the bar for a contributed agent are in `docs/adding-an-agent.md`.
 
 ## Changelog
 

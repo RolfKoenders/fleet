@@ -37,6 +37,11 @@ export function onlyProblem(only: unknown, agents: readonly Agent[] = AGENTS): s
   return unable.length === 0 ? null : `'only' names ${unable.join(", ")}, which fleet cannot give MCP servers`;
 }
 
+const transportOf = (server: Pick<Server, "command" | "transport">): "stdio" | "http" | "sse" => (server.command !== null ? "stdio" : server.transport!);
+
+/** True when `agent` can take the server's transport. */
+export const takes = (agent: Has<"mcp">, server: Pick<Server, "command" | "transport">): boolean => agent.mcp.transports?.includes(transportOf(server)) ?? true;
+
 function parseServer(at: string, name: string, raw: unknown, problems: string[]): Server | null {
   if (!SERVER_NAME.test(name)) {
     problems.push(`${at}: server name '${name}' must be letters, digits, '_' or '-', and start with a letter or digit`);
@@ -72,6 +77,12 @@ function parseServer(at: string, name: string, raw: unknown, problems: string[])
   }
   const badOnly = onlyProblem(only);
   if (badOnly !== null) problems.push(`${where}: ${badOnly}`);
+  // A list that names an agent which cannot take the transport is a mistake; with no list, the server is left out of that agent's file.
+  if (problems.length === before && only !== undefined) {
+    for (const agent of having("mcp").filter((a) => (only as string[]).includes(a.id) && !takes(a, { command: (command as string[] | undefined) ?? null, transport: (transport as "http" | "sse" | undefined) ?? null }))) {
+      problems.push(`${where}: 'only' names ${agent.id}, which does not support ${transport} servers`);
+    }
+  }
   if (problems.length > before) return null;
   return {
     name,
@@ -126,6 +137,14 @@ export function renderFor(agent: Has<"mcp">, server: Server, node: string): Obj 
   return agent.mcp.render({ ...server, ...launch(server.command, server.env, node) });
 }
 
+/** The line for a host about what an agent leaves out of its file because it cannot take the transport, or null when it leaves nothing out. */
+export function leftOutNote(agent: Has<"mcp">, servers: readonly Server[]): string | null {
+  const left = servers.filter((s) => s.only.includes(agent.id) && !takes(agent, s));
+  if (left.length === 0) return null;
+  const transports = [...new Set(left.map(transportOf))].join(" or ");
+  return `${agent.name} does not support ${transports} servers, so ${left.map((s) => s.name).join(", ")} ${left.length === 1 ? "is" : "are"} left out of ${agent.mcp.file}`;
+}
+
 /**
  * The owned keys for the picked servers: one per server per agent it renders to. Variables are
  * filled here and problems reported; `secret:NAME` is left for the secrets step.
@@ -137,6 +156,7 @@ export function mcpKeys(servers: Server[], vars: Record<string, string>, node: s
     for (const name of unknown) problems.push(`catalog/mcp.yaml: server '${server.name}': {{ vars.${name} }} is not defined in any 'vars'`);
     for (const id of server.only) {
       const agent = having("mcp").find((a) => a.id === id)!;
+      if (!takes(agent, server)) continue;
       keys.push({ file: agent.mcp.file, path: `${agent.mcp.key}.${server.name}`, value: renderFor(agent, server, node) });
     }
   }

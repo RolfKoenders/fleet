@@ -1,4 +1,3 @@
-import { AGENTS } from "../../agents/index.ts";
 import { drawBox } from "../buffer.ts";
 import type { Canvas, Style } from "../buffer.ts";
 import type { ContextItem, ContextKind, ContextReport } from "../../context.ts";
@@ -17,8 +16,8 @@ import type { Seg } from "./ui.ts";
  */
 
 const HOST_W = 12;
-/** The longest agent name and a space. */
-const AGENT_W = Math.max(...AGENTS.map((a) => a.id.length)) + 1;
+/** The longest agent name that is shown and a space: an agent no host reported does not widen the column. */
+const agentWidth = (reports: readonly ContextReport[]): number => Math.max(1, ...reports.flatMap((r) => r.agents.map((a) => a.agent.length))) + 1;
 const TOTAL_W = 9;
 const MAX_BAR = 40;
 const MIN_BAR = 10;
@@ -47,7 +46,7 @@ function barSegs(report: ContextReport, agentIndex: number, scale: number, width
   return [...bar, [" ".repeat(width - widths.reduce((a, b) => a + b, 0)), s.text]];
 }
 
-function rowsFor(state: State, scale: number, barWidth: number): Row[] {
+function rowsFor(state: State, scale: number, barWidth: number, agentW: number): Row[] {
   const rows: Row[] = [];
   state.model.hosts.forEach((host, h) => {
     const live = state.contexts[host.name];
@@ -60,7 +59,7 @@ function rowsFor(state: State, scale: number, barWidth: number): Row[] {
       const total = totalText(agent);
       const mark: Seg[] = i === 0 && old !== null ? [["  ", s.text], [`${old}, not live`, s.warn]] : [];
       const asking: Seg[] = i === 0 && live?.phase === "loading" && old === null ? [["  ", s.text], [spinner(state.now, state.motion), s.brand]] : [];
-      rows.push({ host: h, segs: [i === 0 ? name : blank, [pad(agent.agent, AGENT_W), s.sub], ...barSegs(report, i, scale, barWidth, state.plain), [` ${total.padStart(TOTAL_W - 1)}`, agent.complete ? s.text : s.warn], ...mark, ...asking] });
+      rows.push({ host: h, segs: [i === 0 ? name : blank, [pad(agent.agent, agentW), s.sub], ...barSegs(report, i, scale, barWidth, state.plain), [` ${total.padStart(TOTAL_W - 1)}`, agent.complete ? s.text : s.warn], ...mark, ...asking] });
     });
   });
   return rows;
@@ -78,7 +77,7 @@ function itemLine(item: ContextItem, nameWidth: number): Seg[] {
   return [size, [pad(item.name, nameWidth), s.sub], [pad(KIND_NAMES[item.kind], 13), { fg: colourOf(item.kind) }], ...marks];
 }
 
-function detail(c: Canvas, y: number, h: number, state: State): void {
+function detail(c: Canvas, y: number, h: number, state: State, agentW: number): void {
   const host = state.model.hosts[state.contextHost];
   if (host === undefined) return;
   const live = state.contexts[host.name];
@@ -97,9 +96,9 @@ function detail(c: Canvas, y: number, h: number, state: State): void {
       const joined = (parts: Seg[][]): Seg[] => parts.flatMap((p, i): Seg[] => [...(i === 0 ? [] : ([[" · ", s.faint]] as Seg[])), ...p]);
       const whole = joined([first!, ...rest]);
       // On a narrow window the last part, which is the longest, goes under the others.
-      const fits = AGENT_W + segWidth(whole) <= c.w - 4;
-      lines.push([[pad(a.agent, AGENT_W), s.sub], ...(fits ? whole : joined([first!, ...rest.slice(0, -1)]))]);
-      if (!fits) lines.push([[" ".repeat(AGENT_W), s.text], ...rest.at(-1)!]);
+      const fits = agentW + segWidth(whole) <= c.w - 4;
+      lines.push([[pad(a.agent, agentW), s.sub], ...(fits ? whole : joined([first!, ...rest.slice(0, -1)]))]);
+      if (!fits) lines.push([[" ".repeat(agentW), s.text], ...rest.at(-1)!]);
     }
     const items = distinct(report, () => true);
     const sized = items.filter((i) => i.tokens !== null);
@@ -126,6 +125,7 @@ export function drawContext(c: Canvas, state: State): void {
   }
   const reports = hosts.flatMap((h) => (state.contexts[h.name]?.report ? [state.contexts[h.name]!.report!] : []));
   const scale = largestAgent(reports);
+  const agentW = agentWidth(reports);
   const biggest = hosts.flatMap((h) => (state.contexts[h.name]?.report?.agents ?? []).map((a) => ({ host: h.name, agent: a.agent, tokens: a.tokens }))).sort((a, b) => b.tokens - a.tokens)[0];
 
   segments(c, 1, 0, [["What each agent loads before the first prompt, in estimated tokens.", s.muted]], c.w - 2);
@@ -140,8 +140,8 @@ export function drawContext(c: Canvas, state: State): void {
     c.w - 2,
   );
 
-  const barWidth = Math.max(MIN_BAR, Math.min(MAX_BAR, c.w - 2 - HOST_W - AGENT_W - TOTAL_W - 2));
-  const rows = rowsFor(state, scale, barWidth);
+  const barWidth = Math.max(MIN_BAR, Math.min(MAX_BAR, c.w - 2 - HOST_W - agentW - TOTAL_W - 2));
+  const rows = rowsFor(state, scale, barWidth, agentW);
   const top = 3;
   const listH = Math.max(2, Math.min(rows.length, c.h - top - DETAIL_MIN));
   const last = rows.map((r) => r.host).lastIndexOf(state.contextHost);
@@ -157,5 +157,5 @@ export function drawContext(c: Canvas, state: State): void {
   const below = top + listH + 1;
   if (first > 0) c.textRight(c.w - 1, top - 1, "▲ more", s.muted);
   if (first + listH < rows.length) c.textRight(c.w - 1, below - 1, "▼ more", s.muted);
-  if (c.h - below >= 4) detail(c, below, c.h - below, state);
+  if (c.h - below >= 4) detail(c, below, c.h - below, state, agentW);
 }

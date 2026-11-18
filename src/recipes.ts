@@ -28,10 +28,10 @@ export const RECIPES: Recipe[] = [
     steps: [
       "Copy the shape of an existing entry in `catalog/mcp.yaml`. A server has either `command` (a list, run on the host) or `transport` (`http` or `sse`) with a `url`. Pin the package version in `command`.",
       "Put a token or key in `env`, `headers` or `url` as `secret:NAME`, never in `command`, because a command line can be read by every user on the host. If the server only takes its token as an argument, stop and tell the user: fleet cannot hold that one safely.",
-      "Add the name to `mcp.include` in the defaults or a host file. `only: [claude]` or `only: [opencode]` limits a server to one tool.",
+      "Add the name to `mcp.include` in the defaults or a host file. `only: [<agent id>]` limits a server to some agents. Antigravity CLI cannot take an `sse` server: it is left out of its file with a warning, and `only` may not name it for one.",
       "If the server uses a secret, follow the recipe for adding a secret next.",
     ],
-    checks: ["`fleet diff` lists `create ~/.claude.json mcpServers.<name>` and the same for opencode, with `***` where a secret goes, and no new conflict."],
+    checks: ["`fleet diff` lists `create ~/.claude.json mcpServers.<name>` and the same for each other agent on the host, with `***` where a secret goes, and no new conflict."],
     stops: [
       "A server that signs in by browser (OAuth) is logged in once by the user with `/mcp` in each tool. Fleet writes only the entry.",
       "Tell the user to review the change in the config repo and ask for `fleet push` (publish and apply on every host) or `fleet apply` (this host only).",

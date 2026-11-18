@@ -135,10 +135,10 @@ function drawCard(c: Canvas, x: number, y: number, w: number, host: HostInfo, li
   sides(line, 1, iw, [["timer ", s.muted], [status.timer ?? "unknown", timerStyle]], contextSegs(state.contexts[host.name]));
   line(2, [["pending ", s.muted], num(status.pending, s.warn), ["   conflicts ", s.muted], num(status.conflicts, s.bad)]);
   line(3, [["clone ", s.muted], [`${fleet.branch ?? "detached"}@${fleet.sha.slice(0, 7)}`, s.sub], [fleet.clean ? " clean" : " dirty", fleet.clean ? s.ok : s.warn], [sync, s.warn]]);
-  // Only the agents this host gets, and a word for one fleet has config for and cannot find. A host on an older fleet sends neither, and shows them all.
-  const gets = AGENTS.filter((a) => status.agents === null || status.agents.some((x) => x.id === a.id && x.active));
+  // Only the agents this host gets, and a word for one fleet has config for and cannot find. A host on an older fleet sends neither, and shows the ones it sends a version for.
+  const gets = AGENTS.filter((a) => (status.agents === null ? t[a.id] !== undefined : status.agents.some((x) => x.id === a.id && x.active)));
   const missing = AGENTS.filter((a) => status.notInstalled?.includes(a.id) === true);
-  line(4, [...gets.flatMap((a) => tool(a.id, t[a.id])), ...missing.flatMap((a): Seg[] => [[`⚠ ${a.id} not installed`, s.warn], [gap, s.faint]])]);
+  line(4, [...gets.flatMap((a) => tool(a.id, t[a.id] ?? null)), ...missing.flatMap((a): Seg[] => [[`⚠ ${a.id} not installed`, s.warn], [gap, s.faint]])]);
   line(5, [...tool("sops", t.sops), ...tool("node", t.node), ...tool("t3", t.t3)]);
   line(6, config);
   if (dimmed) c.paint(ix, y + 1, iw, 6, { attr: DIM });

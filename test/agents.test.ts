@@ -29,8 +29,8 @@ const nested: Agent<"nested"> = {
 
 const registry = [...AGENTS, stub, nested] as const;
 
-test("the registry lists claude then opencode, and every part of them is reachable by id", () => {
-  assert.deepEqual(AGENT_IDS, ["claude", "opencode"]);
+test("the registry lists claude, opencode, then antigravity, and every part of them is reachable by id", () => {
+  assert.deepEqual(AGENT_IDS, ["claude", "opencode", "antigravity"]);
   assert.equal(agentById("opencode")?.name, "opencode");
   assert.equal(agentById("nope"), undefined);
   assert.equal(isAgentId("claude"), true);
@@ -51,17 +51,17 @@ test("agentOf finds the agent whose home holds a path, and a prefix of a name is
 test("an `only` list names agents that can be given MCP servers, and the message is made from the registry", () => {
   assert.equal(onlyProblem(undefined), null);
   assert.equal(onlyProblem(["claude"]), null);
-  assert.equal(onlyProblem(["claude", "opencode"]), null);
-  assert.equal(onlyProblem([]), "'only' must be a list of claude, opencode");
-  assert.equal(onlyProblem("claude"), "'only' must be a list of claude, opencode");
-  assert.equal(onlyProblem(["gemini"]), "'only' must be a list of claude, opencode");
+  assert.equal(onlyProblem(["claude", "opencode", "antigravity"]), null);
+  assert.equal(onlyProblem([]), "'only' must be a list of claude, opencode, antigravity");
+  assert.equal(onlyProblem("claude"), "'only' must be a list of claude, opencode, antigravity");
+  assert.equal(onlyProblem(["gemini"]), "'only' must be a list of claude, opencode, antigravity");
 });
 
 test("`only` refuses an agent that has no MCP servers to give", () => {
   assert.equal(onlyProblem(["stub"], registry), "'only' names stub, which fleet cannot give MCP servers");
   assert.equal(onlyProblem(["claude", "stub"], registry), "'only' names stub, which fleet cannot give MCP servers");
   assert.equal(onlyProblem(["claude"], registry), null);
-  assert.equal(onlyProblem(["gemini"], registry), "'only' must be a list of claude, opencode", "the list leaves out the agents that cannot");
+  assert.equal(onlyProblem(["gemini"], registry), "'only' must be a list of claude, opencode, antigravity", "the list leaves out the agents that cannot");
 });
 
 test("`settings.<agent>` refuses an agent with no settings file, and an agent fleet does not know", () => {
@@ -104,8 +104,8 @@ test("the denied keys that were top-level keys keep their effect", () => {
 });
 
 test("the files fleet merges are each agent's settings file and the files its servers are in, each once", () => {
-  assert.deepEqual(mergedFiles(), ["~/.claude/settings.json", "~/.config/opencode/opencode.jsonc", "~/.claude.json"]);
-  assert.deepEqual(mergedFiles(registry), ["~/.claude/settings.json", "~/.config/opencode/opencode.jsonc", "~/.nested/config.json", "~/.claude.json"]);
+  assert.deepEqual(mergedFiles(), ["~/.claude/settings.json", "~/.config/opencode/opencode.jsonc", "~/.gemini/antigravity-cli/settings.json", "~/.claude.json", "~/.gemini/config/mcp_config.json"]);
+  assert.deepEqual(mergedFiles(registry), ["~/.claude/settings.json", "~/.config/opencode/opencode.jsonc", "~/.gemini/antigravity-cli/settings.json", "~/.nested/config.json", "~/.claude.json", "~/.gemini/config/mcp_config.json"]);
 });
 
 test("an owned key is an MCP entry of the agent whose file and key it is under", () => {
@@ -122,14 +122,14 @@ test("a file written through the agent's binary is the claude one only", () => {
 });
 
 test("an agent is asked only for the parts it has", () => {
-  assert.deepEqual(having("mcp", registry).map((a) => a.id), ["claude", "opencode"]);
-  assert.deepEqual(having("instructions", registry).map((a) => a.id), ["claude", "opencode", "stub"]);
-  assert.deepEqual(having("skills", registry).map((a) => a.id), ["claude", "opencode"]);
+  assert.deepEqual(having("mcp", registry).map((a) => a.id), ["claude", "opencode", "antigravity"]);
+  assert.deepEqual(having("instructions", registry).map((a) => a.id), ["claude", "opencode", "antigravity", "stub"]);
+  assert.deepEqual(having("skills", registry).map((a) => a.id), ["claude", "opencode", "antigravity"]);
 });
 
 test("agents are named for a sentence", () => {
-  assert.equal(sayAgents((a) => a.binary), "claude or opencode");
-  assert.equal(sayAgents((a) => a.name, "and"), "Claude Code and opencode");
-  assert.equal(sayAgents((a) => a.id, "or", registry), "claude, opencode, stub or nested");
+  assert.equal(sayAgents((a) => a.binary), "claude, opencode or agy");
+  assert.equal(sayAgents((a) => a.name, "and"), "Claude Code, opencode and Antigravity CLI");
+  assert.equal(sayAgents((a) => a.id, "or", registry), "claude, opencode, antigravity, stub or nested");
   assert.equal(sayAgents((a) => a.id, "or", [stub]), "stub");
 });

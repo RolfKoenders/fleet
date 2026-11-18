@@ -52,6 +52,8 @@ export type Agent<Id extends string = string> = {
     file: string;
     /** The key the servers are under, by name. */
     key: string;
+    /** The transports it can take, when not all of them. A server of another one is left out of its file, and is refused when config limits it to this agent. */
+    transports?: readonly ("stdio" | "http" | "sse")[];
     /** The entry for `server`, in the shape this agent's file takes. */
     render(server: McpServer): Obj;
     /** What to probe for a rendered entry, or null when it is not of the shape `render` makes. `cwd` is where a stdio server starts. */

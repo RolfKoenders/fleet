@@ -4,7 +4,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { agentOf, AGENTS, having, skillTargets, SKILL_TARGETS } from "../src/agents/index.ts";
 import type { Registered } from "../src/agents/index.ts";
-import { renderFor } from "../src/mcp.ts";
+import { leftOutNote, renderFor, takes } from "../src/mcp.ts";
 import type { Server } from "../src/mcp.ts";
 import { expandTarget } from "../src/plan.ts";
 import { declareSettings } from "../src/settings.ts";
@@ -40,6 +40,13 @@ for (const agent of AGENTS) {
     const mcp = agent.mcp;
     const has = agent as Registered & { mcp: NonNullable<Registered["mcp"]> };
     for (const [kind, s] of Object.entries(SERVERS)) {
+      if (!takes(has, s)) {
+        test(`${agent.id}: a ${kind} server is not rendered, and the host is told so once`, () => {
+          assert.match(leftOutNote(has, [{ ...s, only: [agent.id] }])!, new RegExp(`^${agent.name} does not support ${kind} servers, so conf is left out of ${mcp.file}$`));
+          assert.equal(leftOutNote(has, [s]), null, "a server that is not for this agent is not said to be left out");
+        });
+        continue;
+      }
       test(`${agent.id}: a ${kind} server is rendered and read back`, () => {
         const entry = renderFor(has, s, NODE);
         assert.ok(!Object.values(entry).some((v) => (Array.isArray(v) ? v.length === 0 : v !== null && typeof v === "object" && Object.keys(v).length === 0)), "no empty list or map is written");
@@ -100,7 +107,7 @@ for (const agent of AGENTS) {
   }
 
   test(`${agent.id}: its locations are under its own homes, or a directory agents share`, () => {
-    const SHARED = ["~/.agents"];
+    const SHARED = ["~/.agents", "~/.gemini/skills", "~/.gemini/AGENTS.md"];
     const own = (path: string, what: string) => {
       assert.ok(path.startsWith("~/"), `${what} ${path} is in ~/ form`);
       assert.equal(agentOf(path)?.id, agent.id, `${what} ${path} is under ${agent.id}'s homes`);
@@ -115,7 +122,8 @@ for (const agent of AGENTS) {
     }
     if (agent.mcp !== undefined) own(agent.mcp.file, "MCP file");
     if (agent.instructions !== undefined) {
-      agent.instructions.files.forEach((f) => own(f, "instruction file"));
+      own(agent.instructions.files[0]!, "instruction file fleet links into");
+      agent.instructions.files.slice(1).forEach((f) => readable(f, "instruction file"));
       agent.instructions.dirs.forEach((d) => own(d, "instruction directory"));
       assert.ok(agent.instructions.setting === null || agent.instructions.setting === agent.settings?.file, "the instructions list is in the settings file");
     }
@@ -200,11 +208,16 @@ test("apply gives every agent its config, and removing the config leaves no trac
   const run = (...args: string[]) => runFleet(clone, args, { home });
   const first = run("apply");
   assert.equal(first.code, 0, first.stderr);
-  assert.equal(run("diff").stdout.trim(), "nothing to do");
+  // An agent that cannot take a transport leaves those servers out and says so in a warning, which is not a change.
+  const changes = (stdout: string): string => stdout.split("\n").filter((l) => !l.startsWith("warning ")).join("\n").trim();
+  assert.equal(changes(run("diff").stdout), "nothing to do");
 
   for (const agent of having("mcp")) {
     const doc = JSON.parse(readFileSync(expandTarget(agent.mcp.file, home), "utf8"));
-    for (const name of ["conf-stdio", "conf-http", "conf-sse"]) assert.ok(doc[agent.mcp.key][name] !== undefined, `${agent.id} has ${name}`);
+    for (const name of ["conf-stdio", "conf-http", "conf-sse"]) {
+      const left = name === "conf-sse" && !takes(agent as Registered & { mcp: NonNullable<Registered["mcp"]> }, SERVERS.sse);
+      assert.equal(doc[agent.mcp.key][name] === undefined, left, `${agent.id} ${left ? "leaves out" : "has"} ${name}`);
+    }
   }
   for (const target of targets) assert.ok(present(expandTarget(target, home)), `${target} is linked`);
   assert.ok(SKILL_TARGETS.every((dir) => present(expandTarget(`${dir}/conf-skill`, home))), "the skill is linked");
@@ -213,7 +226,7 @@ test("apply gives every agent its config, and removing the config leaves no trac
   publish(clone, "take everything away");
   const second = run("apply");
   assert.equal(second.code, 0, second.stderr);
-  assert.equal(run("diff").stdout.trim(), "nothing to do");
+  assert.equal(changes(run("diff").stdout), "nothing to do");
 
   const state = JSON.parse(readFileSync(join(home, ".local/state/fleet/applied.json"), "utf8"));
   assert.deepEqual(state.keys, [], "no owned key is recorded");

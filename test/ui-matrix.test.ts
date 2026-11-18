@@ -72,7 +72,8 @@ test("matrix: one row per bundle and server, one cell per host, saying defaults,
     assert.deepEqual(cell(m, "bundles", "core", "laptop"), { on: true, picked: "defaults", excluded: null });
     assert.deepEqual(cell(m, "bundles", "extra", "laptop"), { on: true, picked: "host", excluded: null });
     assert.deepEqual(cell(m, "bundles", "core", "remote"), { on: false, picked: "defaults", excluded: "host" });
-    assert.deepEqual(m.agents, [{ id: "claude", name: "Claude Code", used: true }, { id: "opencode", name: "opencode", used: true }], "the agents a server can be for, from the registry, and both are on this host");
+    assert.deepEqual(m.agents.map((a: any) => [a.id, a.name]), [["claude", "Claude Code"], ["opencode", "opencode"], ["antigravity", "Antigravity CLI"]], "the agents a server can be for, from the registry");
+    assert.deepEqual(m.agents.slice(0, 2).map((a: any) => a.used), [true, true], "the two on this host are in use (whether Antigravity CLI is depends on the machine running the tests)");
     assert.deepEqual(m.outside, []);
   });
 });
@@ -275,23 +276,23 @@ test("matrix: an agent is in use when this host has it, another host reported it
   });
   await withServer({}, async (s, w) => {
     const used = async () => (await get(s, "/api/matrix")).agents.map((a: any) => [a.id, a.used]);
-    assert.deepEqual(await used(), [["claude", true], ["opencode", true]], "this host has both");
+    assert.deepEqual(await used(), [["claude", true], ["opencode", true], ["antigravity", false]], "this host has both");
 
     removeAgent(w.home, "opencode");
-    assert.deepEqual(await used(), [["claude", true], ["opencode", false]]);
+    assert.deepEqual(await used(), [["claude", true], ["opencode", false], ["antigravity", false]]);
     const hosts = (await get(s, "/api/matrix")).hosts;
     assert.equal(hosts.every((h: any) => h.agents === undefined), true, "no host file names agents");
 
     writeFileSync(join(w.clone, "hosts/remote.yaml"), `${REMOTE}agents: [opencode]\n`);
-    assert.deepEqual(await used(), [["claude", true], ["opencode", true]], "a host file names it");
+    assert.deepEqual(await used(), [["claude", true], ["opencode", true], ["antigravity", false]], "a host file names it");
     assert.deepEqual((await get(s, "/api/matrix")).hosts.find((h: any) => h.name === "remote").agents, ["opencode"]);
 
     writeFileSync(join(w.clone, "hosts/remote.yaml"), REMOTE);
-    assert.deepEqual(await used(), [["claude", true], ["opencode", false]]);
+    assert.deepEqual(await used(), [["claude", true], ["opencode", false], ["antigravity", false]]);
     // What another host reported last, as the bridge remembers it.
     mkdirSync(join(w.home, ".local/state/fleet"), { recursive: true });
     const status = { repos: { fleet: { branch: "main", sha: "abc", clean: true, ahead: 0, behind: 0 } }, applied: { at: null, ageSeconds: null, config: null }, timer: "active", pending: 0, conflicts: 0, tools: {}, agents: [{ id: "claude", version: "2.1.4", active: true, pinned: false }, { id: "opencode", version: "1.4.2", active: true, pinned: false }] };
     writeFileSync(join(w.home, ".local/state/fleet/bridge-hosts.json"), JSON.stringify({ app: "fleet-bridge-hosts", version: 1, hosts: { remote: { savedAt: Date.now(), status } } }));
-    assert.deepEqual(await used(), [["claude", true], ["opencode", true]], "another host's status reports it");
+    assert.deepEqual(await used(), [["claude", true], ["opencode", true], ["antigravity", false]], "another host's status reports it");
   });
 });

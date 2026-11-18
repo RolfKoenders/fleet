@@ -1,5 +1,5 @@
 import { homedir } from "node:os";
-import { sayAgents } from "./agents/index.ts";
+import { AGENTS, sayAgents } from "./agents/index.ts";
 import { EXIT } from "./exit.ts";
 import type { ExitName } from "./exit.ts";
 import type { Result } from "./output.ts";
@@ -12,7 +12,7 @@ export type PrimerCommand = { name: string; usage: string; summary: string; effe
 /** The glossary in one sentence per term, in the order of GLOSSARY.md. */
 const TERMS: [string, string][] = [
   ["Host", "One machine fleet manages, as one agent user on it (`laptop` as `alice`, `server` as `deploy`)."],
-  ["Agent", "A coding agent fleet sets up on a host, such as Claude Code or opencode. A host gets the agents installed on it, unless its host file names them."],
+  ["Agent", "A coding agent fleet sets up on a host, such as Claude Code, opencode or Antigravity CLI. A host gets the agents installed on it, unless its host file names them."],
   ["Agent user", "The OS user on a host whose agent setup fleet manages; other users there are not fleet's business."],
   ["Config repo", "The private repo a user keeps their catalog, host files, shared instructions and encrypted secrets in."],
   ["Fleet clone", "The copy of the fleet tool a host runs from, kept at the commit its config pins; nobody works in it."],
@@ -80,6 +80,10 @@ Pass \`--json\` when you will read the output: one JSON document on stdout, with
 ## Terms
 
 ${TERMS.map(([term, definition]) => `- **${term}**: ${definition}`).join("\n")}
+
+## Supported agents
+
+${AGENTS.map((a) => `- ${a.name} (\`${a.binary}\`, id \`${a.id}\` in host files)`).join("\n")}
 
 ## Commands
 

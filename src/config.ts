@@ -1,11 +1,11 @@
 import { existsSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
-import { AGENT_IDS, AGENTS, hostAgents, isAgentId, leftAlone, SKILL_TARGETS, skillTargets } from "./agents/index.ts";
+import { AGENT_IDS, AGENTS, having, hostAgents, isAgentId, leftAlone, SKILL_TARGETS, skillTargets } from "./agents/index.ts";
 import type { Agent, AgentId, Registered } from "./agents/index.ts";
 import { parseCatalog, pickBundles } from "./catalog.ts";
 import type { Catalog } from "./catalog.ts";
-import { mcpKeys, parseMcpCatalog } from "./mcp.ts";
+import { leftOutNote, mcpKeys, parseMcpCatalog } from "./mcp.ts";
 import type { Conflict } from "./plan.ts";
 import { declareSettings, mergeSettings, settingsAgent } from "./settings.ts";
 import type { Declared, DesiredKey } from "./settings.ts";
@@ -48,6 +48,8 @@ export type Config = {
   agents: Registered[];
   /** The agents the host file or the defaults name in `agents`, or null when they name none. */
   pin: AgentId[] | null;
+  /** What an agent on this host leaves out of its MCP file, one line per agent, for diff and apply to say. */
+  notes: string[];
 };
 
 export type LoadOptions = {
@@ -239,6 +241,7 @@ export function loadConfig(configDir: string, host: string, options: LoadOptions
   const pin = checkedHost.agents ?? checkedDefaults.agents;
   const on = options.agents === undefined ? [...AGENTS] : hostAgents(pin, options.agents);
   const keep = (path: string): boolean => !leftAlone(path, on);
+  const notes = having("mcp", on).flatMap((a) => leftOutNote(a, pickedServers) ?? []);
 
   const merged = new Map<string, UnresolvedRecord>();
   for (const record of [...checkedDefaults.records, ...checkedHost.records]) merged.set(record.target, record);
@@ -292,5 +295,5 @@ export function loadConfig(configDir: string, host: string, options: LoadOptions
   if (problems.length > 0) throw new InvalidConfigError(problems);
   const kept = keys.filter((key) => keep(key.file));
   const secrets = [...new Set(kept.flatMap((key) => secretNames(key.value)))].sort();
-  return conflicts.length > 0 ? { files: [], keys: [], conflicts, secrets: [], skills: [], agents: on, pin } : { files, keys: kept, conflicts, secrets, skills, agents: on, pin };
+  return conflicts.length > 0 ? { files: [], keys: [], conflicts, secrets: [], skills: [], agents: on, pin, notes } : { files, keys: kept, conflicts, secrets, skills, agents: on, pin, notes };
 }
