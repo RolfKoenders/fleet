@@ -15,16 +15,23 @@ export const HOMEBREW_KEG_NODES = ["/opt/homebrew", "/usr/local"].flatMap((prefi
 const AGENT_BIN_DIRS = binDirs();
 
 /**
+ * Where mise puts the shims of the tools it installs, relative to the home directory (https://mise.jdx.dev/dev-tools/shims.html).
+ * An agent installed through it is on the user's `PATH` only as a shim here, and the timer's `PATH` is fixed.
+ * Searched after the directories a tool installs itself into, so a binary installed directly wins over the shim.
+ */
+const MISE_SHIMS = ".local/share/mise/shims";
+
+/**
  * The directories searched for a program that is not found on `PATH`, apart from Homebrew's. The home ones come first, so a host's own copy wins.
  * The last is where Node is: `npm -g` puts agent CLIs there, and the systemd timer's `PATH` has no fnm.
  */
-export const probeExtraDirs = (home: string = homedir()): string[] => [join(home, ".local/bin"), ...AGENT_BIN_DIRS.map((dir) => join(home, dir)), "/usr/bin", "/usr/local/bin", dirname(probedNode())];
+export const probeExtraDirs = (home: string = homedir()): string[] => [join(home, ".local/bin"), ...AGENT_BIN_DIRS.map((dir) => join(home, dir)), join(home, MISE_SHIMS), "/usr/bin", "/usr/local/bin", dirname(probedNode())];
 
 /** The directories searched before `PATH`, in order. */
 export const probeDirs = (home: string = homedir()): string[] => [...probeExtraDirs(home), HOMEBREW_BIN];
 
 /** The same directories as a shell `PATH` prefix, with `$HOME` left for the shell to expand. */
-export const SHELL_PROBE_PATH = ["$HOME/.local/bin", ...AGENT_BIN_DIRS.map((dir) => `$HOME/${dir}`), "/usr/bin", "/usr/local/bin", HOMEBREW_BIN].join(":");
+export const SHELL_PROBE_PATH = ["$HOME/.local/bin", ...AGENT_BIN_DIRS.map((dir) => `$HOME/${dir}`), `$HOME/${MISE_SHIMS}`, "/usr/bin", "/usr/local/bin", HOMEBREW_BIN].join(":");
 
 /** Node candidates a shell script tries after the fnm alias and `~/.local/bin/node`, as quoted words. */
 export const SHELL_NODE_CANDIDATES = [`${HOMEBREW_BIN}/node`, ...HOMEBREW_KEG_NODES].map((p) => `"${p}"`);

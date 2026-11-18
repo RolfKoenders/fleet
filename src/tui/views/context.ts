@@ -1,4 +1,3 @@
-import { AGENTS } from "../../agents/index.ts";
 import { drawBox } from "../buffer.ts";
 import type { Canvas, Style } from "../buffer.ts";
 import type { ContextItem, ContextKind, ContextReport } from "../../context.ts";
@@ -17,9 +16,8 @@ import type { Seg } from "./ui.ts";
  */
 
 const HOST_W = 12;
-/** The longest agent name that is shown and a space: a `quiet` agent no host reported does not widen the column. */
-const agentWidth = (reports: readonly ContextReport[]): number =>
-  Math.max(...AGENTS.filter((a) => a.quiet !== true).map((a) => a.id.length), ...reports.flatMap((r) => r.agents.map((a) => a.agent.length))) + 1;
+/** The longest agent name that is shown and a space: an agent no host reported does not widen the column. */
+const agentWidth = (reports: readonly ContextReport[]): number => Math.max(1, ...reports.flatMap((r) => r.agents.map((a) => a.agent.length))) + 1;
 const TOTAL_W = 9;
 const MAX_BAR = 40;
 const MIN_BAR = 10;

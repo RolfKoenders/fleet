@@ -107,7 +107,7 @@ for (const agent of AGENTS) {
   }
 
   test(`${agent.id}: its locations are under its own homes, or a directory agents share`, () => {
-    const SHARED = ["~/.agents", "~/.gemini/skills"];
+    const SHARED = ["~/.agents", "~/.gemini/skills", "~/.gemini/AGENTS.md"];
     const own = (path: string, what: string) => {
       assert.ok(path.startsWith("~/"), `${what} ${path} is in ~/ form`);
       assert.equal(agentOf(path)?.id, agent.id, `${what} ${path} is under ${agent.id}'s homes`);
@@ -122,7 +122,8 @@ for (const agent of AGENTS) {
     }
     if (agent.mcp !== undefined) own(agent.mcp.file, "MCP file");
     if (agent.instructions !== undefined) {
-      agent.instructions.files.forEach((f) => own(f, "instruction file"));
+      own(agent.instructions.files[0]!, "instruction file fleet links into");
+      agent.instructions.files.slice(1).forEach((f) => readable(f, "instruction file"));
       agent.instructions.dirs.forEach((d) => own(d, "instruction directory"));
       assert.ok(agent.instructions.setting === null || agent.instructions.setting === agent.settings?.file, "the instructions list is in the settings file");
     }

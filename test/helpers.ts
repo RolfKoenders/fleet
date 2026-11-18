@@ -3,6 +3,7 @@ import { existsSync, chmodSync, cpSync, mkdirSync, mkdtempSync, readFileSync, re
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { AGENTS } from "../src/agents/index.ts";
+import type { AgentId } from "../src/agents/index.ts";
 import { LAUNCHD_LABEL } from "../src/scheduler.ts";
 import { HOMEBREW_BIN, HOMEBREW_KEG_NODES } from "../src/tools.ts";
 
@@ -44,14 +45,16 @@ export const NODE = ((): string => {
 // For what runs in this process: the other half of `FLEET_NODE`, which `bin/fleet` turns into this.
 process.env.FLEET_NODE_PATH = NODE;
 
+/** The agents an ordinary test host has. Fleet mentions only the agents a host has, so the others are a host that has nothing to do with them. */
+export const COMMON_AGENTS: readonly AgentId[] = ["claude", "opencode"];
+
 /**
- * A home with the agents installed that fleet had before it had `quiet` ones, as far as fleet can tell: a binary of each in
- * `~/.local/bin` that does nothing. A quiet agent is left out, so the world of every test that predates it is a host that does not
- * have it, which is what fleet promises such a host; a test about one installs it with `installAgent`. A test about a host that
- * lacks an agent removes its stub with `removeAgent`; one that needs its output or its calls installs a fake over it.
+ * A home with the common agents installed, as far as fleet can tell: a binary of each in `~/.local/bin` that does nothing. A
+ * test about another agent installs it with `installAgent`; one about a host that lacks an agent removes its stub with
+ * `removeAgent`; one that needs its output or its calls installs a fake over it.
  */
 export function installStubAgents(home: string): void {
-  for (const agent of AGENTS) if (agent.quiet !== true) installAgent(home, agent.binary);
+  for (const agent of AGENTS) if (COMMON_AGENTS.includes(agent.id)) installAgent(home, agent.binary);
 }
 
 /** An agent's binary on the host that does nothing. */

@@ -30,6 +30,9 @@ export type Sandbox = {
   config: string;
 };
 
+/** The agents the demo's hosts have installed. A host mentions only agents it has, so the others are left off it. */
+const DEMO_AGENTS: readonly AgentId[] = ["claude", "opencode"];
+
 const HOST_NAMES = [
   ["laptop", null],
   ["server", "me@server"],
@@ -142,13 +145,14 @@ function addHandMadeSkill(host: DemoHost): void {
 function installFakes(sandbox: Sandbox, toolDir: string): void {
   const dir = join(sandbox.root, "fakes");
   mkdirSync(dir, { recursive: true });
-  for (const name of ["ssh", ...AGENTS.filter((a) => a.quiet !== true).map((a) => a.binary), "sops", "systemctl", "launchctl"]) {
+  const has = (name: string): boolean => AGENTS.every((a) => a.binary !== name || DEMO_AGENTS.includes(a.id));
+  for (const name of ["ssh", ...AGENTS.map((a) => a.binary), "sops", "systemctl", "launchctl"]) {
     const script = join(dir, name);
     writeFileSync(script, `#!/bin/sh\nFLEET_DEMO_ROOT=${quote(sandbox.root)} exec ${quote(process.execPath)} ${quote(join(toolDir, "src/demo/fakes.ts"))} ${name} "$@"\n`);
     chmodSync(script, 0o755);
     for (const host of sandbox.hosts) {
       mkdirSync(join(host.home, ".local/bin"), { recursive: true });
-      symlinkSync(script, join(host.home, ".local/bin", name));
+      if (has(name)) symlinkSync(script, join(host.home, ".local/bin", name));
     }
   }
   const bin = join(sandbox.root, "bin");

@@ -134,3 +134,17 @@ test("antigravity: a host that has it shows it in status, a host that does not h
   assert.match(gone.stderr, /Antigravity CLI: not installed, its config is left as is/);
   assert.equal(existsSync(join(w.home, ".gemini/config/mcp_config.json")), true, "what was applied stays");
 });
+
+test("antigravity: its context counts every instruction file it reads, ~/.gemini/AGENTS.md among them, which fleet does not own", () => {
+  const w = world();
+  assert.equal(w.run("apply").code, 0);
+  put(w.home, ".gemini/AGENTS.md", "Written by hand.\n");
+  put(w.home, ".gemini/config/rules/style.md", "A rule.\n");
+  const doc = JSON.parse(w.run("context", "--json").stdout);
+  const items = doc.agents.find((a: { agent: string }) => a.agent === "antigravity").items.filter((i: { kind: string }) => i.kind === "instructions");
+  assert.deepEqual(items.map((i: { name: string }) => i.name).sort(), ["~/.gemini/AGENTS.md", "~/.gemini/GEMINI.md", "~/.gemini/config/rules/style.md"]);
+  assert.equal(items.find((i: { name: string }) => i.name === "~/.gemini/AGENTS.md").fromConfig, false, "fleet did not put it there");
+  assert.equal(readFileSync(join(w.home, ".gemini/AGENTS.md"), "utf8"), "Written by hand.\n", "and apply leaves it alone");
+  assert.equal(w.run("apply").code, 0);
+  assert.equal(readFileSync(join(w.home, ".gemini/AGENTS.md"), "utf8"), "Written by hand.\n");
+});

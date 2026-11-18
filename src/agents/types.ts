@@ -38,11 +38,6 @@ export type Agent<Id extends string = string> = {
   version: string[];
   /** Everything under these paths belongs to this agent. */
   homes: string[];
-  /**
-   * Set on an agent added after hosts were already in use: `fleet status` says nothing about it on a host that does not
-   * have it (not installed, not named in `agents:`, nothing of its applied), so adding the agent changes nothing there.
-   */
-  quiet?: true;
 
   /** A file the agent also writes, where fleet owns only the keys a host file declares. */
   settings?: {

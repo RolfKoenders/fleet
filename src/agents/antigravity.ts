@@ -13,7 +13,6 @@ export const antigravity: Agent<"antigravity"> = {
   binary: "agy",
   binDirs: [],
   version: ["--version"],
-  quiet: true,
   homes: ["~/.gemini/antigravity-cli", "~/.gemini/config", "~/.gemini/GEMINI.md"],
 
   // https://antigravity.google/docs/settings/ : plain JSON, unknown keys are kept, the CLI replaces the file when it saves
@@ -70,8 +69,10 @@ export const antigravity: Agent<"antigravity"> = {
   // https://antigravity.google/docs/rules/ : `GEMINI.md` and `AGENTS.md` in `~/.gemini` and `~/.gemini/config` are always on and
   // take no front matter; `~/.gemini/config/rules/*.md` are modular rules. Every rule found is loaded, none replaces another.
   // `~/.gemini/GEMINI.md` is the file Gemini CLI reads too (https://antigravity.google/docs/cli/gcli-migration), so it is where fleet links.
+  // `~/.gemini/AGENTS.md` is read as well but sits outside the homes, which are only what is Antigravity's alone: fleet counts
+  // it in the context an agent loads and never writes it.
   instructions: {
-    files: ["~/.gemini/GEMINI.md", "~/.gemini/config/AGENTS.md", "~/.gemini/config/GEMINI.md"],
+    files: ["~/.gemini/GEMINI.md", "~/.gemini/config/AGENTS.md", "~/.gemini/config/GEMINI.md", "~/.gemini/AGENTS.md"],
     dirs: ["~/.gemini/config/rules"],
     setting: null,
   },

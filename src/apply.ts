@@ -10,7 +10,7 @@ import { addServer, ensurePrivate, findClaude, removeServer, serverName, shadowW
 import { findTool } from "./tools.ts";
 import { MissingToolError, repoState, syncRepo, UnreachableError } from "./git.ts";
 import { readHostName } from "./host.ts";
-import { detectAgents, notInstalledAgents, notInstalledWarning } from "./hostagents.ts";
+import { appliedPaths, detectAgents, notInstalledAgents, notInstalledWarning } from "./hostagents.ts";
 import { emptyKeyPlan, keyName, planKeys, writeKeys } from "./keys.ts";
 import type { KeyChange, KeyPlan, KeyRef } from "./keys.ts";
 import { acquireLock, LockedError } from "./lock.ts";
@@ -72,7 +72,7 @@ function prepare(configDir: string, home: string, sources: SourceMode, repoConfl
     const rendered = renderKeys(config.keys, secrets);
     // What an agent that is not on the host has is left as it is: not planned, so never removed, and kept in the applied state.
     const recorded = { keys: (state?.keys ?? []).filter((k) => !leftAlone(k.file, config.agents)), links: (state?.links ?? []).filter((l) => !leftAlone(l.target, config.agents)) };
-    const notInstalled = notInstalledAgents(config.agents, config.pin, [...(state?.keys ?? []).map((k) => k.file), ...(state?.links ?? []).map((l) => l.target)]);
+    const notInstalled = notInstalledAgents(config.agents, config.pin, appliedPaths(state));
     // An agent whose binary writes its servers cannot be written while it is missing, even one the host file names. Its servers wait, and the first apply after it is installed adds them.
     const missing = having("mcp", config.agents).filter((a) => a.mcp.needsBinary === true && findTool(a.binary, process.env, home) === null);
     const waits = (key: { file: string }): boolean => missing.some((a) => a.mcp.file === key.file);

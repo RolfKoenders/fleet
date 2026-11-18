@@ -1,11 +1,12 @@
-import { existsSync, lstatSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { AGENTS, agentById, hostAgents, leftAlone, skillTargets, SKILL_TARGETS } from "../src/agents/index.ts";
 import type { Agent } from "../src/agents/index.ts";
 import { loadConfig, InvalidConfigError } from "../src/config.ts";
-import { detectAgents } from "../src/hostagents.ts";
+import { detectAgents, namedAgents } from "../src/hostagents.ts";
+import { findTool } from "../src/tools.ts";
 import { FAKE_VERSIONS, NODE, fakeTimer, installFakeClaude, installFakeTool, installStatusTools, makeClone, makeHome, makeSource, publish, removeAgent, runFleet, skipIfSystemWide, writeExecutable } from "./helpers.ts";
 
 /** Agents per host: a host gets the agents installed on it, unless its host file names them. */
@@ -95,6 +96,45 @@ test("detection finds a binary in the Node install's directory, where npm -g put
   }
 });
 
+test("an agent installed through mise is found by its shim, and a binary installed directly wins over it", () => {
+  const home = makeHome();
+  for (const agent of AGENTS) removeAgent(home, agent.binary);
+  const shim = join(home, ".local/share/mise/shims", antigravity.binary);
+  writeExecutable(shim, "#!/bin/sh\nexit 0\n");
+  assert.deepEqual(detectAgents(home, { PATH: "" }).map((a) => a.id), ["antigravity"], "the timer's PATH has no shims, the probe directories do");
+  assert.equal(findTool(antigravity.binary, { PATH: "" }, home), shim);
+  const direct = join(home, ".local/bin", antigravity.binary);
+  writeExecutable(direct, "#!/bin/sh\nexit 0\n");
+  assert.equal(findTool(antigravity.binary, { PATH: "" }, home), direct);
+});
+
+test("a host whose only agy is a mise shim gets Antigravity CLI set up", () => {
+  const { clone } = makeClone();
+  const home = makeHome("laptop");
+  for (const agent of AGENTS) removeAgent(home, agent.binary);
+  installFakeClaude(home);
+  installFakeTool(home, "agy", { stdout: "1.5.10", only: ["--version"] });
+  renameSync(join(home, ".local/bin/agy"), (mkdirSync(join(home, ".local/share/mise/shims"), { recursive: true }), join(home, ".local/share/mise/shims/agy")));
+  put(clone, "catalog/mcp.yaml", "servers:\n  tracker:\n    transport: http\n    url: https://tracker.example.com/mcp\n");
+  put(clone, "hosts/_defaults.yaml", "mcp:\n  include: [tracker]\n");
+  put(clone, "hosts/laptop.yaml", "{}\n");
+  publish(clone);
+  const r = runFleet(clone, ["apply"], { home });
+  assert.equal(r.code, 0, r.stderr);
+  assert.equal(JSON.parse(readFileSync(join(home, ".gemini/config/mcp_config.json"), "utf8")).mcpServers.tracker.serverUrl, "https://tracker.example.com/mcp");
+});
+
+test("an agent is named only when the host has it, pins it, or fleet applied config for it", () => {
+  const all = [claude, opencode, antigravity];
+  const ids = (on: Agent[], detected: Agent[], applied: string[] = []) => namedAgents(on, detected, applied).map((a) => a.id);
+  assert.deepEqual(ids([claude], [claude]), ["claude"], "an agent that is none of the three is not named, whichever it is");
+  assert.deepEqual(ids([claude, opencode], [claude]), ["claude", "opencode"], "pinned, installed or not");
+  assert.deepEqual(ids([claude], [claude, opencode]), ["claude", "opencode"], "installed and pinned out");
+  assert.deepEqual(ids([claude], [claude], ["~/.gemini/config/mcp_config.json"]), ["claude", "antigravity"], "applied before and gone now");
+  assert.deepEqual(ids([claude], [claude], ["~/.claude/skills/review"]), ["claude"], "a skill link is not an agent's own file");
+  assert.deepEqual(ids([], all, []), ["claude", "opencode", "antigravity"]);
+});
+
 test("a skill is linked into the directory of each agent on the host that has its own, and into the one opencode reads, once", () => {
   const other: Agent = { ...claude, id: "other", name: "Other", binary: "other", skills: { target: "~/.other/skills", dirs: ["~/.other/skills"], setting: null } };
   assert.deepEqual(SKILL_TARGETS, ["~/.claude/skills", "~/.gemini/config/skills"]);
@@ -177,8 +217,13 @@ test("with only claude installed, apply writes nothing under ~/.config/opencode 
   assert.deepEqual(JSON.parse(w.run("diff", "--json").stdout).warnings ?? [], []);
   const status = w.run("status");
   assert.doesNotMatch(status.stderr, /not installed/);
-  assert.match(status.stdout, /^agents: claude 2\.1\.4 \(opencode not installed\)$/m, "the agents line still says what is installed");
-  assert.deepEqual(JSON.parse(w.run("status", "--json").stdout).notInstalled, []);
+  assert.match(status.stdout, /^agents: claude 2\.1\.4$/m, "the agents line says what the host has");
+  assert.doesNotMatch(status.stdout, /opencode/, "and nothing is said of an agent it never had");
+  const doc = JSON.parse(w.run("status", "--json").stdout);
+  assert.deepEqual(doc.notInstalled, []);
+  assert.deepEqual(doc.agents.map((a: { id: string }) => a.id), ["claude"]);
+  assert.equal(doc.tools.opencode, null, "the tools key opencode always had stays, null when it is not found");
+  assert.equal("antigravity" in doc.tools, false, "a newer agent has its key only where it is named");
 });
 
 test("installing opencode makes the next apply set it up", { skip: skipIfSystemWide("opencode") }, () => {
@@ -325,6 +370,23 @@ test("status text and JSON name the host's agents, and `tools` is as it was", { 
   w.edit("hosts/laptop.yaml", "agents: [claude]\n");
   installFakeTool(w.home, "opencode", { stdout: FAKE_VERSIONS.opencode, only: ["--version"] });
   assert.match(w.run("status").stdout, /^agents: claude 2\.1\.4 \(pinned\) \(opencode pinned out\)$/m);
+});
+
+test("an agent the host does not have is named in status only when its host file pins it", { skip: skipIfSystemWide("opencode") }, () => {
+  const w = world();
+  installStatusTools(w.home);
+  removeAgent(w.home, "opencode");
+  assert.equal(w.run("apply").code, 0);
+  const plain = JSON.parse(w.run("status", "--json").stdout);
+  assert.deepEqual(plain.agents.map((a: { id: string }) => a.id), ["claude"]);
+  assert.deepEqual(Object.keys(plain.tools).filter((k) => AGENTS.some((a) => a.id === k)), ["claude", "opencode"], "the keys `tools` always had, and no newer agent's");
+  w.edit("hosts/laptop.yaml", "agents: [claude, antigravity]\n");
+  publish(w.clone);
+  const asked = w.run("status", "--json");
+  const pinned = JSON.parse(asked.stdout);
+  assert.deepEqual(pinned.agents.map((a: { id: string }) => a.id), ["claude", "antigravity"], asked.stderr);
+  assert.equal(pinned.tools.antigravity, null);
+  assert.match(w.run("status").stdout, /^agents: claude 2\.1\.4, antigravity not installed \(pinned\)$/m);
 });
 
 test("fleet context lists only the agents the host has", { skip: skipIfSystemWide("opencode") }, () => {

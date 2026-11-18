@@ -12,7 +12,7 @@ git config --global url."https://github.com/you/".insteadOf "git@github.com:you/
 
 ## Which agents a machine gets
 
-A machine gets the agents installed on it. Fleet looks for each agent's program (`claude`, `opencode`, `agy`) on the usual paths and in the directory of the Node that fleet runs under, where `npm -g` puts agent CLIs. Install an agent and the next apply sets it up. An agent that is not installed is left alone: nothing of its is written, and what fleet applied for it earlier stays where it is. An agent you never had is never mentioned, however many agents the shared config names. One you had, and fleet applied config for, is mentioned, so that a lost install does not go unnoticed:
+A machine gets the agents installed on it. Fleet looks for each agent's program (`claude`, `opencode`, `agy`) on the usual paths, in the shims of mise (`~/.local/share/mise/shims`) and in the directory of the Node that fleet runs under, where `npm -g` puts agent CLIs. A program in `~/.local/bin` is preferred to a shim. Install an agent and the next apply sets it up. An agent that is not installed is left alone: nothing of its is written, and what fleet applied for it earlier stays where it is. An agent you never had is never mentioned, however many agents the shared config names. One you had, and fleet applied config for, is mentioned, so that a lost install does not go unnoticed:
 
 ```
 warning opencode: not installed, its config is left as is. Install it, or pin `agents:`
@@ -24,7 +24,7 @@ To choose instead of detect, name the agents in the machine's host file. The lis
 agents: [claude]
 ```
 
-`fleet status` shows what a machine gets, as `agents: claude 2.1.4 (opencode not installed)`, and `fleet context` and `fleet doctor` cover only those agents. Antigravity CLI was added after the others, so `fleet status` says nothing about it on a machine that does not have it.
+`fleet status` shows what a machine gets, as `agents: claude 2.1.4 (opencode not installed)`, and `fleet context` and `fleet doctor` cover only those agents. `fleet status`, `status --json` and the bridge name an agent only on a machine that has it installed, names it in `agents:`, or applied config for it, so one you never used is not mentioned. `status --json` keeps the `claude` and `opencode` keys in `tools` as they were (null when not found); any other agent has its key only where it is named.
 
 ### Antigravity CLI
 
