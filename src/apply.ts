@@ -86,6 +86,7 @@ function prepare(configDir: string, home: string, sources: SourceMode, repoConfl
       pin: config.pin,
       warnings: [
         ...AGENTS.filter((a) => notInstalled.includes(a.id)).map(notInstalledWarning),
+        ...config.notes,
         ...missing.flatMap((a) => {
           const left = rendered.filter((key) => key.file === a.mcp.file).length;
           return left > 0 ? [`${a.binary} is not installed, so ${left} MCP server${left === 1 ? " is" : "s are"} left out of ${a.mcp.file} until it is`] : [];

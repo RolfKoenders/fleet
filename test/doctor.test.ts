@@ -699,7 +699,7 @@ test("--all: what a remote host sends is cut to known fields and printable text"
 });
 
 test("--all: a server of an agent this fleet does not know is left out, and the rest of the host's answer is read", () => {
-  const unknown = { server: "alpha", tool: "antigravity", transport: "stdio", result: "ok", tools: 3, latencyMs: 9, protocol: null, detail: null, fails: false };
+  const unknown = { server: "alpha", tool: "codex", transport: "stdio", result: "ok", tools: 3, latencyMs: 9, protocol: null, detail: null, fails: false };
   const known = { server: "beta", tool: "opencode", transport: "remote", result: "ok", tools: 5, latencyMs: 12, protocol: null, detail: null, fails: false };
   const s = setupAll({ "me@a": { stdout: docOf({ servers: [unknown, known] }) } }, { a: "ssh: me@a\n" });
   const { r, doc } = s.all();

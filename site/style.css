@@ -291,6 +291,12 @@ h2 { margin: 0 0 16px; font: 700 clamp(32px, 4.6vw, 52px)/1.06 var(--sans); lett
 .cta { text-align: center; padding-bottom: 120px !important; }
 .cta p { color: var(--sub); margin: 0 0 28px; font-size: 18px; }
 .cmd.big { display: inline-flex; font-size: 22px; padding: 16px 16px 16px 24px; border-color: rgba(63,185,80,.4); box-shadow: 0 0 80px -20px rgba(63,185,80,.5); }
+.supported { margin-top: 36px; }
+.supported h3 { font: 600 12px var(--mono); color: var(--muted); text-transform: uppercase; letter-spacing: .08em; margin: 0 0 12px; }
+.supported ul { list-style: none; display: flex; flex-wrap: wrap; justify-content: center; gap: 8px 10px; margin: 0 0 14px; padding: 0; }
+.supported li { font: 13px var(--mono); color: var(--sub); border: 1px solid var(--border); border-radius: 999px; padding: 4px 14px; }
+.cta .supported p { font-size: 14px; margin: 0; }
+.supported a { color: var(--brand-bright); }
 .reqs { margin-top: 34px !important; font: 13px var(--mono) !important; color: var(--muted) !important; }
 
 footer {

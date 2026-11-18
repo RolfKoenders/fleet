@@ -4,6 +4,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { FAKE_VERSIONS, git, installStatusTools, makeClone, makeHome, repoRoot, runFleet, toolCalls } from "./helpers.ts";
 import { LAUNCHD_LABEL } from "../src/scheduler.ts";
+import { AGENTS } from "../src/agents/index.ts";
 import { EXIT } from "../src/exit.ts";
 
 const EM_DASH = String.fromCharCode(0x2014);
@@ -289,4 +290,19 @@ test("the recipes hold no email address, tailnet name or private address, and us
   const text = recipes(setup().run().stdout);
   assert.doesNotMatch(text, /[\w.+-]+@[\w-]+\.[a-z]{2,}|\.ts\.net\b|\b(?:10|192\.168|172\.(?:1[6-9]|2\d|3[01]))\.\d+\.\d+/i);
   assert.match(text, /`laptop`, `server`/);
+});
+
+test("every registered agent is in the Supported agents list of the primer, the README and the landing page", () => {
+  const s = setup();
+  const primer = section(s.run().stdout, "Supported agents");
+  const readme = section(`\n${readFileSync(join(repoRoot, "README.md"), "utf8")}`, "Supported agents");
+  const site = readFileSync(join(repoRoot, "site/index.html"), "utf8");
+  const list = site.slice(site.indexOf("<h3>Supported agents</h3>"), site.indexOf("</ul>", site.indexOf("<h3>Supported agents</h3>")));
+  for (const agent of AGENTS) {
+    assert.match(primer, new RegExp(`^- ${agent.name} \\(\`${agent.binary}\`, id \`${agent.id}\``, "m"), `${agent.name} in the primer`);
+    assert.match(readme, new RegExp(`^- ${agent.name}`, "m"), `${agent.name} in the README`);
+    assert.ok(list.includes(`<li>${agent.name}</li>`), `${agent.name} on the landing page`);
+  }
+  assert.equal(readme.match(/^- /gm)?.length, AGENTS.length, "the README lists no agent that is not registered");
+  assert.equal(list.match(/<li>/g)?.length, AGENTS.length, "the landing page lists no agent that is not registered");
 });

@@ -12,6 +12,7 @@ import { FAKE_VERSIONS, NODE, fakeTimer, installFakeClaude, installFakeTool, ins
 
 const claude = agentById("claude")!;
 const opencode = agentById("opencode")!;
+const antigravity = agentById("antigravity")!;
 
 const put = (root: string, rel: string, text: string) => {
   mkdirSync(dirname(join(root, rel)), { recursive: true });
@@ -96,10 +97,12 @@ test("detection finds a binary in the Node install's directory, where npm -g put
 
 test("a skill is linked into the directory of each agent on the host that has its own, and into the one opencode reads, once", () => {
   const other: Agent = { ...claude, id: "other", name: "Other", binary: "other", skills: { target: "~/.other/skills", dirs: ["~/.other/skills"], setting: null } };
-  assert.deepEqual(SKILL_TARGETS, ["~/.claude/skills"]);
+  assert.deepEqual(SKILL_TARGETS, ["~/.claude/skills", "~/.gemini/config/skills"]);
   assert.deepEqual(skillTargets([claude]), ["~/.claude/skills"]);
   assert.deepEqual(skillTargets([opencode]), ["~/.claude/skills"], "opencode reads Claude's directory, so that is where its skills go");
   assert.deepEqual(skillTargets([claude, opencode]), ["~/.claude/skills"], "one set for the two");
+  assert.deepEqual(skillTargets([antigravity]), ["~/.gemini/config/skills"], "Antigravity CLI has a directory of its own");
+  assert.deepEqual(skillTargets([claude, opencode, antigravity]), ["~/.claude/skills", "~/.gemini/config/skills"]);
   assert.deepEqual(skillTargets([opencode, other]), ["~/.claude/skills", "~/.other/skills"], "an agent with its own target adds a directory");
   assert.deepEqual(skillTargets([]), []);
 });
@@ -119,9 +122,10 @@ test("loadConfig drops config for an agent the host does not get only when it is
   const load = (agents?: Agent[]) => loadConfig(w.clone, "laptop", { home: w.home, sources: "none", ...(agents ? { agents } : {}) });
   const files = (agents?: Agent[]) => load(agents).files.map((f) => f.target).sort();
   const whole = load();
-  assert.deepEqual(whole.agents.map((a) => a.id), ["claude", "opencode"]);
+  assert.deepEqual(whole.agents.map((a) => a.id), ["claude", "opencode", "antigravity"]);
   assert.equal(whole.keys.some((k) => k.file === "~/.config/opencode/opencode.jsonc"), true);
-  assert.deepEqual(load([claude, opencode]).keys, whole.keys, "every agent installed: the same as unfiltered");
+  assert.deepEqual(load([claude, opencode, antigravity]).keys, whole.keys, "every agent installed: the same as unfiltered");
+  assert.equal(load([claude, opencode]).keys.some((k) => k.file.startsWith("~/.gemini")), false, "a host without Antigravity CLI has nothing for it");
 
   const onlyClaude = load([claude]);
   assert.deepEqual(onlyClaude.agents.map((a) => a.id), ["claude"]);
@@ -140,9 +144,9 @@ test("agents: names the agents the host gets; a host file's list replaces the de
   assert.deepEqual(config.agents.map((a) => a.id), ["opencode"]);
 
   for (const [text, message] of [
-    ["agents: [codex]\n", /hosts\/laptop\.yaml: 'agents' names 'codex', which fleet does not know \(claude, opencode\)/],
-    ["agents: claude\n", /'agents' must be a list of claude, opencode/],
-    ["agents: []\n", /'agents' must be a list of claude, opencode/],
+    ["agents: [codex]\n", /hosts\/laptop\.yaml: 'agents' names 'codex', which fleet does not know \(claude, opencode, antigravity\)/],
+    ["agents: claude\n", /'agents' must be a list of claude, opencode, antigravity/],
+    ["agents: []\n", /'agents' must be a list of claude, opencode, antigravity/],
   ] as const) {
     w.edit("hosts/laptop.yaml", text);
     for (const args of [["diff"], ["apply"]]) {

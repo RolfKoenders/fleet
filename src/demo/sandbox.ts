@@ -142,7 +142,7 @@ function addHandMadeSkill(host: DemoHost): void {
 function installFakes(sandbox: Sandbox, toolDir: string): void {
   const dir = join(sandbox.root, "fakes");
   mkdirSync(dir, { recursive: true });
-  for (const name of ["ssh", ...AGENTS.map((a) => a.binary), "sops", "systemctl", "launchctl"]) {
+  for (const name of ["ssh", ...AGENTS.filter((a) => a.quiet !== true).map((a) => a.binary), "sops", "systemctl", "launchctl"]) {
     const script = join(dir, name);
     writeFileSync(script, `#!/bin/sh\nFLEET_DEMO_ROOT=${quote(sandbox.root)} exec ${quote(process.execPath)} ${quote(join(toolDir, "src/demo/fakes.ts"))} ${name} "$@"\n`);
     chmodSync(script, 0o755);

@@ -308,7 +308,13 @@ function world(plans: Record<string, SshPlan>) {
   return { home, model, probe: realProbe(clone, clone, home), ask: (name: string) => realProbe(clone, clone, home).context!(model.hosts.find((h) => h.name === name)!, new AbortController().signal) };
 }
 
-test("probe: another host is asked with fleet context --json over ssh and read like fleet context --all reads it; this host is measured in place", async () => {
+test("probe: another host is asked with fleet context --json over ssh and read like fleet context --all reads it; this host is measured in place", async (t) => {
+  // This host's agents are found on this process's PATH too, which on a developer's machine may have Antigravity CLI on it.
+  const path = process.env.PATH;
+  process.env.PATH = "/usr/bin:/bin";
+  t.after(() => {
+    process.env.PATH = path;
+  });
   const w = world({ server: { stdout: contextDoc() }, old: { exit: 2, stderr: "fleet: unknown command 'context'" }, down: { exit: 255, stderr: "ssh: connect to host down port 22: Connection refused" }, junk: { stdout: "hello" } });
   const server = await w.ask("server");
   assert.equal(server.result, "ok");
@@ -332,7 +338,7 @@ test("probe: another host is asked with fleet context --json over ssh and read l
 test("the bridge's memory drops an agent fleet does not know before it caps the count, so one it knows is still shown", () => {
   const part = { tokens: 1, count: 1, unmeasured: 0 };
   const entry = (agent: string) => ({ agent, instructions: part, skills: part, mcp: part, items: [] });
-  const report = fromMemory({ agents: [entry("antigravity"), entry("someday"), entry("claude"), entry("opencode")] });
+  const report = fromMemory({ agents: [entry("codex"), entry("someday"), entry("claude"), entry("opencode")] });
   assert.deepEqual(report?.agents.map((a) => a.agent), ["claude", "opencode"]);
-  assert.equal(fromMemory({ agents: [entry("antigravity")] }), null, "nothing known is nothing to show");
+  assert.equal(fromMemory({ agents: [entry("codex")] }), null, "nothing known is nothing to show");
 });

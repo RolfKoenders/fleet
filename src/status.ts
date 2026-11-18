@@ -20,7 +20,7 @@ import { isObject } from "./yamlfile.ts";
 import type { Obj } from "./yamlfile.ts";
 
 /** A version fleet could read, or null. The Node that runs fleet is `node`; `t3` is the newest installed T3 Code. */
-export type ToolVersions = { [K in AgentId]: string | null } & { sops: string | null; node: string | null; t3: string | null };
+export type ToolVersions = { [K in AgentId]?: string | null } & { sops: string | null; node: string | null; t3: string | null };
 
 /**
  * One registered agent as this host has it. `active` is whether fleet sets it up here (the host file names it, or
@@ -178,7 +178,7 @@ function lines(fields: StatusFields, color: boolean, clone: string | null): stri
     `conflicts: ${fields.conflicts === null || fields.conflicts === 0 ? shown(fields.conflicts) : paint(color, "yellow", String(fields.conflicts))}`,
     ...(fields.agents === null ? [] : [agentsLine(fields.agents)]),
     "tools:",
-    ...TOOL_NAMES.map((name) => `  ${name}: ${shown(fields.tools[name])}`),
+    ...TOOL_NAMES.filter((name) => fields.tools[name] !== undefined).map((name) => `  ${name}: ${shown(fields.tools[name])}`),
   ];
 }
 
@@ -192,18 +192,20 @@ function collect(toolDir: string, configDir: string, home: string, host: string 
     throw error;
   }
   const { pin, notInstalled, ...counts } = changeCounts(configDir, home, host, messages);
-  const versions = Object.fromEntries(AGENTS.map((a) => [a.id, toolVersion(a.binary, a.version, home)])) as { [K in AgentId]: string | null };
   const on = hostAgents(pin, detectAgents(home));
+  const versions = Object.fromEntries(AGENTS.map((a) => [a.id, toolVersion(a.binary, a.version, home)])) as { [K in AgentId]: string | null };
+  // A newer agent a host has nothing to do with is not mentioned, so upgrading fleet changes nothing there.
+  const known = AGENTS.filter((a) => a.quiet !== true || on.includes(a) || versions[a.id] !== null || notInstalled.includes(a.id));
   messages.push(...AGENTS.filter((a) => notInstalled.includes(a.id)).map((a) => `fleet: ${notInstalledWarning(a)}`));
   return {
     repos: { fleet },
     applied: appliedAge(home, messages),
     timer: timerState(home),
     ...counts,
-    agents: AGENTS.map((a) => ({ id: a.id, version: versions[a.id], active: on.includes(a), pinned: pin?.includes(a.id) ?? false })),
+    agents: known.map((a) => ({ id: a.id, version: versions[a.id], active: on.includes(a), pinned: pin?.includes(a.id) ?? false })),
     notInstalled,
     tools: {
-      ...versions,
+      ...Object.fromEntries(known.map((a) => [a.id, versions[a.id]])),
       sops: toolVersion("sops", SOPS_VERSION_ARGS, home),
       node: parseVersion(process.version),
       t3: t3Version(home),
@@ -288,7 +290,7 @@ export function statusFromDocument(doc: Obj): StatusFields | null {
     conflictList: conflictNames(doc.conflictList),
     agents: agentStatuses(doc.agents),
     notInstalled: Array.isArray(doc.notInstalled) ? AGENT_IDS.filter((id) => (doc.notInstalled as unknown[]).includes(id)) : null,
-    tools: Object.fromEntries(TOOL_NAMES.map((name) => [name, printable(tools[name])])) as ToolVersions,
+    tools: Object.fromEntries(TOOL_NAMES.filter((name) => tools[name] !== undefined || !isAgentId(name)).map((name) => [name, printable(tools[name])])) as ToolVersions,
   };
 }
 

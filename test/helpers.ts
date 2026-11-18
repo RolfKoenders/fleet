@@ -45,11 +45,18 @@ export const NODE = ((): string => {
 process.env.FLEET_NODE_PATH = NODE;
 
 /**
- * A home with every agent installed, as far as fleet can tell: a binary of each in `~/.local/bin` that does nothing. A test about
- * a host that lacks an agent removes its stub with `removeAgent`; one that needs its output or its calls installs a fake over it.
+ * A home with the agents installed that fleet had before it had `quiet` ones, as far as fleet can tell: a binary of each in
+ * `~/.local/bin` that does nothing. A quiet agent is left out, so the world of every test that predates it is a host that does not
+ * have it, which is what fleet promises such a host; a test about one installs it with `installAgent`. A test about a host that
+ * lacks an agent removes its stub with `removeAgent`; one that needs its output or its calls installs a fake over it.
  */
 export function installStubAgents(home: string): void {
-  for (const agent of AGENTS) writeExecutable(join(home, ".local/bin", agent.binary), "#!/bin/sh\nexit 0\n");
+  for (const agent of AGENTS) if (agent.quiet !== true) installAgent(home, agent.binary);
+}
+
+/** An agent's binary on the host that does nothing. */
+export function installAgent(home: string, binary: string): void {
+  writeExecutable(join(home, ".local/bin", binary), "#!/bin/sh\nexit 0\n");
 }
 
 /** Takes an agent's binary off the host, so fleet finds the agent missing. */

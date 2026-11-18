@@ -35,7 +35,10 @@ settings:
 # Files linked into place. `source` is a path inside this repo, `target` starts with ~/.
 # The target becomes a symlink to the file here, so this repo holds the only copy. An existing
 # real file at the target is a conflict: fleet will not overwrite it. Directories work too.
+#
+# Fleet skips an agent a host does not have, so one list can name the files of every agent.
 files:
   - { source: config/AGENTS.md, target: ~/.claude/CLAUDE.md }
   - { source: config/AGENTS.md, target: ~/.config/opencode/AGENTS.md }
+  - { source: config/AGENTS.md, target: ~/.gemini/GEMINI.md }
   - { source: config/rules/claude.md, target: ~/.claude/rules/claude.md }

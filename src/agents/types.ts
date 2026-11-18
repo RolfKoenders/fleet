@@ -38,6 +38,11 @@ export type Agent<Id extends string = string> = {
   version: string[];
   /** Everything under these paths belongs to this agent. */
   homes: string[];
+  /**
+   * Set on an agent added after hosts were already in use: `fleet status` says nothing about it on a host that does not
+   * have it (not installed, not named in `agents:`, nothing of its applied), so adding the agent changes nothing there.
+   */
+  quiet?: true;
 
   /** A file the agent also writes, where fleet owns only the keys a host file declares. */
   settings?: {
@@ -52,6 +57,8 @@ export type Agent<Id extends string = string> = {
     file: string;
     /** The key the servers are under, by name. */
     key: string;
+    /** The transports it can take, when not all of them. A server of another one is left out of its file, and is refused when config limits it to this agent. */
+    transports?: readonly ("stdio" | "http" | "sse")[];
     /** The entry for `server`, in the shape this agent's file takes. */
     render(server: McpServer): Obj;
     /** What to probe for a rendered entry, or null when it is not of the shape `render` makes. `cwd` is where a stdio server starts. */

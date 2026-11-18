@@ -192,7 +192,7 @@ test("a host with neither agent tool still finishes, with a warning", { skip: sk
   rmSync(join(s.lab, ".local/bin/opencode"));
   const r = s.run();
   assert.equal(r.code, EXIT.ok, r.stderr);
-  assert.match(r.stderr, /neither Claude Code nor opencode/);
+  assert.match(r.stderr, /none of Claude Code, opencode or Antigravity CLI/);
 });
 
 test("one agent tool is enough, and gets no warning", { skip: skipIfSystemWide("opencode") }, () => {

@@ -9,7 +9,7 @@ One machine fleet manages, as one agent user on it (`laptop` as `alice`, `server
 _Avoid_: Machine, server, node, box
 
 **Agent**:
-A coding agent fleet sets up on a host, such as Claude Code or opencode. A host gets the agents installed on it, unless its host file names them.
+A coding agent fleet sets up on a host, such as Claude Code, opencode or Antigravity CLI. A host gets the agents installed on it, unless its host file names them.
 _Avoid_: Tool, assistant
 
 **Agent user**:

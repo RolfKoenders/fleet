@@ -1,4 +1,4 @@
-# MCP servers, defined once and rendered for both Claude Code and opencode.
+# MCP servers, defined once and rendered for each agent in its own file and shape.
 #
 # A server has either `command` (it runs on the machine, over stdio) or `transport` (it is a
 # URL you connect to). A host file picks servers by name under `mcp.include`.
@@ -18,8 +18,9 @@ servers:
     env:
       DOCS_BASE_URL: "{{ vars.DOCS_URL }}"
 
-  # A network server. `transport` is http or sse. Servers that need a browser login, like
-  # this one, are logged in once by hand with /mcp in each tool; fleet only writes the entry.
+  # A network server. `transport` is http or sse (Antigravity CLI takes http only, and an sse
+  # server is left out of its file). Servers that need a browser login, like this one, are
+  # logged in once by hand in each tool (docs/mcp-logins.md); fleet only writes the entry.
   tracker:
     transport: http
     url: https://tracker.example.com/mcp
@@ -27,7 +28,7 @@ servers:
   # A server with a secret. Nothing picks it in this example. To use it, add `tracker-local`
   # to `mcp.include` in a host file, then store the value on the admin host with
   #   fleet secrets set <host> TRACKER_API_KEY
-  # and `fleet push`. `only` limits it to one tool; leave it out for both.
+  # and `fleet push`. `only` limits it to some agents; leave it out for all of them.
   tracker-local:
     command: [npx, -y, "@example/tracker-mcp@2.0.0"]
     env:

@@ -263,8 +263,8 @@
   model                <span class="w">yours</span></pre></div>
         </div>
         <div class="vs-row">
-          <div class="vs-q"><h3>An MCP server per agent, per file</h3><p>Claude Code and opencode store MCP servers in different files and shapes, so you keep two copies in sync by hand.</p></div>
-          <div class="vs-a"><h3>One catalog entry, both agents</h3><p>Define the server once in <code>catalog/mcp.yaml</code>. Fleet writes it in each agent's own format, and <code>fleet doctor</code> starts it to check it answers.</p></div>
+          <div class="vs-q"><h3>An MCP server per agent, per file</h3><p>Each agent stores MCP servers in its own file and shape, so you keep a copy per agent in sync by hand.</p></div>
+          <div class="vs-a"><h3>One catalog entry, every agent</h3><p>Define the server once in <code>catalog/mcp.yaml</code>. Fleet writes it in each agent's own format, and <code>fleet doctor</code> starts it to check it answers.</p></div>
         </div>
         <div class="vs-row">
           <div class="vs-q"><h3>Waits for you on each machine</h3><p>You run an update or a rebuild on every host and hope you didn't forget one.</p></div>
@@ -278,7 +278,7 @@
       <div class="compare-pitch">
         <div><b>Keep chezmoi for your dotfiles.</b>Fleet only owns agent config, so the two sit side by side as long as chezmoi does not manage <code>~/.claude</code>.</div>
         <div><b>All in on Nix?</b>home-manager has Claude Code and opencode modules. Fleet works without Nix, keeps encrypted secrets per host and stops at conflicts.</div>
-        <div><b>Rules for many agents?</b>rulesync generates config for more than 60 AI coding tools from one set of rule files. Fleet keeps the setup of Claude Code and opencode the same on every machine.</div>
+        <div><b>Rules for many agents?</b>rulesync generates config for more than 60 AI coding tools from one set of rule files. Fleet keeps the setup of your coding agents the same on every machine.</div>
       </div>
     </section>
 
@@ -392,7 +392,16 @@
       <h2>Try it without touching anything.</h2>
       <p>The demo runs the bridge on made-up hosts in a throwaway sandbox.</p>
       <div class="cmd big" data-copy="fleet demo"><span class="prompt">$</span><code>fleet demo</code><button type="button" class="copy">copy</button></div>
-      <p class="reqs">Linux with systemd, or macOS 12.3+ · Node 22.18+ · git · sops 3.11+ · Claude Code or opencode</p>
+      <p class="reqs">Linux with systemd, or macOS 12.3+ · Node 22.18+ · git · sops 3.11+ · a supported agent</p>
+      <div class="supported" id="agents">
+        <h3>Supported agents</h3>
+        <ul>
+          <li>Claude Code</li>
+          <li>opencode</li>
+          <li>Antigravity CLI</li>
+        </ul>
+        <p>Want another? <a href="https://github.com/RolfKoenders/fleet/blob/main/docs/adding-an-agent.md">Adding an agent</a> says what it takes.</p>
+      </div>
     </section>
   </main>
 

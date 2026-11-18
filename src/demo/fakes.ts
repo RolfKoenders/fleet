@@ -22,7 +22,7 @@ if (root === undefined || home === undefined) {
 appendFileSync(fakeCallsLog(root), `${JSON.stringify({ tool, home, args })}\n`);
 
 /** What each agent prints for its version. A new agent fails to compile until it has a line. */
-const VERSIONS: Record<AgentId, string> = { claude: "2.1.4 (Claude Code)", opencode: "1.4.2" };
+const VERSIONS: Record<AgentId, string> = { claude: "2.1.4 (Claude Code)", opencode: "1.4.2", antigravity: "1.5.10" };
 
 /** What an agent's fake does beyond printing its version. Only an agent whose binary writes its servers needs one. */
 const OTHER_CALLS: Partial<Record<AgentId, () => number>> = { claude: removeServer };

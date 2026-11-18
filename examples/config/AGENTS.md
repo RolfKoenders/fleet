@@ -1,8 +1,9 @@
 # Shared instructions
 
-These instructions reach every host, as ~/.claude/CLAUDE.md for Claude Code and as
-~/.config/opencode/AGENTS.md for opencode, because hosts/_defaults.yaml links this one file
-to both. Write here what you want every agent on every machine to follow.
+These instructions reach every host, as ~/.claude/CLAUDE.md for Claude Code, as
+~/.config/opencode/AGENTS.md for opencode and as ~/.gemini/GEMINI.md for Antigravity CLI,
+because hosts/_defaults.yaml links this one file to each. Write here what you want every agent
+on every machine to follow.
 
 ## Working style
 

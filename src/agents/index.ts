@@ -1,3 +1,4 @@
+import { antigravity } from "./antigravity.ts";
 import { claude } from "./claude.ts";
 import { opencode } from "./opencode.ts";
 import type { Agent } from "./types.ts";
@@ -9,7 +10,7 @@ export { CLAUDE_JSON } from "./claude.ts";
  * Every agent fleet sets up, in the order they are listed and drawn. Adding one is its own file and a line here:
  * everything else loops over this.
  */
-export const AGENTS = [claude, opencode] as const;
+export const AGENTS = [claude, opencode, antigravity] as const;
 
 export type Registered = (typeof AGENTS)[number];
 export type AgentId = Registered["id"];

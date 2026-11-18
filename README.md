@@ -107,10 +107,18 @@ On [Omarchy](https://omarchy.org/), a bar widget shows the health of every host 
 
 The widget is a separate project: [fleet-omarchy](https://github.com/RolfKoenders/fleet-omarchy), with its install steps and settings.
 
+## Supported agents
+
+- Claude Code
+- opencode
+- Antigravity CLI (`agy`)
+
+A machine gets the agents installed on it ([details](docs/setting-up-machines.md#which-agents-a-machine-gets)). To add another, see [Adding an agent](docs/adding-an-agent.md).
+
 ## Requirements
 
 - Linux with systemd, or macOS 12.3 or newer with Homebrew (see [Setting up machines](docs/setting-up-machines.md#macos))
-- Claude Code or opencode. A machine gets the agents installed on it ([details](docs/setting-up-machines.md#which-agents-a-machine-gets))
+- At least one of the [supported agents](#supported-agents)
 - Node 22.18 or newer
 - git
 - [sops](https://github.com/getsops/sops) 3.11 or newer
@@ -121,6 +129,7 @@ On a Mac the timer is a LaunchAgent, so it runs while the user is logged in at t
 ## Docs
 
 - [Setting up machines](docs/setting-up-machines.md)
+- [Adding an agent](docs/adding-an-agent.md), and [Contributing](CONTRIBUTING.md)
 - [The bridge](docs/bridge.md)
 - [The page (`fleet ui`)](docs/ui.md)
 - [Logging in to MCP servers](docs/mcp-logins.md)
