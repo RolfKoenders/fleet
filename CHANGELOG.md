@@ -4,6 +4,10 @@ What changed in fleet, newest first. Each version lists what you can do now, wha
 
 ## Unreleased
 
+### Changed
+
+- Removing the last key under a map from a host file now takes the map too. Before, fleet deleted only the key, so a provider or section you took out of `settings` left empty maps behind in the tool's file (`"provider": {"x": {"models": {"m": {}}}}`), and a tool that lists those names, such as opencode's model picker, kept showing them. Fleet now deletes each map above a removed key that the removal leaves empty, nearest first, and stops at the first one that still holds anything. The top level stays, and an empty map elsewhere in the file is not touched. A map that is emptied and refilled in the same apply keeps its place in the file.
+
 ## 2.6.0 - 2026-11-18
 
 ### Added

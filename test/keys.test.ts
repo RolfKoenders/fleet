@@ -336,12 +336,38 @@ test("removing a declared key removes it when unchanged, leaving unowned sibling
   assert.deepEqual(readState(s.home).keys.map((k: { path: string }) => k.path), ["autoupdate"]);
 });
 
-test("removing a key leaves the maps around it, and the order of everything unowned", () => {
+test("removing the last key of a map removes the map, and keeps the order of everything unowned", () => {
   const s = applied();
-  s.write(CLAUDE, { first: 1, attribution: { commit: "mine" }, last: 2 });
+  s.write(CLAUDE, { first: 1, attribution: { commit: "mine" }, unrelated: {}, last: 2 });
   s.writeYaml("laptop.yaml", "settings:\n  opencode:\n    autoupdate: false\n");
   assert.equal(s.run(["apply"]).code, EXIT.ok);
-  assert.equal(s.readText(CLAUDE), JSON.stringify({ first: 1, attribution: {}, last: 2 }, null, 2) + "\n");
+  assert.equal(s.readText(CLAUDE), JSON.stringify({ first: 1, unrelated: {}, last: 2 }, null, 2) + "\n");
+});
+
+test("a removal takes only the maps it leaves empty: a map that still holds something stays", () => {
+  const s = setup({ host: "settings:\n  claude:\n    deep:\n      one:\n        two: 1\n      other: 2\n" });
+  assert.equal(s.run(["apply"]).code, EXIT.ok);
+  s.writeYaml("laptop.yaml", "settings:\n  claude:\n    deep:\n      other: 2\n");
+  assert.equal(s.run(["apply"]).code, EXIT.ok);
+  assert.deepEqual(s.read(CLAUDE), { deep: { other: 2 } });
+});
+
+test("removing every key of a nested branch removes the whole branch, up to the top level", () => {
+  const s = setup({ host: "settings:\n  claude:\n    deep:\n      one:\n        two: 1\n" });
+  s.write(CLAUDE, { before: 1 });
+  assert.equal(s.run(["apply"]).code, EXIT.ok);
+  s.writeYaml("laptop.yaml", "settings:\n  opencode:\n    autoupdate: false\n");
+  assert.equal(s.run(["apply"]).code, EXIT.ok);
+  assert.deepEqual(s.read(CLAUDE), { before: 1 });
+});
+
+test("a map emptied and refilled in one apply stays where it was in the file", () => {
+  const s = setup({ host: "settings:\n  claude:\n    deep:\n      one:\n        two: 1\n" });
+  assert.equal(s.run(["apply"]).code, EXIT.ok);
+  s.write(CLAUDE, { first: 1, deep: { one: { two: 1 } }, last: 2 });
+  s.writeYaml("laptop.yaml", "settings:\n  claude:\n    deep:\n      three: 3\n");
+  assert.equal(s.run(["apply"]).code, EXIT.ok);
+  assert.equal(s.readText(CLAUDE), JSON.stringify({ first: 1, deep: { three: 3 }, last: 2 }, null, 2) + "\n");
 });
 
 test("a leaf owned as {} can become its members: the old key goes first, the new ones are set", () => {
