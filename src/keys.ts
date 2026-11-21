@@ -66,12 +66,30 @@ function setAt(doc: Obj, path: string, value: unknown): void {
   node[last] = value;
 }
 
-/** Deletes the leaf only. Maps it leaves empty stay, so nothing beside an owned key moves. */
+/** Deletes the leaf only. The maps it leaves empty are taken by `pruneAt`, once every key is set. */
 function removeAt(doc: Obj, path: string): void {
   const segments = path.split(".");
   const last = segments.pop()!;
   const parent = segments.length === 0 ? { type: "found", value: doc } : lookup(doc, segments.join("."));
   if (parent.type === "found" && isObject(parent.value)) delete parent.value[last];
+}
+
+/**
+ * Deletes the maps above a removed path that are now empty, from the nearest one up, and stops at the first
+ * map that still holds anything. The top level stays. Only the path's own ancestors are looked at, so an empty
+ * map elsewhere in the file is left as it is. It runs after the new keys are set: a map emptied and refilled in
+ * the same apply then keeps its place in the file, and one that only a set refilled is not taken.
+ */
+function pruneAt(doc: Obj, path: string): void {
+  const segments = path.split(".");
+  segments.pop();
+  while (segments.length > 0) {
+    const found = lookup(doc, segments.join("."));
+    if (found.type !== "found" || !isObject(found.value) || Object.keys(found.value).length > 0) return;
+    const name = segments.pop()!;
+    const parent = segments.length === 0 ? { type: "found", value: doc } : lookup(doc, segments.join("."));
+    if (parent.type === "found" && isObject(parent.value)) delete parent.value[name];
+  }
 }
 
 export type Read = { doc: Obj; plain: boolean } | { problem: string };
@@ -227,6 +245,7 @@ export function writeKeys(file: string, removes: KeyRef[], sets: KeyChange[], ho
   if ("problem" in read) throw new Error(`${file} changed since planning: ${read.problem}`);
   for (const remove of removes) removeAt(read.doc, remove.path);
   for (const set of sets) setAt(read.doc, set.path, set.value);
+  for (const remove of removes) pruneAt(read.doc, remove.path);
   writeAtomic(path, `${JSON.stringify(read.doc, null, 2)}\n`);
 
   return readBack(file, sets, home);
