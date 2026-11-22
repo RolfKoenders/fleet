@@ -4,6 +4,8 @@ Bug reports and pull requests are welcome. Read `AGENTS.md` first: it says how t
 
 Run `npm run typecheck` and `npm test` before you open a pull request. Add a line to `CHANGELOG.md` under `## Unreleased` for a change a user can see.
 
+Use the [bug report template](https://github.com/RolfKoenders/fleet/issues/new?template=bug.yml) to report a bug or the [agent template](https://github.com/RolfKoenders/fleet/issues/new?template=agent.yml) to propose an agent. Ask questions and share ideas in [Discussions](https://github.com/RolfKoenders/fleet/discussions).
+
 ## Adding an agent
 
 A new coding agent is one module in `src/agents/` and one line in the registry. [Adding an agent](docs/adding-an-agent.md) has the steps. What a pull request for one needs:
