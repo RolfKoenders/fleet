@@ -48,7 +48,7 @@ test("lineDiff reproduces both sides", () => {
 });
 
 test("tokenize splits a YAML line into key, string and comment, and joins back to the line", () => {
-  const line = '  linear:  # the tracker "x"';
+  const line = '  issues:  # the tracker "x"';
   assert.deepEqual(tokenize('  key: "v" # c'), [
     { cls: "", text: "  " },
     { cls: "k", text: "key" },
