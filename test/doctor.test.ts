@@ -160,7 +160,7 @@ const stdioEntry = (name: string, mode: string, count = 3, extra = "", env = "")
 // ---- setup ----
 
 type Doc = { ok: boolean; code: string; host: string; messages: string[]; checks: { name: string; result: string; detail: string | null }[]; servers: Server[] };
-type Server = { server: string; tool: string; transport: string; result: string; tools: number | null; size: number | null; tokens: number | null; latencyMs: number | null; protocol: string | null; detail: string | null; fails: boolean };
+type Server = { server: string; tool: string; transport: string; result: string; tools: number | null; size: number | null; tokens: number | null; latencyMs: number | null; protocol: string | null; detail: string | null; fails: boolean; secrets: { name: string; file: string; lastSet: string | null }[] };
 
 function setup(catalog: string, opts: { hosts?: Record<string, string>; ssh?: Record<string, SshPlan>; key?: boolean; timer?: string } = {}) {
   const { clone, remote } = makeClone();
@@ -309,7 +309,7 @@ test("network servers: ok over JSON and SSE replies, the old SSE transport, auth
   assert.equal(s.find(doc, "login", "claude").result, "auth-needed");
   assert.equal(s.find(doc, "login", "claude").fails, false);
   assert.match(s.find(doc, "login", "claude").detail!, /HTTP 401/);
-  assert.equal(s.find(doc, "badtoken", "claude").result, "auth-needed");
+  assert.equal(s.find(doc, "badtoken", "claude").result, "bad-auth");
   assert.equal(s.find(doc, "badtoken", "claude").fails, true);
   assert.match(s.find(doc, "badtoken", "claude").detail!, /rejected the configured credentials/);
   assert.equal(s.find(doc, "denied", "claude").result, "auth-needed");
@@ -468,10 +468,40 @@ test("a secret is delivered to the server and never printed, in text, JSON or er
   assert.ok(readFileSync(seen, "utf8").includes(`TOKEN=${TOKEN}`));
   const doc = JSON.parse(json.stdout) as Doc;
   assert.equal(s.find(doc, "echoes", "claude").result, "bad-response");
-  assert.equal(s.find(doc, "remote", "claude").result, "auth-needed");
+  assert.equal(s.find(doc, "remote", "claude").result, "bad-auth");
   assert.equal(s.find(doc, "remote", "claude").fails, true);
+  assert.equal(s.find(doc, "remote", "claude").secrets.length, 1);
+  assert.equal(s.find(doc, "remote", "claude").secrets[0]!.name, "API_TOKEN");
+  assert.equal(s.find(doc, "remote", "claude").secrets[0]!.file, "shared");
   // The applied tools' files are not touched: doctor wrote none.
   assert.equal(existsSync(join(s.home, ".claude.json")), false);
+});
+
+test("a 401 or 403 with configured credentials names the secret, its file and when it was last set", async (t) => {
+  const TOKEN = "tok-rejected-7c2-secretname";
+  const http = await startHttp();
+  t.after(http.stop);
+  const s = setup(
+    `  remote:\n    transport: http\n    url: http://127.0.0.1:${http.port}/auth\n    headers:\n      Authorization: Bearer secret:API_TOKEN\n`,
+    { hosts: { laptop: "admin: true\nssh: me@laptop\n" }, key: false },
+  );
+  useSecrets(s, "API_TOKEN", TOKEN);
+  git(s.clone, "add", "secrets/shared.enc.yaml");
+  git(s.clone, "commit", "-m", "set API_TOKEN");
+  const before = Date.now();
+  const { doc } = s.json();
+  const remote = s.find(doc, "remote", "claude");
+  assert.equal(remote.result, "bad-auth");
+  assert.equal(remote.fails, true);
+  assert.equal(remote.secrets.length, 1);
+  assert.equal(remote.secrets[0]!.name, "API_TOKEN");
+  assert.equal(remote.secrets[0]!.file, "shared");
+  assert.match(remote.secrets[0]!.lastSet!, /^\d{4}-\d{2}-\d{2}T/);
+  assert.ok(Date.parse(remote.secrets[0]!.lastSet!) >= before - 60_000, "last set is the commit that added the secret");
+  const text = s.run([], { NO_COLOR: "1" });
+  assert.match(text.stdout, /remote \(claude, http\): bad-auth/);
+  assert.match(text.stdout, /API_TOKEN in secrets\/shared\.enc\.yaml/);
+  assert.match(text.stdout, /bad-auth: the server rejected a configured secret/);
 });
 
 // ---- local checks and config ----

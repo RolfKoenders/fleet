@@ -462,7 +462,7 @@ export function opWarnings(op) {
 
 /**
  * What the check answered, as lines: the result first (with its tone), the tools and their size in tokens, then a secret that was left out.
- * @param {{ result: string, tools: number | null, tokens: number | null, latencyMs: number | null, protocol: string | null, detail: string | null, unset: string[], agent: string }} c
+ * @param {{ result: string, tools: number | null, tokens: number | null, latencyMs: number | null, protocol: string | null, detail: string | null, unset: string[], secrets: { name: string, file: string, lastSet: string | null }[], agent: string }} c
  * @returns {{ tone: "ok" | "warn" | "bad", lines: string[] }}
  */
 export function checkLines(c) {
@@ -476,6 +476,10 @@ export function checkLines(c) {
     return { tone: "ok", lines: [`It started and answered: ${tools}${size}${c.latencyMs === null ? "" : ` in ${c.latencyMs} ms`}.`, ...notes] };
   }
   if (c.result === "auth-needed") return { tone: "warn", lines: ["It started and wants a login: log in once with /mcp in the tool. Fleet only writes the entry.", ...notes] };
+  if (c.result === "bad-auth") {
+    const refs = c.secrets.map((s) => `${s.name} in ${s.file === "host" ? "this host's secrets file" : "secrets/shared.enc.yaml"}${s.lastSet ? `, set ${s.lastSet.slice(0, 10)}` : ""}`);
+    return { tone: "bad", lines: ["The server rejected a configured secret.", ...(refs.length > 0 ? [`Check ${refs.join("; ")}.`] : []), "Set a new value under Secrets or with `fleet secrets`.", ...notes] };
+  }
   return { tone: "bad", lines: [`It did not start well: ${c.result}${c.detail ? ` (${c.detail})` : ""}.`, ...notes] };
 }
 

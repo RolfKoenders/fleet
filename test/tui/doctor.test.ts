@@ -58,6 +58,21 @@ test("doctor json: the estimate of a server's tools is shown beside its count, a
   assert.equal(r.ok && r.hosts["laptop"]!.servers["docs"]!.words, "claude: ok, 12 tools, ~28.4k tokens, opencode: ok, 12 tools");
 });
 
+test("doctor json: bad-auth is a failing result and carries the rejected secrets", () => {
+  const doc = {
+    ok: false,
+    code: "unhealthy",
+    host: "laptop",
+    messages: ["fleet: doctor found 1 problem"],
+    checks: [],
+    servers: [server("api", "claude", "bad-auth", { secrets: [{ name: "TOKEN", file: "shared", lastSet: "2026-11-20T10:00:00Z" }] })],
+  };
+  const r = readDoctor(JSON.stringify(doc), null);
+  assert.ok(r.ok);
+  assert.equal(r.hosts.laptop!.servers.api!.health, "bad");
+  assert.deepEqual(r.hosts.laptop!.servers.api!.secrets, [{ name: "TOKEN", file: "shared", lastSet: "2026-11-20T10:00:00Z" }]);
+});
+
 test("doctor json: an older document reads the same way, without a protocol, and auth-needed that does not fail is neutral", () => {
   const r = readDoctor(JSON.stringify(OLD), null);
   assert.ok(r.ok);

@@ -4,7 +4,8 @@ import { clean, planEntry } from "../doctor.ts";
 import { parseMcpCatalog, renderFor } from "../mcp.ts";
 import { probe } from "../mcpprobe.ts";
 import type { ProbeResult } from "../mcpprobe.ts";
-import { resolveSecrets } from "../secrets.ts";
+import { resolveSecrets, secretFileFor, secretFiles, lastSetForSecret } from "../secrets.ts";
+import type { SecretFile } from "../secrets.ts";
 import { fillSecrets, fillVars, secretNames } from "../template.ts";
 import { estimateTokens } from "../tokens.ts";
 import { probedNode, probeExtraDirs } from "../tools.ts";
@@ -31,9 +32,18 @@ export type Checked = {
   detail: string | null;
   /** Secrets the entry names that have no value on this host, and so were left out. */
   unset: string[];
+  /** Secrets the entry uses, when the server rejected them. */
+  secrets: { name: string; file: SecretFile; lastSet: string | null }[];
 };
 
 const TIMEOUT_MS = 30_000;
+
+function secretRefs(configDir: string, host: string, files: Map<SecretFile, Set<string>>, names: string[]): { name: string; file: SecretFile; lastSet: string | null }[] {
+  return names.map((name) => {
+    const file = secretFileFor(files, name) ?? "shared";
+    return { name, file, lastSet: lastSetForSecret(configDir, file, name) };
+  });
+}
 
 /** Drops the entries of `map` whose value names a secret in `unset`. */
 const without = (map: Record<string, string> | undefined, unset: Set<string>): Record<string, string> | undefined =>
@@ -44,7 +54,7 @@ export async function checkEntry(configDir: string, host: string | null, home: s
   const parsed = parseMcpCatalog(".", problems, { root: ".", files: { "catalog/mcp.yaml": JSON.stringify({ servers: { [name]: entry } }) } }).get(name);
   // The first agent the entry is for, or the first agent there is when the entry does not load.
   const agent = having("mcp").find((a) => a.id === parsed?.only[0]) ?? having("mcp")[0]!;
-  const blank = (over: Partial<Checked>): Checked => ({ result: "not-run", agent: agent.id, transport: parsed?.command !== null ? "stdio" : (parsed?.transport ?? "http"), tools: null, size: null, tokens: null, latencyMs: null, protocol: null, detail: null, unset: [], ...over });
+  const blank = (over: Partial<Checked>): Checked => ({ result: "not-run", agent: agent.id, transport: parsed?.command !== null ? "stdio" : (parsed?.transport ?? "http"), tools: null, size: null, tokens: null, latencyMs: null, protocol: null, detail: null, unset: [], secrets: [], ...over });
   if (parsed === undefined) return blank({ detail: problems[0] ?? "the entry does not load" });
 
   // Only the secrets this entry names are read, one at a time: one with no value here does not stop the others.
@@ -69,6 +79,8 @@ export async function checkEntry(configDir: string, host: string | null, home: s
   const planned = planEntry(name, agent, rendered, home);
   if (planned.target === null) return blank({ unset: [...unset].sort(), detail: "the rendered entry has an unexpected shape" });
   const r = await probe(planned.target, TIMEOUT_MS, probeExtraDirs(home));
+  const usedSecrets = secretNames(entry).filter((n) => !unset.has(n));
+  const secretFilesMap = host === null ? new Map<SecretFile, Set<string>>() : secretFiles(configDir, host);
   return {
     result: r.result,
     agent: agent.id,
@@ -80,5 +92,6 @@ export async function checkEntry(configDir: string, host: string | null, home: s
     protocol: r.protocol,
     detail: r.detail === null ? null : clean(r.detail, [...values.values()]),
     unset: [...unset].sort(),
+    secrets: r.result === "bad-auth" ? secretRefs(configDir, host ?? "", secretFilesMap, usedSecrets) : [],
   };
 }

@@ -20,6 +20,8 @@ export type ServerHealth = {
   detail: string | null;
   /** The protocol the server spoke, when doctor said. */
   protocol: string | null;
+  /** Secrets the server uses, when it rejected them. */
+  secrets: { name: string; file: string; lastSet: string | null }[];
 };
 
 export type DoctorHost = {
@@ -32,7 +34,7 @@ export type DoctorHost = {
 
 export type DoctorResult = { ok: true; hosts: Record<string, DoctorHost> } | { ok: false; detail: string };
 
-const BAD = new Set(["unreachable", "missing-binary", "bad-response", "exited", "timeout", "error"]);
+const BAD = new Set(["bad-auth", "unreachable", "missing-binary", "bad-response", "exited", "timeout", "error"]);
 const ORDER: Record<Health, number> = { ok: 0, neutral: 1, unknown: 2, bad: 3 };
 const MAX_HOSTS = 64;
 const MAX_SERVERS = 200;
@@ -47,14 +49,21 @@ export function judge(result: unknown, fails: unknown): Health {
   return "unknown";
 }
 
+function secretRefOf(v: unknown): { name: string; file: string; lastSet: string | null } | null {
+  if (!isObject(v) || printable(v.name) === null) return null;
+  const file = printable(v.file);
+  if (file === null) return null;
+  return { name: printable(v.name)!, file, lastSet: printable(v.lastSet) };
+}
+
 function serversOf(list: unknown): Record<string, ServerHealth> {
-  const out: Record<string, { health: Health; words: string[]; detail: string | null; protocol: string | null }> = {};
+  const out: Record<string, { health: Health; words: string[]; detail: string | null; protocol: string | null; secrets: { name: string; file: string; lastSet: string | null }[] }> = {};
   if (!Array.isArray(list)) return {};
   for (const r of list.slice(0, MAX_SERVERS * 2)) {
     if (!isObject(r)) continue;
     const name = printable(r.server);
     if (name === null || name === "") continue;
-    const entry = (out[name] ??= { health: "ok", words: [], detail: null, protocol: null });
+    const entry = (out[name] ??= { health: "ok", words: [], detail: null, protocol: null, secrets: [] });
     const health = judge(r.result, r.fails);
     const tool = printable(r.tool) ?? "?";
     const word = printable(r.result) ?? "unknown";
@@ -63,8 +72,9 @@ function serversOf(list: unknown): Record<string, ServerHealth> {
     if (ORDER[health] > ORDER[entry.health]) entry.health = health;
     if (health !== "ok" && entry.detail === null) entry.detail = printable(r.detail) ?? null;
     entry.protocol ??= printable(r.protocol) ?? null;
+    if (Array.isArray(r.secrets)) entry.secrets.push(...r.secrets.map(secretRefOf).filter((s): s is { name: string; file: string; lastSet: string | null } => s !== null));
   }
-  return Object.fromEntries(Object.entries(out).slice(0, MAX_SERVERS).map(([name, e]) => [name, { health: e.health, words: e.words.join(", "), detail: e.detail, protocol: e.protocol }]));
+  return Object.fromEntries(Object.entries(out).slice(0, MAX_SERVERS).map(([name, e]) => [name, { health: e.health, words: e.words.join(", "), detail: e.detail, protocol: e.protocol, secrets: e.secrets }]));
 }
 
 const firstMessage = (doc: Record<string, unknown>): string => {
