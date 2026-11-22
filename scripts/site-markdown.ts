@@ -1,5 +1,5 @@
 // The markdown the site pages are written in, rendered by hand: the docs use a known subset (headings,
-// paragraphs, lists, tables, fenced code, inline code, links and bold), and the site has no build step
+// paragraphs, lists, tables, fenced code, inline code, links and bold; a one-line HTML comment is skipped), and the site has no build step
 // and no dependency. scripts/site-changelog.ts shares the inline part for the changelog's items.
 
 export const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -68,7 +68,7 @@ export function renderDoc(md: string, link: (url: string) => string): Doc {
 
   while (i < lines.length) {
     const line = lines[i]!;
-    if (line.trim() === "") i++;
+    if (line.trim() === "" || /^<!--.*-->$/.test(line.trim())) i++;
     else if (line.startsWith("```")) {
       const code: string[] = [];
       i++;

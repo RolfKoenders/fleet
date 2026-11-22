@@ -12,6 +12,7 @@ Terms are defined in `GLOSSARY.md`. Use them as written there.
 - Tests run in a temp `HOME`.
 - Never run `fleet apply` or `fleet init` against a real `HOME` while developing.
 - The landing page's terminal clips are recorded from the bridge: `npm run site:frames` rewrites `site/frames.js`, and a test fails when a change to the bridge makes the committed file stale. To add a clip, see the top of `scripts/site-frames/record.ts`.
+- The command reference `docs/commands.md` is generated from the command list in `src/cli.ts` (the list `fleet help` prints): `npm run docs:commands` rewrites it, then `npm run site:docs` rewrites its site page, and a test fails when either is stale. An option's description goes in that list, never on the page.
 - The landing page's What's new section, release pill and `site/changelog/index.html` are generated from `CHANGELOG.md`: `npm run site:changelog` rewrites them, and a test fails when `CHANGELOG.md` changes without it.
 - The docs pages under `site/docs/` are generated from `docs/*.md` (all but `releasing.md`, which is for maintainers): `npm run site:docs` rewrites them, and a test fails when a doc changes without it.
 

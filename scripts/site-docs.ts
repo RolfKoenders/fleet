@@ -14,8 +14,8 @@ export type Section = { name: string; pages: Page[] };
 const page = (file: string, title: string, blurb: string): Page => ({ file, slug: slug(file.replace(/\.md$/, "")), title, blurb });
 
 /**
- * The docs pages, in the order the side navigation shows them. Reference has no pages yet and is left in
- * the list for the stories that fill it; an empty section is not rendered. docs/releasing.md is for
+ * The docs pages, in the order the side navigation shows them. An empty section is not rendered.
+ * docs/commands.md is generated from src/cli.ts by scripts/docs-commands.ts. docs/releasing.md is for
  * maintainers and stays off the site, so a link to it goes to GitHub.
  */
 export const NAV: Section[] = [
@@ -35,7 +35,7 @@ export const NAV: Section[] = [
       page("adding-an-agent.md", "Adding an agent", "What it takes for fleet to support another coding agent."),
     ],
   },
-  { name: "Reference", pages: [] },
+  { name: "Reference", pages: [page("commands.md", "Commands", "Every fleet command and option, what it changes and its --json form.")] },
   { name: "FAQ", pages: [page("faq.md", "FAQ", "Where secrets end up, what the install script does, updating and more.")] },
 ];
 

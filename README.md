@@ -78,7 +78,7 @@ fleet push -m "Add a skill"
 | `fleet demo` | Try the bridge on made-up hosts in a throwaway sandbox; `--shell` gives a shell instead |
 | `fleet agent` | Print what an agent needs to know, including task recipes |
 
-Add `--json` to any command for output a script can read.
+Add `--json` to any command for output a script can read. Every command and option is in the [command reference](docs/commands.md).
 
 ### Reading a skill update before it moves
 
