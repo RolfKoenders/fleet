@@ -440,7 +440,7 @@ footer a:hover { color: var(--text); }
 .doc-results b { display: block; font-size: 14px; color: var(--text); }
 .doc-results span { font: 12px var(--mono); color: var(--muted); }
 
-.doc-nav section { margin: 0 0 18px; }
+.doc-nav section { margin: 0 0 18px; padding-top: 0 !important; }
 .doc-nav h3, .doc-toc h3 { margin: 0 0 8px; font: 600 12px var(--mono); color: var(--muted); text-transform: uppercase; letter-spacing: .08em; }
 .doc-nav a { display: block; padding: 3px 0; text-decoration: none; color: var(--sub); }
 .doc-nav a:hover, .doc-toc a:hover { color: var(--text); }
@@ -470,7 +470,7 @@ footer a:hover { color: var(--text); }
 .doc-table td { padding: 9px 16px 9px 0; border-bottom: 1px solid var(--border-soft); color: var(--sub); vertical-align: top; }
 .doc-table tr:last-child td { border-bottom: 0; }
 
-.doc-home section { margin: 0 0 30px; }
+.doc-home section { margin: 0 0 30px; padding-top: 0 !important; }
 .doc-home h2 { margin: 0 0 12px; font: 700 clamp(22px, 2.6vw, 28px)/1.15 var(--sans); letter-spacing: -.02em; }
 .doc-home ul { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
 .doc-home a { display: block; padding: 16px 18px; border: 1px solid var(--border-soft); border-radius: 12px; background: rgba(13,17,23,.7); text-decoration: none; transition: border-color .2s; }
@@ -480,7 +480,7 @@ footer a:hover { color: var(--text); }
 
 @media (max-width: 900px) {
   .docpage { grid-template-columns: minmax(0, 1fr); gap: 0; padding-top: 36px; }
-  .doc-menu-btn { display: inline-flex; }
+  .doc-menu-btn { display: inline-flex; margin-bottom: 22px; }
   .doc-side { display: none; }
   .doc-side.open { display: block; position: static; margin-bottom: 26px; }
   .doc-home ul { grid-template-columns: 1fr; }
