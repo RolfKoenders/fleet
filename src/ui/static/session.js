@@ -73,3 +73,30 @@ export function loadOps(store) {
     return [];
   }
 }
+
+const CAPTURED = "fleet-ui-captured";
+
+/**
+ * What the Capture screen answered and has not pushed: the items to take over once their files are written, and a word for each
+ * answer. Names only. @param {Store | null} store @param {{ captured: { kind: string, name: string }[], done: Record<string, string> }} state
+ */
+export function saveCaptured(store, state) {
+  try {
+    if (state.captured.length === 0 && Object.keys(state.done).length === 0) store?.removeItem(CAPTURED);
+    else store?.setItem(CAPTURED, JSON.stringify(state));
+  } catch {
+    // full or blocked: the page works, it just cannot restore after a reload
+  }
+}
+
+/** @param {Store | null} store @returns {{ captured: { kind: string, name: string }[], done: Record<string, string> }} */
+export function loadCaptured(store) {
+  try {
+    const doc = JSON.parse(store?.getItem(CAPTURED) ?? "null");
+    const captured = Array.isArray(doc?.captured) ? doc.captured.filter((/** @type {any} */ c) => c !== null && typeof c === "object" && (c.kind === "mcp" || c.kind === "skill") && typeof c.name === "string") : [];
+    const done = typeof doc?.done === "object" && doc.done !== null && !Array.isArray(doc.done) ? Object.fromEntries(Object.entries(doc.done).filter(([k, v]) => typeof v === "string" && k.length < 200)) : {};
+    return { captured, done };
+  } catch {
+    return { captured: [], done: {} };
+  }
+}

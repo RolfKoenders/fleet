@@ -6,6 +6,7 @@ import { readHostName } from "../host.ts";
 import { LockedError, acquirePushLock } from "../lock.ts";
 import { loadModel } from "../tui/model.ts";
 import { readSecrets } from "../tui/reads.ts";
+import { answerOf, buildAnswer, captureDoc, itemsOf, takeOverHere } from "./capture.ts";
 import { entryOf, outsideChanges, plan, preview, readFiles, secretOpProblem, WriteRefused, writeAndCommit } from "./edits.ts";
 import type { StagedSkills } from "./edits.ts";
 import { secretsTable } from "./secretsview.ts";
@@ -59,10 +60,19 @@ import type { Job } from "./jobs.ts";
  *                      Edit dialog: `value` (the entry as written: a bundle's skills, a host's `{ssh}`; secrets as `secret:NAME`, never a value), `path`,
  *                      `found`, `editable` and, when it is not, `reason`, and `text`: the file it is in, as it would be after `ops`.
  *   POST /api/plan     Body `{"ops": [...]}`. This host's full plan: `fleet diff` against the edited config, nothing written.
- *   POST /api/write    Body `{"ops": [...], "message": "...", "staged": {...}}` (`staged` as for preview). Writes the edited files, commits them, then runs the real
+ *   POST /api/write    Body `{"ops": [...], "message": "...", "staged": {...}, "captured": [{"kind", "name"}]}` (`staged` as for preview; `captured` are items the Capture screen added, taken over once the files are written). Writes the edited files, commits them, then runs the real
  *                      `fleet push` as `POST /api/push` does. Refuses, writing nothing, when a push is running (409 `locked`),
  *                      when the config repo has changes of its own (409 `outside-changes`), when an edit is stale (409 `stale`)
  *                      or when a host would not load, the preview's skill check included (422 `invalid`).
+ *   GET  /api/capture  What this machine has that is not from config (the machine the page runs on, no other): `host`, `items` (MCP servers and skills: `kind`, `name`,
+ *                      `state` new, catalog, takeover or blocked, `message`, and for a server its `variants`, the definitions the agents have, with the
+ *                      names of their env variables and headers and whether each is a secret by default; never a value), `differs` (items with the name
+ *                      of a catalog entry and another definition: conflicts, not offered) and `notes`.
+ *   POST /api/capture/build  Body `{"ops": [...held], "staged": {...}, "decision": {"kind", "name", "action": "add" | "takeover" | "ignore", "scope": "host" | "all",
+ *                      "variant", "onlyHad", "secrets": [{"where", "key", "name"}], "bundle"}}`. The held edits after that answer: the catalog entry, the pick, the
+ *                      host's `unmanaged` list, and for each secret the secrets file with the value encrypted into it (`setSecret`). The value is read from this
+ *                      machine's agent file and is in no answer. Answers `ops`, `staged`, `takeover` (whether this machine should be taken over once written) and `secrets`.
+ *   POST /api/capture/takeover  Body `{"items": [{"kind", "name"}]}`. Records items that already equal the config as fleet's, as `fleet adopt` does. `adopted`, `rewrites`, `problems`.
  *   GET  /api/fleet    Every host of the config, this host first: what each last said (`status`, `context`, `conflicts`), whether that is from the
  *                      current run (`live`) or from the bridge's memory file (`seenSeconds` old, not live), and why a host did not answer (`result`,
  *                      `detail`). Nothing is asked: it answers at once from what is known.
@@ -177,6 +187,37 @@ export function routes(deps: ApiDeps): Route[] {
         } finally {
           done();
         }
+      },
+    },
+    {
+      method: "GET",
+      path: "/api/capture",
+      handle: () => ({ status: 200, body: { ok: true, ...captureDoc(deps.configDir, deps.home) } }),
+    },
+    {
+      method: "POST",
+      path: "/api/capture/build",
+      handle: async (req) => {
+        // The answer holds names, never a value. The value is read from this machine's agent file and goes to sops, one at a time.
+        const body = await req.json();
+        const answer = answerOf(body);
+        const done = deps.busy({ kind: "secret", name: answer.name });
+        try {
+          const out = buildAnswer(deps.configDir, deps.home, heldOps(body), stagedOf(body), answer);
+          if ("refused" in out) return refused(out.refused.status, out.refused.code, out.refused.message);
+          return { status: 200, body: { ok: true, kind: answer.kind, name: answer.name, ops: out.ops, staged: out.staged, takeover: out.takeover, secrets: out.secrets } };
+        } finally {
+          done();
+        }
+      },
+    },
+    {
+      method: "POST",
+      path: "/api/capture/takeover",
+      handle: async (req) => {
+        const out = takeOverHere(deps.configDir, deps.home, itemsOf(await req.json()));
+        if ("problem" in out) return refused(422, "not-taken", out.problem);
+        return { status: 200, body: { ok: out.problems.length === 0, ...out } };
       },
     },
     {
@@ -422,6 +463,7 @@ export function routes(deps: ApiDeps): Route[] {
         const ops = heldOps(body);
         const message = messageOf(body);
         if (message === undefined || message.trim() === "") throw new BadRequest("a commit message is required");
+        const captured = (body as Record<string, unknown>).captured === undefined ? [] : itemsOf({ items: (body as Record<string, unknown>).captured });
         const done = deps.busy({ kind: "push" });
         try {
           // The lock is held while the files are written and committed, so no push starts under it, and let go before
@@ -444,8 +486,10 @@ export function routes(deps: ApiDeps): Route[] {
           } finally {
             release();
           }
+          // What capture put in the config is this machine's own as it stands, so the apply that follows the push has nothing to do for it.
+          const taken = captured.length === 0 ? null : takeOverHere(deps.configDir, deps.home, captured);
           const end = await runPush(undefined);
-          return { status: 200, body: { ok: end.code === "ok", code: end.code ?? "error", written, push: pushDoc(end) } };
+          return { status: 200, body: { ok: end.code === "ok", code: end.code ?? "error", written, ...(taken === null ? {} : { captured: taken }), push: pushDoc(end) } };
         } finally {
           done();
         }

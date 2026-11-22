@@ -333,6 +333,16 @@ test("with motion the spinner and the shimmer move", async () => {
   assert.notEqual(b.frame(), first);
 });
 
+test("home: a host card says how many of its MCP servers and skills are not from config, and only when some are", async () => {
+  const every = (result: HostResult) => ({ laptop: result, server: result, box: result });
+  const some = (await bridgeFor(makeConfig(), { hosts: every(ok({ unmanaged: 3 })) })).frame();
+  assert.match(some, /3 not from config/);
+  const none = (await bridgeFor(makeConfig(), { hosts: every(ok({ unmanaged: 0 })) })).frame();
+  assert.doesNotMatch(none, /not from config/);
+  const older = (await bridgeFor(makeConfig(), { hosts: every(ok({ unmanaged: null })) })).frame();
+  assert.doesNotMatch(older, /not from config/, "a host on an older fleet does not send the field");
+});
+
 test("no frame ever holds a control character", async () => {
   const b = await bridgeFor(makeConfig(), { hosts: { box: unreachable } });
   for (const keys of [["1"], ["2"], ["enter"], ["3"], ["?"], ["escape", "ctrl+k"]]) {

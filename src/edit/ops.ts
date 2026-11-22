@@ -39,6 +39,8 @@ export type EditOp =
    */
   | { op: "editServer"; name: string; changes: Change[] }
   | { op: "editSource"; name: string; changes: Change[] }
+  /** The host's `unmanaged` list names `item` (`mcp:<name>` or `skill:<name>`): capture no longer lists or counts it there. */
+  | { op: "ignore"; host: string; item: string }
   /** The server is gone from `catalog/mcp.yaml`, and from every `mcp.include` and `mcp.exclude` of the defaults and the hosts. */
   | { op: "removeServer"; name: string }
   /** The bundle is gone from `catalog/skills.yaml`, and from every `bundles` and `exclude` of the defaults and the hosts. */
@@ -161,6 +163,8 @@ function run(files: Files, op: EditOp): void {
     }
     case "setSecret":
       return setSecret(files, op);
+    case "ignore":
+      return ignore(files, op);
   }
 }
 
@@ -224,6 +228,18 @@ function removeSource(files: Files, name: string, skills: string[]): void {
     if (kept.length !== listed.length) editCatalog(files, "bundles", bundle, [{ key: bundle, from: listed, to: kept }]);
   }
   files[path] = removeEntry(files[path]!, "sources", name);
+}
+
+const UNMANAGED: ListPath = ["unmanaged"];
+
+function ignore(files: Files, op: Extract<EditOp, { op: "ignore" }>): void {
+  if (!HOST_NAME.test(op.host)) throw new Stale(`'${op.host}' is not a host name`);
+  if (!/^(mcp|skill):[A-Za-z0-9][A-Za-z0-9._-]*$/.test(op.item)) throw new Stale(`'${op.item}' is not 'mcp:<name>' or 'skill:<name>'`);
+  const path = hostFile(op.host);
+  const text = files[path];
+  if (text === undefined) throw new Stale(`${path} does not exist`);
+  if (readList(text, UNMANAGED).includes(op.item)) throw new Stale(`'${op.item}' is already ignored by ${op.host}`);
+  files[path] = addToList(text, UNMANAGED, op.item);
 }
 
 function setSecret(files: Files, op: Extract<EditOp, { op: "setSecret" }>): void {

@@ -2,7 +2,7 @@
 // `node --test` runs it. `app.js` draws it.
 
 /** The screens. Fleet is the first: it shows every host, and is where the page opens. */
-export const ROUTES = ["fleet", "matrix", "catalog", "hosts", "secrets", "card", "status", "review"];
+export const ROUTES = ["fleet", "matrix", "catalog", "hosts", "capture", "secrets", "card", "status", "review"];
 
 /** The screen a location hash names (`#/hosts`), `fleet` for none or an unknown one. @param {string} hash */
 export function routeOf(hash) {

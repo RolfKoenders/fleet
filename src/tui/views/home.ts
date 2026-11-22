@@ -133,7 +133,8 @@ function drawCard(c: Canvas, x: number, y: number, w: number, host: HostInfo, li
   const tool = (name: string, v: string | null): Seg[] => [[`${name} `, s.faint], [v ?? "–", v === null ? s.faint : s.sub], [gap, s.faint]];
   line(0, [["last change ", s.muted], [lastChange(live!, now), status.applied.at === null ? s.warn : s.text]]);
   sides(line, 1, iw, [["timer ", s.muted], [status.timer ?? "unknown", timerStyle]], contextSegs(state.contexts[host.name]));
-  line(2, [["pending ", s.muted], num(status.pending, s.warn), ["   conflicts ", s.muted], num(status.conflicts, s.bad)]);
+  const loose: Seg[] = status.unmanaged ? [["   ", s.faint], [`${status.unmanaged} not from config`, s.warn]] : [];
+  line(2, [["pending ", s.muted], num(status.pending, s.warn), ["   conflicts ", s.muted], num(status.conflicts, s.bad), ...loose]);
   line(3, [["clone ", s.muted], [`${fleet.branch ?? "detached"}@${fleet.sha.slice(0, 7)}`, s.sub], [fleet.clean ? " clean" : " dirty", fleet.clean ? s.ok : s.warn], [sync, s.warn]]);
   // Only the agents this host gets, and a word for one fleet has config for and cannot find. A host on an older fleet sends neither, and shows the ones it sends a version for.
   const gets = AGENTS.filter((a) => (status.agents === null ? t[a.id] !== undefined : status.agents.some((x) => x.id === a.id && x.active)));
@@ -193,6 +194,7 @@ function drawDetail(c: Canvas, y: number, h: number, host: HostInfo, state: Stat
     ["servers", names(model.servers)],
     ["clone", fleet ? `${fleet.sha}${fleet.branch ? ` on ${fleet.branch}` : ""}` : "unknown"],
     ["changed", at ?? "unknown"],
+    ...(state.live[host.name]?.result?.status?.unmanaged ? ([["loose", `${state.live[host.name]!.result!.status!.unmanaged} not from config: run fleet capture on ${host.name}`]] as [string, string][]) : []),
     ...(seenAgo(state.live[host.name], state.now) === null ? [] : ([["seen", `${seenAgo(state.live[host.name], state.now)!.slice(5)}, not live; asking again`]] as [string, string][])),
   ];
   rows.slice(0, h - 2).forEach(([k, v], i) => segments(c, 3, y + 1 + i, [[pad(k, 9), s.muted], [v, s.sub]], c.w - 6));

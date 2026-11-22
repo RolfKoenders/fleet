@@ -23,7 +23,7 @@ import type { Obj } from "./yamlfile.ts";
 const USAGE = "usage: fleet adopt mcp|skill <name>";
 
 /** What an adoption would record, or why it cannot: conflicts to show, or a result to return as it is. */
-type Adoption = { keys: KeyRecord[]; links: LinkRecord[]; left: string[] } | { conflicts: Conflict[] } | Result;
+type Adoption = { keys: KeyRecord[]; links: LinkRecord[]; left: string[]; /** Keys that differ and were left for apply, when asked to leave them. */ rewrites: string[] } | { conflicts: Conflict[] } | Result;
 
 const invalid = (message: string): Result => ({ code: "invalid", messages: [`fleet: ${message}`] });
 const isResult = (value: object): value is Result => "code" in value;
@@ -74,7 +74,8 @@ function mismatch(key: DesiredKey, detail: string, name: string): Conflict {
   };
 }
 
-function adoptMcp(configDir: string, host: string, home: string, config: Config, name: string): Adoption {
+/** `lenient`: a key that differs from the config is left for apply to rewrite, and the keys that match are still taken. */
+function adoptMcp(configDir: string, host: string, home: string, config: Config, name: string, lenient = false): Adoption {
   const keys = config.keys.filter((k) => mcpEntryOf(k)?.name === name);
   if (keys.length === 0) return invalid(`'${name}' is not picked by this host, so there is nothing to adopt. Pick it in the host file (mcp.include) first.`);
 
@@ -112,9 +113,10 @@ function adoptMcp(configDir: string, host: string, home: string, config: Config,
       records.push({ file: key.file, path: key.path, desired: hashValue(key.value), actual: hashValue(current.value) });
     }
   }
-  if (conflicts.length > 0) return { conflicts };
+  if (conflicts.length > 0 && !lenient) return { conflicts };
+  if (lenient) return { keys: records, links: [], left, rewrites: conflicts.map((c) => c.path) };
   if (records.length === 0) return invalid(`nothing to adopt: ${name} has no entry in ${[...new Set(keys.map((k) => k.file))].join(" or ")}; 'fleet apply' creates it`);
-  return { keys: records, links: [], left };
+  return { keys: records, links: [], left, rewrites: [] };
 }
 
 function adoptSkill(home: string, config: Config, name: string): Adoption {
@@ -125,7 +127,63 @@ function adoptSkill(home: string, config: Config, name: string): Adoption {
   const plan = planLinks(records, [], home);
   if (plan.conflicts.length > 0) return { conflicts: plan.conflicts };
   if (plan.creates.length > 0) return invalid(`nothing to adopt: ${plan.creates[0]!.target} does not exist; 'fleet apply' creates it`);
-  return { keys: [], links: plan.noops, left: [] };
+  return { keys: [], links: plan.noops, left: [], rewrites: [] };
+}
+
+/** Records what was adopted in the applied state, beside what it already holds. */
+function writeAdopted(home: string, host: string, adoption: { keys: KeyRecord[]; links: LinkRecord[] }): void {
+  const state = readState(home);
+  const links = new Map((state?.links ?? []).map((l) => [l.target, l]));
+  const keys = new Map((state?.keys ?? []).map((k) => [keyName(k), k]));
+  for (const link of adoption.links) links.set(link.target, link);
+  for (const key of adoption.keys) keys.set(keyName(key), key);
+  writeState(
+    {
+      version: 1,
+      host,
+      appliedAt: state?.appliedAt ?? new Date().toISOString().replace(/\.\d+Z$/, "Z"),
+      repos: state?.repos ?? {},
+      links: [...links.values()],
+      keys: [...keys.values()],
+    },
+    home,
+  );
+}
+
+/** What taking over a set of items did: the keys and links fleet owns now, and the keys that differ and wait for apply. */
+export type TakenOver = { adopted: string[]; rewrites: string[]; problems: string[] };
+
+/**
+ * Capture's take-over step: what `fleet adopt` does, for several items at once, on a config that was just written. A key that
+ * differs from the config is not a refusal here: it is left, and named in `rewrites`, because the next apply will write it.
+ */
+export function takeOver(configDir: string, home: string, host: string, items: { kind: "mcp" | "skill"; name: string }[]): TakenOver {
+  const out: TakenOver = { adopted: [], rewrites: [], problems: [] };
+  if (items.length === 0) return out;
+  const release = acquireLock(home);
+  try {
+    const config = loadConfig(configDir, host, { home, sources: "diff", agents: detectAgents(home) });
+    if (config.conflicts.length > 0) {
+      out.problems.push("the config has conflicts on this host, so nothing was taken over: run 'fleet status --conflicts'");
+      return out;
+    }
+    const taken: { keys: KeyRecord[]; links: LinkRecord[] } = { keys: [], links: [] };
+    for (const { kind, name } of items) {
+      const adoption = kind === "mcp" ? adoptMcp(configDir, host, home, config, name, true) : adoptSkill(home, config, name);
+      if (isResult(adoption)) out.problems.push((adoption.messages ?? []).join(" ").replace(/^fleet: /, ""));
+      else if (isRefused(adoption)) out.problems.push(`${kind}:${name} was not taken over: ${adoption.conflicts.map((c) => `${c.detail}. ${c.fix}`).join(" ")}`);
+      else {
+        taken.keys.push(...adoption.keys);
+        taken.links.push(...adoption.links);
+        out.adopted.push(`${kind}:${name}`);
+        out.rewrites.push(...adoption.rewrites);
+      }
+    }
+    writeAdopted(home, host, taken);
+    return out;
+  } finally {
+    release();
+  }
 }
 
 function conflictResult(conflicts: Conflict[], color: boolean): Result {
@@ -160,22 +218,7 @@ export function adopt(configDir: string, args: string[], color: boolean, home: s
     if (isRefused(adoption)) return conflictResult(adoption.conflicts, color);
     if (isResult(adoption)) return adoption;
 
-    const state = readState(home);
-    const links = new Map((state?.links ?? []).map((l) => [l.target, l]));
-    const keys = new Map((state?.keys ?? []).map((k) => [keyName(k), k]));
-    for (const link of adoption.links) links.set(link.target, link);
-    for (const key of adoption.keys) keys.set(keyName(key), key);
-    writeState(
-      {
-        version: 1,
-        host,
-        appliedAt: state?.appliedAt ?? new Date().toISOString().replace(/\.\d+Z$/, "Z"),
-        repos: state?.repos ?? {},
-        links: [...links.values()],
-        keys: [...keys.values()],
-      },
-      home,
-    );
+    writeAdopted(home, host, adoption);
 
     const lines = [
       ...adoption.keys.map((k) => `${paint(color, "green", "adopted")} ${keyName(k)}`),

@@ -13,6 +13,7 @@ export const GUIDES: Record<string, { text: string; target: string }> = {
   context: { text: "The bridge: startup context", target: "bridge.md#startup-context" },
   bridge: { text: "The bridge", target: "bridge.md" },
   ui: { text: "The page", target: "ui.md" },
+  capture: { text: "Capture", target: "capture.md" },
   push: { text: "Getting started: working with fleet", target: "getting-started.md#working-with-fleet" },
   secrets: { text: "FAQ: where do my secrets end up?", target: "faq.md#where-do-my-secrets-end-up" },
   skills: { text: "Getting started: reading a skill update before it moves", target: "getting-started.md#reading-a-skill-update-before-it-moves" },

@@ -58,11 +58,11 @@
         </div>
         <nav class="doc-nav" aria-label="Docs">
         <section><h3>Start</h3><a href="../getting-started/">Getting started</a><a href="../setting-up-machines/">Setting up machines</a></section>
-        <section><h3>Guides</h3><a href="../bridge/">The bridge</a><a href="../ui/">The page</a><a href="../mcp-logins/">MCP logins</a><a href="../adding-an-agent/">Adding an agent</a></section>
+        <section><h3>Guides</h3><a href="../bridge/">The bridge</a><a href="../ui/">The page</a><a href="../capture/">Capture</a><a href="../mcp-logins/">MCP logins</a><a href="../adding-an-agent/">Adding an agent</a></section>
         <section><h3>Reference</h3><a class="on" aria-current="page" href="../commands/">Commands</a><a href="../reference-fleet-yaml/">fleet.yaml</a><a href="../reference-hosts/">Host files and defaults</a><a href="../reference-catalog-mcp/">catalog/mcp.yaml</a><a href="../reference-catalog-skills/">catalog/skills.yaml</a></section>
         <section><h3>FAQ</h3><a href="../faq/">FAQ</a></section>
         </nav>
-        <nav class="doc-toc" aria-label="On this page"><h3>On this page</h3><a href="#options-for-every-command">Options for every command</a><a href="#fleet-status">fleet status</a><a href="#fleet-doctor">fleet doctor</a><a href="#fleet-context">fleet context</a><a href="#fleet-diff">fleet diff</a><a href="#fleet-bridge">fleet bridge</a><a href="#fleet-ui">fleet ui</a><a href="#fleet-card">fleet card</a><a href="#fleet-apply">fleet apply</a><a href="#fleet-push">fleet push</a><a href="#fleet-undo">fleet undo</a><a href="#fleet-adopt">fleet adopt</a><a href="#fleet-secrets">fleet secrets</a><a href="#fleet-skills">fleet skills</a><a href="#fleet-update">fleet update</a><a href="#fleet-new">fleet new</a><a href="#fleet-init">fleet init</a><a href="#fleet-demo">fleet demo</a><a href="#fleet-agent">fleet agent</a><a href="#fleet-help">fleet help</a></nav>
+        <nav class="doc-toc" aria-label="On this page"><h3>On this page</h3><a href="#options-for-every-command">Options for every command</a><a href="#fleet-status">fleet status</a><a href="#fleet-doctor">fleet doctor</a><a href="#fleet-context">fleet context</a><a href="#fleet-diff">fleet diff</a><a href="#fleet-bridge">fleet bridge</a><a href="#fleet-ui">fleet ui</a><a href="#fleet-card">fleet card</a><a href="#fleet-apply">fleet apply</a><a href="#fleet-push">fleet push</a><a href="#fleet-undo">fleet undo</a><a href="#fleet-capture">fleet capture</a><a href="#fleet-adopt">fleet adopt</a><a href="#fleet-secrets">fleet secrets</a><a href="#fleet-skills">fleet skills</a><a href="#fleet-update">fleet update</a><a href="#fleet-new">fleet new</a><a href="#fleet-init">fleet init</a><a href="#fleet-demo">fleet demo</a><a href="#fleet-agent">fleet agent</a><a href="#fleet-help">fleet help</a></nav>
     </aside>
     <article class="doc-body">
 <p>Every <code>fleet</code> command and option, as <code>fleet help</code> lists them. Commands that read only change nothing. The others write to this host, to the config repo or to other hosts, so run them when you mean to.</p>
@@ -140,6 +140,14 @@
 <p><b>Options</b></p>
 <ul><li><code>--no-push</code>: Stop after the revert commit.</li><li><code>--yes</code>: Skip the prompt.</li></ul>
 <p><b>JSON.</b> Adds <code>commit</code> (the push that was reverted), <code>reverted</code> and <code>pushed</code>. When the revert was pushed, also the push's <code>hosts</code>.</p>
+<h2 id="fleet-capture"><code>fleet capture</code></h2>
+<p><b>Changes things.</b> It writes to this host, to the config repo or to other hosts.</p>
+<p>Turn the MCP servers and skills this machine has, and the config does not, into config: on a terminal it asks about each (add for this host, add for every host, ignore, or take over one that already matches), then writes and commits the config and asks before it pushes. Reads only this machine; a value that becomes a secret goes to sops and is never printed. Without a terminal it only reports what it found.</p>
+<pre class="doc-code"><code>fleet capture [mcp|skill &lt;name&gt; --host|--all|--ignore] [--yes] [--no-push]</code></pre>
+<p><b>Options</b></p>
+<ul><li><code>--host</code>: Capture the named item for this host only.</li><li><code>--all</code>: Capture the named item for every host.</li><li><code>--ignore</code>: Stop listing the named item on this host (it is added to <code>unmanaged</code> in the host file).</li><li><code>--yes</code>: Capture every item the way the defaults say (this host, a secret for each key named like one) and push without asking.</li><li><code>--no-push</code>: Stop after the commit.</li></ul>
+<p><b>JSON.</b> Adds <code>items</code> (what was found: <code>kind</code>, <code>name</code>, <code>state</code>, <code>message</code>, <code>agents</code>, <code>variants</code> with the names of env variables and headers and never a value), <code>differs</code>, <code>unmanaged</code> and <code>notes</code>. It writes nothing unless <code>--yes</code>, or an item with <code>--host</code>, <code>--all</code> or <code>--ignore</code>, is given; then it adds <code>captured</code>, <code>commit</code>, <code>files</code>, <code>takenOver</code>, <code>rewrites</code> and <code>pushed</code>, and the push's own fields when it pushed.</p>
+<p><b>Guide.</b> <a href="../capture/">Capture</a></p>
 <h2 id="fleet-adopt"><code>fleet adopt</code></h2>
 <p><b>Changes things.</b> It writes to this host, to the config repo or to other hosts.</p>
 <p>Record an existing MCP server or skill as fleet's.</p>

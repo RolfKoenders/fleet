@@ -56,6 +56,10 @@ _Avoid_: Sync, deploy, rollout
 Recording something that already exists on a host and matches the catalog in applied state, so fleet owns it from then on without changing it.
 _Avoid_: Import
 
+**Capture**:
+Turning an MCP server or skill that a machine has, and the config does not, into config: a catalog entry, a pick and any secret, and then taking the machine over as it stands. It reads only the machine it runs on.
+_Avoid_: Import, scan
+
 **Linked file**:
 A file fleet places as a symlink into the repo, so the repo copy is the only copy.
 _Avoid_: Symlinked file, managed file

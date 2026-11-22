@@ -150,9 +150,9 @@ function expandPattern(pattern: string): string[] {
 
 // ---- what fleet put there ----
 
-type Applied = { fromConfig: (tildePath: string) => boolean; hasKey: (file: string, path: string) => boolean };
+export type Applied = { fromConfig: (tildePath: string) => boolean; hasKey: (file: string, path: string) => boolean };
 
-function appliedBy(home: string, notes: string[]): Applied {
+export function appliedBy(home: string, notes: string[]): Applied {
   let state: AppliedState | null = null;
   try {
     state = readState(home);
@@ -243,7 +243,7 @@ function findSkills(dir: string, nested: boolean, depth = 0): FoundSkill[] {
   return found;
 }
 
-function skillItems(agent: Registered, home: string, applied: Applied, notes: string[]): ContextItem[] {
+export function skillItems(agent: Registered, home: string, applied: Applied, notes: string[]): ContextItem[] {
   const where = agent.skills;
   if (where === undefined) return [];
   const nested = where.nested === true;

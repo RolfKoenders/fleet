@@ -23,6 +23,7 @@ const TERMS: [string, string][] = [
   ["Apply", "Making one host match its config, on that host."],
   ["Push", "Publishing a change to GitHub and then applying it on every host."],
   ["Adopt", "Recording something that already exists on a host and matches the catalog in applied state, so fleet owns it without changing it."],
+  ["Capture", "Turning an MCP server or skill that a machine has, and the config does not, into config: a catalog entry, a pick and any secret, and then taking the machine over as it stands. It reads only the machine it runs on."],
   ["Linked file", "A file fleet places as a symlink into the repo, so the repo copy is the only copy."],
   ["Merged file", "A file that a tool also writes, where fleet sets only its owned keys and leaves the rest alone."],
   ["Owned key", "A path inside a merged file whose whole value fleet controls; everything beside it is left alone."],

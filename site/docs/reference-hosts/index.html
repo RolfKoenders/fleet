@@ -58,7 +58,7 @@
         </div>
         <nav class="doc-nav" aria-label="Docs">
         <section><h3>Start</h3><a href="../getting-started/">Getting started</a><a href="../setting-up-machines/">Setting up machines</a></section>
-        <section><h3>Guides</h3><a href="../bridge/">The bridge</a><a href="../ui/">The page</a><a href="../mcp-logins/">MCP logins</a><a href="../adding-an-agent/">Adding an agent</a></section>
+        <section><h3>Guides</h3><a href="../bridge/">The bridge</a><a href="../ui/">The page</a><a href="../capture/">Capture</a><a href="../mcp-logins/">MCP logins</a><a href="../adding-an-agent/">Adding an agent</a></section>
         <section><h3>Reference</h3><a href="../commands/">Commands</a><a href="../reference-fleet-yaml/">fleet.yaml</a><a class="on" aria-current="page" href="../reference-hosts/">Host files and defaults</a><a href="../reference-catalog-mcp/">catalog/mcp.yaml</a><a href="../reference-catalog-skills/">catalog/skills.yaml</a></section>
         <section><h3>FAQ</h3><a href="../faq/">FAQ</a></section>
         </nav>
@@ -70,7 +70,7 @@
 <h2 id="how-a-host-file-layers-on-the-defaults">How a host file layers on the defaults</h2>
 <p>How the two files combine depends on the key:</p>
 <div class="doc-table"><table><thead><tr><th>Key</th><th>What the host file does</th></tr></thead><tbody><tr><td><code>bundles</code>, <code>mcp.include</code></td><td>Its list is added to the defaults' list.</td></tr><tr><td><code>exclude</code>, <code>mcp.exclude</code></td><td>Its names are taken off after both lists are added. Names in the defaults' <code>exclude</code> are taken off too.</td></tr><tr><td><code>agents</code>, <code>timer</code></td><td>Its value replaces the defaults' value.</td></tr><tr><td><code>vars</code></td><td>Merged name by name. The host's value wins at the same name.</td></tr><tr><td><code>settings</code></td><td>Merged key by key, down to the leaves. The host's value wins at the same key.</td></tr><tr><td><code>files</code></td><td>Merged by <code>target</code>. A host record replaces the default record with the same target and keeps its place.</td></tr></tbody></table></div>
-<p><code>ssh</code>, <code>age</code> and <code>admin</code> are for one machine, so only a host file may set them. Fleet refuses them in the defaults.</p>
+<p><code>ssh</code>, <code>age</code>, <code>admin</code> and <code>unmanaged</code> are for one machine, so only a host file may set them. Fleet refuses them in the defaults.</p>
 <p>An unknown key is an error in either file, and the message names the file and the key. This is why every host has to run a fleet version that knows a key before a file uses it.</p>
 <h2 id="example">Example</h2>
 <p><code>hosts/_defaults.yaml</code>:</p>
@@ -170,8 +170,12 @@ files:
 <p>Type: boolean. Default: <code>false</code>. Added in: 1.0.0.</p>
 <p>Marks the machine you work from. Exactly one host file has <code>admin: true</code>. Its key can read every secrets file, and it is the host that runs <code>fleet init</code> for the others. The admin host also needs an <code>age</code> key.</p>
 <pre class="doc-code"><code>admin: true</code></pre>
+<h3 id="unmanaged"><code>unmanaged</code></h3>
+<p>Type: list of strings. Default: none. Added in: not yet released.</p>
+<p>The MCP servers and skills on this machine that <code>fleet capture</code> and <code>fleet status</code> leave alone: each item is <code>mcp:&lt;name&gt;</code> or <code>skill:&lt;name&gt;</code>. An ignored item is not listed by capture, not counted as "not from config", and never touched: fleet only writes this list, it does not change the machine. A host file may have it; the defaults may not, because what one machine has by hand says nothing about another. <code>fleet capture mcp &lt;name&gt; --ignore</code> and the Ignore button of the Capture screen add to it. See <a href="../capture/">Capture</a>.</p>
+<pre class="doc-code"><code>unmanaged: [mcp:scratch-server, skill:my-notes]</code></pre>
 <h2 id="see-also">See also</h2>
-<ul><li><a href="../reference-catalog-mcp/"><code>catalog/mcp.yaml</code></a> for the servers <code>mcp.include</code> picks from.</li><li><a href="../reference-catalog-skills/"><code>catalog/skills.yaml</code></a> for the bundles <code>bundles</code> picks from.</li><li><a href="../setting-up-machines/">Setting up machines</a> for ssh, agents and the timer.</li></ul>
+<ul><li><a href="../reference-catalog-mcp/"><code>catalog/mcp.yaml</code></a> for the servers <code>mcp.include</code> picks from.</li><li><a href="../reference-catalog-skills/"><code>catalog/skills.yaml</code></a> for the bundles <code>bundles</code> picks from.</li><li><a href="../setting-up-machines/">Setting up machines</a> for ssh, agents and the timer.</li><li><a href="../capture/">Capture</a> for what <code>unmanaged</code> hides.</li></ul>
     </article>
   </main>
 

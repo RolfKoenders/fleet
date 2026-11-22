@@ -19,7 +19,7 @@ It stops on ctrl-c, or by itself after 10 minutes with no page open. A push or a
 
 ## What is on the page
 
-A header with this host, its checkout and whether the live connection is up (it reconnects by itself if the server drops it), and a menu: Fleet, Matrix, Catalog, Hosts, Secrets, Card, Review & push and Status. The page opens on Fleet. The page is plain files under `src/ui/static/` that fleet serves as they are: no build step, no framework and no dependency, and nothing is loaded from another origin, including its font (JetBrains Mono, bundled in `src/ui/static/fonts/` with its licence, a copy of the landing page's).
+A header with this host, its checkout and whether the live connection is up (it reconnects by itself if the server drops it), and a menu: Fleet, Matrix, Catalog, Hosts, Capture, Secrets, Card, Review & push and Status. The page opens on Fleet. The page is plain files under `src/ui/static/` that fleet serves as they are: no build step, no framework and no dependency, and nothing is loaded from another origin, including its font (JetBrains Mono, bundled in `src/ui/static/fonts/` with its licence, a copy of the landing page's).
 
 ### Fleet
 
@@ -107,6 +107,17 @@ One card per host: how it is reached, and what it gets. **+ Add host**, in the h
 - When init fails before it committed anything, the host file is deleted and the files init rewrote are restored, so the repo is as it was. When init had already committed and pushed (for example the timer step failed on the host), the host file stays, because that commit is published; the page says so, and `fleet init <name>` finishes the rest when run again.
 - Removing a host is on its card: see [Remove](#remove).
 
+### Capture
+
+What this machine has that is not from config: MCP servers an agent was told about (`claude mcp add`) and skill folders copied in. It is `fleet capture` in a browser, for the machine the page runs on and no other. See [Capture](capture.md) for what each choice does.
+
+- **A card for each item**, with where it was found and what it is: not in the catalog, matching the catalog (this host does not pick it), matching the config (take it over), or one fleet cannot capture, with why. The menu shows how many there are.
+- **Choices.** An item that is not in the catalog (or only matches it) is added for this host or for every host: the choice is worked out by the server into the same edits as Add (a catalog entry, a pick, a bundle, a source) and goes on To push, where Review & push shows each file's YAML diff. An item that already equals the config has a **Take over** button, which changes nothing in the config. **Ignore on this host** adds the item to `unmanaged` in the host file, as an edit to push like any other. Nothing is removed from the machine.
+- **MCP servers.** When the agents have the same server in different forms, the card shows each and you pick one. Each env variable and header is listed by name, with a **secret** box: it is on for names like `*_TOKEN`, `*_KEY`, `*SECRET*`, `*PASSWORD*` and `Authorization`, and you set it for any other. A secret has a name you can change. The value is read by the server from the agent's file, encrypted into the host's secrets file (or `shared`, for every host) with sops, and is never sent to the page: the page sees names only. A command that is not pinned to a version gets the same warning Add gives.
+- **Skills.** A skill in a git repo with a remote makes that repo a pinned source with `review: true` (or only a bundle, when it already is one); you name the bundle. A loose folder is listed with a message to put it in a repo first.
+- **After the push** this machine is taken over for what was captured, so the apply that follows finds nothing to change. If you reload the page before pushing, the choices and what is still to be taken over are kept for the tab.
+- **Same name, other definition.** An item with the name of a catalog entry and another definition is not listed; it is a conflict, and a line says how many there are.
+
 ### Secrets
 
 A table of every secret name against every host, by name only. A cell is **set** (the host's own secrets file has the name, or `shared` has it and the host can read `shared`), **missing** (a server the host picks, or its settings, use the name and neither file has it) or **not used**. A value to push shows as `set` with `to push`, and the tab counts the missing cells. Set value (Replace value when it is set everywhere it is needed) opens a password field:
@@ -172,6 +183,9 @@ Every route is JSON under `/api/` and sits behind the checks below. Request bodi
 | `GET /api/status` | what `fleet status --json` knows about this host |
 | `GET /api/fleet` | every host of the config, this host first: its `status` and startup `context` (each with `live` and, when remembered, how many seconds ago it was seen), `result` and `detail` when it did not answer, and `conflicts` in full for a live host that has some. It asks nothing: it answers at once from the bridge's memory file and the answers of the last two minutes |
 | `POST /api/fleet/refresh` | asks every host (status, startup context, and the conflicts of a host that has some: read-only, an ssh call each) as a job, sends the document as a `fleet` event each time a host answers, remembers each answer in the bridge's memory file, and answers the document when every host has. A second call while one runs waits for it. No body |
+| `GET /api/capture` | what this machine has that is not from config: each item's `kind`, `name`, `state` and `message`, a server's `variants` with the names of its env variables and headers and whether each is a secret by default, `differs` and `notes`. Never a value |
+| `POST /api/capture/build` | `{ops, staged, decision}`: the held edits after one answer about one item (add for this host or every host, take over, ignore). The server reads the values itself and encrypts each secret; the answer holds `ops`, `staged`, `takeover` and `secrets` (names), never a value |
+| `POST /api/capture/takeover` | `{items}`: records items that already equal the config as fleet's, as `fleet adopt` does |
 | `GET /api/matrix` | hosts, bundles with their skills, servers, and each host's cell; plus `outside`, the uncommitted changes in the config repo |
 | `GET /api/secrets` | secret names and who can read them, and `table`: each name against each host as set, missing or unused, never a value |
 | `POST /api/secrets/set` | `{name, value, files, ops}`: encrypts one value into the secrets file of each of `files` (`shared` or a host) with sops in a private temp dir, and answers the `setSecret` edits to push that carry those files. Nothing is written to the repo, and the value is in no answer, error, log or event; 400 `invalid`, 409 `stale`, 422 `no-recipient`, `needs-secret`, `sops-failed`, `recipients` or `invalid` |
@@ -188,7 +202,7 @@ Every route is JSON under `/api/` and sits behind the checks below. Request bodi
 | `POST /api/hosts/init` | `{name, ssh, from?, confirm: true}`: writes `hosts/<name>.yaml` and runs the real `fleet init`, streaming its output as `init` events and answering when it ends; 409 `locked`, `outside-changes` or `exists`, 422 `invalid` |
 | `POST /api/hosts/remove/preview` | `{name}`: what removing the host changes: `files` (its host file, its own secrets file by names only, and `.sops.yaml` as rekey will write it), `rekeyed`, and `readable` (the secret NAMES it could read, `shared` and `own`). Writes and runs nothing; 409 `self`, `admin` or `stale` |
 | `POST /api/hosts/remove` | `{name, confirm: true}`: deletes the host's files, runs the real `fleet secrets rekey`, commits and pushes, streaming its output as `remove` events and answering when it ends (`removed`, `kept` when only the push failed); 409 `locked`, `outside-changes`, `self`, `admin` or `stale` |
-| `POST /api/write` | `{ops, message}`: writes, commits, then pushes; 409 `locked`, `outside-changes` or `stale`, 422 `invalid` |
+| `POST /api/write` | `{ops, message, captured?}`: writes, commits, takes over the `captured` items on this machine, then pushes; 409 `locked`, `outside-changes` or `stale`, 422 `invalid` |
 | `POST /api/push` | runs `fleet push` with what is already committed |
 | `GET /api/events` | the stream of live push events, and of `init` and `remove` output. It starts with `hello` (`pushing`, and `jobs`: what runs, each `{kind, name?}` with kind `push`, `init`, `remove`, `clone`, `check`, `secret` or `fleet`), then replays the events of a running push, init or removal (the last 400), then sends `jobs` whenever the list changes. While the hosts are asked for the Fleet screen it sends a `fleet` event, the document of `GET /api/fleet`, each time a host answers |
 

@@ -258,7 +258,7 @@ test("--all is for status, doctor and context only", () => {
   const s = setup([{ name: "a", ssh: "alice@a" }], { "alice@a": OK });
   const r = runFleet(s.clone, ["diff", "--all"], { home: s.home });
   assert.equal(r.code, EXIT.invalid);
-  assert.match(r.stderr, /--all is only for 'status', 'doctor' and 'context'/);
+  assert.match(r.stderr, /--all is only for 'status', 'doctor', 'context' and 'capture'/);
   assert.deepEqual(s.calls(), []);
 });
 

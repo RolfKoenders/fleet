@@ -88,8 +88,15 @@ export function createClient(token, fetcher = (...args) => fetch(...args), hooks
     /**
      * Writes the edited files, commits them and runs the push. @param {unknown[]} ops @param {string} message
      * @param {Record<string, string[]>} [staged] as for preview: the check of the bundles runs again before anything is written
+     * @param {{ kind: string, name: string }[]} [captured] items the Capture screen added: this machine is taken over for them once the files are written
      */
-    write: (ops, message, staged) => send("/api/write", { ops, message, ...(staged !== undefined && Object.keys(staged).length > 0 ? { staged } : {}) }),
+    write: (ops, message, staged, captured) => send("/api/write", { ops, message, ...(staged !== undefined && Object.keys(staged).length > 0 ? { staged } : {}), ...(captured !== undefined && captured.length > 0 ? { captured } : {}) }),
+    /** What this machine has that is not from config: names and shapes, never a value. */
+    capture: () => call("/api/capture"),
+    /** The held edits after one answer about one item. The server reads the values itself; none is in the request or the answer. @param {unknown[]} ops @param {Record<string, string[]>} staged @param {unknown} decision */
+    captureBuild: (ops, staged, decision) => send("/api/capture/build", { ops, staged, decision }),
+    /** Records items that already equal the config as fleet's. @param {{ kind: string, name: string }[]} items */
+    captureTakeover: (items) => send("/api/capture/takeover", { items }),
     /** The host file that adding this host would write, as `{path, before, after}`. Nothing is written. @param {{ name: string, ssh: string, from: string | null }} body */
     previewHost: (body) => send("/api/hosts/preview", body),
     /** Writes hosts/<name>.yaml and runs the real fleet init, answering when it has ended; its output arrives on the stream. @param {{ name: string, ssh: string, from: string | null }} body */

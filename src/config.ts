@@ -55,6 +55,8 @@ export type Config = {
   timer: Schedule;
   /** What an agent on this host leaves out of its MCP file, one line per agent, for diff and apply to say. */
   notes: string[];
+  /** The host file's `unmanaged:` list: items on this host that capture does not list or count. */
+  unmanaged: string[];
 };
 
 export type LoadOptions = {
@@ -72,7 +74,10 @@ export type LoadOptions = {
 
 type UnresolvedRecord = { source: string; target: string };
 
-type Checked = { records: UnresolvedRecord[]; declared: Declared[]; vars: Record<string, string>; agents: AgentId[] | null; timer: Schedule | null };
+type Checked = { records: UnresolvedRecord[]; declared: Declared[]; vars: Record<string, string>; agents: AgentId[] | null; timer: Schedule | null; unmanaged: string[] };
+
+/** An item of `unmanaged`: `mcp:<server>` or `skill:<name>`. */
+export const UNMANAGED_ITEM = /^(mcp|skill):[A-Za-z0-9][A-Za-z0-9._-]*$/;
 
 function checkFile(path: string, doc: Obj, hostFile: boolean, problems: string[]): Checked {
   const allowed = hostFile ? [...SHARED_KEYS, ...HOST_ONLY_KEYS] : SHARED_KEYS;
@@ -80,7 +85,7 @@ function checkFile(path: string, doc: Obj, hostFile: boolean, problems: string[]
     if (!allowed.includes(key)) problems.push(`${path}: unknown key '${key}'`);
   }
 
-  const { vars, bundles, exclude, mcp, settings, files, agents, ssh, age, admin, timer: timerValue } = doc;
+  const { vars, bundles, exclude, mcp, settings, files, agents, ssh, age, admin, unmanaged, timer: timerValue } = doc;
   const ownVars: Record<string, string> = {};
   if (vars !== undefined) {
     if (!isObject(vars) || !Object.values(vars).every((v) => typeof v === "string")) {
@@ -135,12 +140,17 @@ function checkFile(path: string, doc: Obj, hostFile: boolean, problems: string[]
   if (ssh !== undefined && typeof ssh !== "string") problems.push(`${path}: 'ssh' must be a string`);
   if (age !== undefined && typeof age !== "string") problems.push(`${path}: 'age' must be a string`);
   if (admin !== undefined && typeof admin !== "boolean") problems.push(`${path}: 'admin' must be true or false`);
+  let ignored: string[] = [];
+  if (unmanaged !== undefined) {
+    if (!isStringList(unmanaged) || !unmanaged.every((item) => UNMANAGED_ITEM.test(item))) problems.push(`${path}: 'unmanaged' must be a list of 'mcp:<name>' and 'skill:<name>'`);
+    else ignored = unmanaged;
+  }
 
   const records: UnresolvedRecord[] = [];
-  if (files === undefined) return { records, declared, vars: ownVars, agents: pin, timer };
+  if (files === undefined) return { records, declared, vars: ownVars, agents: pin, timer, unmanaged: ignored };
   if (!Array.isArray(files)) {
     problems.push(`${path}: 'files' must be a list`);
-    return { records, declared, vars: ownVars, agents: pin, timer };
+    return { records, declared, vars: ownVars, agents: pin, timer, unmanaged: ignored };
   }
   const seen = new Set<string>();
   files.forEach((entry, i) => {
@@ -167,7 +177,7 @@ function checkFile(path: string, doc: Obj, hostFile: boolean, problems: string[]
     seen.add(target);
     records.push({ source, target });
   });
-  return { records, declared, vars: ownVars, agents: pin, timer };
+  return { records, declared, vars: ownVars, agents: pin, timer, unmanaged: ignored };
 }
 
 const listOf = (doc: Obj | null, key: string): string[] => (doc && isStringList(doc[key]) ? (doc[key] as string[]) : []);
@@ -222,7 +232,7 @@ export function loadConfig(configDir: string, host: string, options: LoadOptions
   const catalog = parseCatalog(configDir, problems, overlay);
   readPin(configDir, problems, overlay);
 
-  const empty: Checked = { records: [], declared: [], vars: {}, agents: null, timer: null };
+  const empty: Checked = { records: [], declared: [], vars: {}, agents: null, timer: null, unmanaged: [] };
   const checkedDefaults = defaults ? checkFile(defaultsPath, defaults, false, problems) : empty;
   const checkedHost = own ? checkFile(hostPath, own, true, problems) : empty;
   const vars = { ...checkedDefaults.vars, ...checkedHost.vars, HOME: home };
@@ -304,8 +314,8 @@ export function loadConfig(configDir: string, host: string, options: LoadOptions
   const kept = keys.filter((key) => keep(key.file));
   const secrets = [...new Set(kept.flatMap((key) => secretNames(key.value)))].sort();
   return conflicts.length > 0
-    ? { files: [], keys: [], conflicts, secrets: [], skills: [], agents: on, pin, timer, notes }
-    : { files, keys: kept, conflicts, secrets, skills, agents: on, pin, timer, notes };
+    ? { files: [], keys: [], conflicts, secrets: [], skills: [], agents: on, pin, timer, notes, unmanaged: checkedHost.unmanaged }
+    : { files, keys: kept, conflicts, secrets, skills, agents: on, pin, timer, notes, unmanaged: checkedHost.unmanaged };
 }
 
 /**

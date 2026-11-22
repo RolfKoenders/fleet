@@ -72,6 +72,7 @@ The widget is a separate project: [fleet-omarchy](https://github.com/RolfKoender
 - [Setting up machines](https://rolflab.nl/fleet/docs/setting-up-machines/)
 - [The bridge](https://rolflab.nl/fleet/docs/bridge/)
 - [The page](https://rolflab.nl/fleet/docs/ui/)
+- [Capture: turn what a machine has into config](https://rolflab.nl/fleet/docs/capture/)
 - [Logging in to MCP servers](https://rolflab.nl/fleet/docs/mcp-logins/)
 - [Adding an agent](https://rolflab.nl/fleet/docs/adding-an-agent/), and [Contributing](CONTRIBUTING.md)
 - [Commands reference](https://rolflab.nl/fleet/docs/commands/)
