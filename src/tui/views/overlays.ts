@@ -5,7 +5,7 @@ import { items, search } from "../palette.ts";
 import { describeRunning, remaining } from "../../pushrun.ts";
 import { theme } from "../theme.ts";
 import { stringWidth, truncate, wrap } from "../width.ts";
-import { pad, s, segments } from "./ui.ts";
+import { pad, plural, s, segments } from "./ui.ts";
 
 function frame(c: Canvas, w: number, h: number, title: string): Canvas {
   const width = Math.min(c.w - 2, w);
@@ -24,7 +24,7 @@ const HELP: [string, string][] = [
   ["enter", "home: open in matrix; matrix: show skills"],
   ["ctrl-k  :", "command palette"],
   ["P", "review a push, then type push to run it"],
-  ["h", "push screen: the pushes this host recorded; enter replays one"],
+  ["h", "push screen: the pushes this host recorded; enter replays one, u undoes one"],
   ["r", "ask every host again"],
   ["d", "doctor: ask each MCP server if it works (asks first; fills the matrix)"],
   ["c", "home: go to conflicts"],
@@ -118,5 +118,36 @@ export function drawDoctor(root: Canvas, state: State): void {
     ["y", { ...s.brandBold, ...bg }], [hosts > 1 ? " all hosts    " : " run    ", { ...s.muted, ...bg }],
     ...(hosts > 1 ? ([["t", { ...s.brandBold, ...bg }], [" this host only    ", { ...s.muted, ...bg }]] as [string, never][]) : []),
     ["esc", { ...s.brandBold, ...bg }], [" cancel", { ...s.muted, ...bg }],
+  ]);
+}
+
+/** A local `2026-11-22 14:30`. */
+function when(iso: string): string {
+  const d = new Date(iso);
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+/** Confirmation before the bridge undoes a selected push. */
+export function drawUndo(root: Canvas, state: State): void {
+  const entry = state.overlay?.kind === "undo" ? state.overlay.entry : null;
+  if (entry === null) return;
+  const c = frame(root, 68, 13, "undo this push?");
+  const bg = { bg: theme.surface };
+  const scope = entry.header.only === null ? "all hosts" : entry.header.only;
+  const lines: string[] = [
+    `Time: ${when(entry.header.time)}`,
+    `Commit: ${entry.header.commit?.slice(0, 7) ?? "unknown"}`,
+    `Scope: ${scope}`,
+    `${plural(entry.header.hosts.length, "host")}`,
+  ];
+  let y = 2;
+  for (const line of lines) {
+    c.text(3, y++, truncate(line, c.w - 6), { ...s.text, ...bg });
+  }
+  c.text(3, y + 1, truncate("This reverts the push with a new commit and publishes it to the same scope.", c.w - 6), { ...s.muted, ...bg });
+  segments(c, 3, c.h - 2, [
+    ["y", { ...s.brandBold, ...bg }], [" undo    ", { ...s.muted, ...bg }],
+    ["n", { ...s.brandBold, ...bg }], [" cancel", { ...s.muted, ...bg }],
   ]);
 }

@@ -24,6 +24,7 @@ import type { Relayed, Result, Sink } from "./output.ts";
 import { secrets } from "./secretscli.ts";
 import { skills } from "./skillsupdate.ts";
 import { status, statusAll, statusConflicts } from "./status.ts";
+import { undo } from "./undo.ts";
 import { update } from "./update.ts";
 import { ui } from "./ui/command.ts";
 
@@ -52,7 +53,7 @@ type Command = {
   /** False for a command `fleet agent` does not teach: an agent has no use for it. */
   agent?: false;
   args: number;
-  run?: (ctx: { color: boolean; json: boolean; args: string[]; message: string | undefined; all: boolean; conflicts: boolean; shell: boolean; review: boolean; yes: boolean; timeout: number | undefined; view: string | undefined; host: string | undefined; port: number | undefined; open: boolean; found: FoundConfig }) => Result | Relayed | Promise<Result | Relayed>;
+  run?: (ctx: { color: boolean; json: boolean; args: string[]; message: string | undefined; all: boolean; conflicts: boolean; shell: boolean; review: boolean; yes: boolean; noPush: boolean; timeout: number | undefined; view: string | undefined; host: string | undefined; port: number | undefined; open: boolean; found: FoundConfig }) => Result | Relayed | Promise<Result | Relayed>;
 };
 
 const commands: Command[] = [
@@ -64,6 +65,7 @@ const commands: Command[] = [
   { name: "ui", usage: "ui [--port <n>] [--no-open]", summary: "Open a page in your browser that shows this host and can push, served from this process on 127.0.0.1 and guarded by a random token in the URL it prints. It stops on ctrl-c, or after 10 minutes with no page open. Not for agents; no --json", effect: "change", agent: false, args: 0, run: ({ json, port, open, found }) => ui({ toolDir, configDir: () => configOf(found), home: homedir(), json, port, open, signal: interrupted() }) },
   { name: "apply", usage: "apply", summary: "Make this host match its config", effect: "change", args: 0, run: ({ color, json, found }) => apply(toolDir, configOf(found), color, undefined, json ? ["apply", "--json"] : ["apply"]) },
   { name: "push", usage: "push [-m <message>] [--host <name>]", summary: "Publish changes to GitHub, then apply on every host (-m sets the commit message; --host applies only on that host: this one or one with an ssh destination, after publishing as usual)", effect: "change", args: 0, run: ({ color, message, host, found }) => push(toolDir, configOf(found), message, color, undefined, progressFor(process.env, process.stderr), host) },
+  { name: "undo", usage: "undo [--no-push] [--yes] [<commit>]", summary: "Revert the last recorded push, or a named one, and push the revert to the same scope (--no-push stops after the revert commit; --yes skips the prompt)", effect: "change", args: 1, run: ({ color, json, args, yes, noPush, found }) => undo(toolDir, configOf(found), args, { noPush, yes, color, json, terminal: !json && process.stdin.isTTY === true && process.stdout.isTTY === true ? { stdin: process.stdin, stdout: process.stdout } : null }) },
   { name: "adopt", usage: "adopt mcp|skill <name>", summary: "Record an existing MCP server or skill as fleet's", effect: "change", args: 2, run: ({ color, args, found }) => adopt(configOf(found), args, color) },
   // Unbounded: `secrets` checks its own arguments, so a value typed by mistake is never echoed back.
   { name: "secrets", usage: "secrets edit <file> | set <file> <NAME> | rekey", summary: "Edit, set or rekey encrypted secrets", effect: "change", args: Infinity, run: ({ args, found }) => secrets(configOf(found), args) },
@@ -123,7 +125,7 @@ function dispatch(argv: string[]): { result: Promise<Result | Relayed> | Result 
   try {
     parsed = parseArgs({
       args: argv,
-      options: { json: { type: "boolean" }, help: { type: "boolean" }, all: { type: "boolean" }, conflicts: { type: "boolean" }, shell: { type: "boolean" }, review: { type: "boolean" }, yes: { type: "boolean" }, timeout: { type: "string" }, view: { type: "string" }, host: { type: "string" }, port: { type: "string" }, "no-open": { type: "boolean" }, message: { type: "string", short: "m" } },
+      options: { json: { type: "boolean" }, help: { type: "boolean" }, all: { type: "boolean" }, conflicts: { type: "boolean" }, shell: { type: "boolean" }, review: { type: "boolean" }, yes: { type: "boolean" }, "no-push": { type: "boolean" }, timeout: { type: "string" }, view: { type: "string" }, host: { type: "string" }, port: { type: "string" }, "no-open": { type: "boolean" }, message: { type: "string", short: "m" } },
       allowPositionals: true,
       strict: true,
     });
@@ -144,7 +146,8 @@ function dispatch(argv: string[]): { result: Promise<Result | Relayed> | Result 
   if (parsed.values.conflicts && command.name !== "status") return { result: invalid(`--conflicts is only for 'status'`), json };
   if (parsed.values.conflicts && parsed.values.all) return { result: invalid(`--conflicts and --all cannot be used together`), json };
   if (parsed.values.shell && command.name !== "demo") return { result: invalid(`--shell is only for 'demo'`), json };
-  if ((parsed.values.review || parsed.values.yes) && command.name !== "skills") return { result: invalid(`--review and --yes are only for 'skills update'`), json };
+  if ((parsed.values.review || parsed.values.yes) && command.name !== "skills" && command.name !== "undo") return { result: invalid(`--review and --yes are only for 'skills update' and 'undo'`), json };
+  if (parsed.values["no-push"] && command.name !== "undo") return { result: invalid(`--no-push is only for 'undo'`), json };
   if (parsed.values.timeout !== undefined && command.name !== "doctor") return { result: invalid(`--timeout is only for 'doctor'`), json };
   if (parsed.values.view !== undefined && command.name !== "bridge") return { result: invalid(`--view is only for 'bridge'`), json };
   if (parsed.values.host !== undefined && command.name !== "bridge" && command.name !== "push") return { result: invalid(`--host is only for 'bridge' and 'push'`), json };
@@ -156,7 +159,7 @@ function dispatch(argv: string[]): { result: Promise<Result | Relayed> | Result 
   if (parsed.values.message === "") return { result: invalid("the commit message after -m cannot be empty"), json };
   if (command.name === "help") return { result: helpResult(), json };
   if (!command.run) return { result: { code: "error", messages: [`fleet: '${name}' is not implemented yet`] }, json };
-  return { result: command.run({ color: !json && useColor(process.env, process.stdout.isTTY === true), json, args: rest, message: parsed.values.message, all: parsed.values.all === true, conflicts: parsed.values.conflicts === true, shell: parsed.values.shell === true, review: parsed.values.review === true, yes: parsed.values.yes === true, timeout, view: parsed.values.view, host: parsed.values.host, port, open: parsed.values["no-open"] !== true, found: findConfigDir() }), json };
+  return { result: command.run({ color: !json && useColor(process.env, process.stdout.isTTY === true), json, args: rest, message: parsed.values.message, all: parsed.values.all === true, conflicts: parsed.values.conflicts === true, shell: parsed.values.shell === true, review: parsed.values.review === true, yes: parsed.values.yes === true, noPush: parsed.values["no-push"] === true, timeout, view: parsed.values.view, host: parsed.values.host, port, open: parsed.values["no-open"] !== true, found: findConfigDir() }), json };
 }
 
 export async function main(argv: string[], sink: Sink): Promise<number> {
