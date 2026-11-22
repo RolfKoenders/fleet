@@ -383,7 +383,7 @@ test("it is in fleet help and in the primer as read-only", () => {
   assert.match(runFleet(s.clone, ["help"], { home: s.home }).stdout, /^ {2}context /m);
   const primer = runFleet(s.clone, ["agent"], { home: s.home }).stdout;
   const readOnly = primer.slice(primer.indexOf("### Read-only"), primer.indexOf("### Changes things"));
-  assert.match(readOnly, /^- `fleet context( \[--all\])?`/m);
+  assert.match(readOnly, /^- `fleet context( \[--all\])?( \[--usage\])?`/m);
 });
 
 test("symlinks are followed: a skill that is a link to a directory counts", () => {

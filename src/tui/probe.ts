@@ -1,9 +1,10 @@
 import { spawn } from "node:child_process";
 import { join } from "node:path";
 import { Worker } from "node:worker_threads";
-import { CONTEXT_COMMAND, hostContextFrom } from "../contextall.ts";
+import { CONTEXT_COMMAND, hostContextFrom, USAGE_COMMAND } from "../contextall.ts";
 import type { HostContext } from "../contextall.ts";
 import { measureHere } from "../contextcmd.ts";
+import { collectUsage } from "../usage.ts";
 import { readHostName } from "../host.ts";
 import { hostStatusFrom, printable, sshArguments } from "../status.ts";
 import type { StatusFields } from "../status.ts";
@@ -39,9 +40,10 @@ export type Probe = {
   conflicts(signal: AbortSignal): Promise<ConflictsResult>;
   /**
    * The startup context of a host: this host measured in place, another over ssh with `fleet context --json`. It reads
-   * files and starts no MCP server, so it is asked with the status.
+   * files and starts no MCP server, so it is asked with the status. With `usage` it also counts each agent's history
+   * on that host, which takes longer; only names and counts come back.
    */
-  context?(host: HostInfo, signal: AbortSignal): Promise<HostContext>;
+  context?(host: HostInfo, signal: AbortSignal, usage?: boolean): Promise<HostContext>;
   /** The conflicts on another host, in full, over ssh. Read-only there too: it neither clones nor fetches. */
   hostConflicts?(host: HostInfo, signal: AbortSignal): Promise<RemoteConflicts>;
   /** The config repo's history, one commit's changes, the secret names, and the catalog with the clones already on disk. None of them decrypts, clones, fetches or writes. */
@@ -108,9 +110,9 @@ export function readConflicts(stdout: string): Conflict[] | null {
 }
 
 /** Runs `ssh` without blocking, with the same arguments `fleet status --all` uses. */
-function ssh(path: string, dest: string, home: string, signal: AbortSignal, command?: string): Promise<{ error?: Error; status: number | null; stdout: string; stderr: string }> {
+function ssh(path: string, dest: string, home: string, signal: AbortSignal, command?: string, timeout = 60_000): Promise<{ error?: Error; status: number | null; stdout: string; stderr: string }> {
   return new Promise((resolve) => {
-    const child = spawn(path, command === undefined ? sshArguments(dest) : ["-o", "BatchMode=yes", "-o", "ConnectTimeout=10", dest, command], { stdio: ["ignore", "pipe", "pipe"], signal, timeout: 60_000, env: { ...process.env, HOME: home } });
+    const child = spawn(path, command === undefined ? sshArguments(dest) : ["-o", "BatchMode=yes", "-o", "ConnectTimeout=10", dest, command], { stdio: ["ignore", "pipe", "pipe"], signal, timeout, env: { ...process.env, HOME: home } });
     let [stdout, stderr] = ["", ""];
     child.stdout.setEncoding("utf8").on("data", (d: string) => (stdout += d));
     child.stderr.setEncoding("utf8").on("data", (d: string) => (stderr += d));
@@ -157,13 +159,17 @@ export function realProbe(toolDir: string, configDir: string, home: string): Pro
       return { result: answer.result as HostResult["result"], status: answer.status, ...(answer.result === "ok" ? {} : { detail: detail ?? "" }) };
     },
     doctor: (all, signal) => runDoctor(toolDir, configDir, home, readHostName(home), all, signal),
-    async context(host, signal) {
-      if (host.self) return { host: host.name, result: "ok", context: measureHere(configDir, home, new Date()).report };
+    async context(host, signal, usage = false) {
+      if (host.self) {
+        const now = new Date();
+        const report = measureHere(configDir, home, now).report;
+        return { host: host.name, result: "ok", context: usage ? { ...report, usage: await collectUsage(report, home, process.env, now) } : report };
+      }
       if (host.ssh === null) return { host: host.name, result: "timer", context: null };
       const path = findTool("ssh", process.env, home);
       if (path === null) return { host: host.name, result: "error", context: null, detail: "ssh is not installed" };
       const notes: string[] = [];
-      const answer = hostContextFrom(host.name, await ssh(path, host.ssh, home, signal, CONTEXT_COMMAND), notes);
+      const answer = hostContextFrom(host.name, await ssh(path, host.ssh, home, signal, usage ? USAGE_COMMAND : CONTEXT_COMMAND, usage ? 180_000 : 60_000), notes);
       if (answer.result !== "unreachable") return answer;
       // The note carries the reason ssh gave, already cut to printable text.
       return { ...answer, detail: printable((notes[0] ?? "").replace(/^fleet: [^:]*: /, "")) ?? "unreachable over ssh" };

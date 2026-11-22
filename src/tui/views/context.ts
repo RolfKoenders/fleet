@@ -3,6 +3,8 @@ import type { Canvas, Style } from "../buffer.ts";
 import type { ContextItem, ContextKind, ContextReport } from "../../context.ts";
 import { cells, distinct, largestAgent, partTexts, PARTS, totalText, unmeasuredReason } from "../../contextview.ts";
 import { formatTokens } from "../../tokens.ts";
+import { PRIVACY_NOTE } from "../../usage.ts";
+import { hintFor, historyText, rowsOf, shareText, uncountedLines } from "../../usageview.ts";
 import type { ContextLive, State } from "../app.ts";
 import { spinner, theme } from "../theme.ts";
 import { truncate } from "../width.ts";
@@ -77,6 +79,27 @@ function itemLine(item: ContextItem, nameWidth: number): Seg[] {
   return [size, [pad(item.name, nameWidth), s.sub], [pad(KIND_NAMES[item.kind], 13), { fg: colourOf(item.kind) }], ...marks];
 }
 
+/** The detail box while the usage key is on: for each counted agent its servers and skills with their size, calls and share of sessions, then the suggestions. */
+function usageLines(report: ContextReport, live: ContextLive | undefined, state: State): Seg[][] {
+  const usage = report.usage;
+  if (usage === undefined) return [[live?.phase === "loading" ? [`${spinner(state.now, state.motion)} counting the history on this host`, s.sub] : ["no usage from this host: it did not send any, perhaps on an older pin", s.warn]]];
+  const lines: Seg[][] = [[[`last ${plural(usage.windowDays, "day")}`, s.muted], [historyText(usage) === "" ? "" : ` (${historyText(usage)})`, s.muted]]];
+  const suggestions: Seg[][] = [];
+  for (const agent of usage.agents.filter((a) => a.status === "ok")) {
+    const rows = agent.days === 0 ? [] : rowsOf(report, agent);
+    lines.push([[pad(agent.agent, 10), s.sub], [agent.days === 0 ? "no history" : plural(agent.sessions, "session"), s.muted]]);
+    const nameWidth = Math.max(8, Math.min(30, ...rows.map((r) => r.item.name.length)));
+    for (const row of rows) {
+      const size = row.item.tokens === null ? "unknown" : formatTokens(row.item.tokens);
+      lines.push([[pad(size, 9), s.text], [pad(row.item.name, nameWidth + 2), s.sub], [pad(row.item.kind === "mcp" ? "mcp" : "skill", 7), { fg: colourOf(row.item.kind) }], [pad(`${row.found.calls} ${row.found.calls === 1 ? "call" : "calls"}`, 10), s.text], [shareText(row.found, agent.sessions), s.muted]]);
+      const hint = hintFor(usage, agent, row);
+      if (hint !== null) suggestions.push([[row.item.name, s.warn], [`: ${hint}`, s.warn]]);
+    }
+  }
+  for (const line of uncountedLines(usage)) lines.push([[line, s.muted]]);
+  return [...lines, ...suggestions, [[PRIVACY_NOTE, s.faint]]];
+}
+
 function detail(c: Canvas, y: number, h: number, state: State, agentW: number): void {
   const host = state.model.hosts[state.contextHost];
   if (host === undefined) return;
@@ -89,6 +112,8 @@ function detail(c: Canvas, y: number, h: number, state: State, agentW: number): 
   if (old !== null) lines.push([[`${old}, not live; asking again`, s.warn]]);
   if (report === null) {
     lines.push([noReport(live, state)]);
+  } else if (state.contextUsage) {
+    lines.push(...usageLines(report, live, state));
   } else {
     for (const a of report.agents) {
       const texts = partTexts(a);

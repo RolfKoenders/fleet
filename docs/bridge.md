@@ -27,7 +27,27 @@ Tab `8` shows how much each agent on each host loads before its first prompt, as
 
 Each home card has one line, `context ~18.6k`: the largest agent's total, with a `+` when a server is not measured. A host whose fleet is too old to have `fleet context` shows nothing there.
 
+Press `u` on this tab to switch on usage: how often each MCP server and skill was used. It replaces the largest items under the bars with the selected host's servers and skills, each with its size, its calls and the share of sessions it was called in, then a line for each one that was never called and costs real tokens. Every host is asked again to count its own history, which takes longer than reading config, so it is asked only while usage is on (a refresh with `r` counts again); `u` again goes back. What a host counts is described in [usage](#usage) below. The bridge keeps usage in memory only and never writes it to its memory file.
+
 The bridge asks each host for it by itself, together with the status: when it opens and on `r`, and again when a doctor run finishes, since the sizes just changed. For another host that is one more ssh call, `fleet context --json`. It reads files and starts no server, so it needs no confirmation, and doctor still runs only on `d`. What an earlier run saw is shown at once, marked "seen 2h ago, not live", until the host answers.
+
+## Usage
+
+`fleet context` says what each MCP server and skill costs before the first prompt. `fleet context --usage` adds whether anyone uses them: for each server and skill, its calls and the share of sessions it was called in, in the last 30 days, next to its size.
+
+```
+Claude Code: 41 sessions
+  tracker  mcp    ~14.2k   0 calls  in 0% of sessions
+  review   skill   ~410   26 calls  in 29% of sessions
+```
+
+Plain `fleet context` stays instant, because it reads no history. `--usage` reads each agent's own history on the host, which can take a second or two. Claude Code's transcripts and opencode's database are read; Antigravity CLI keeps its conversations in a format that is not documented, so it says "no readable history". An agent whose history cannot be read, such as an opencode database fleet does not recognise or a Node without `node:sqlite`, says `usage unavailable for opencode: <reason>` and the others are still shown. That is never an error.
+
+The window is the last 30 days, or less where an agent keeps less. The output says how much history each agent had (`Claude Code: 30 days, opencode: 9 days`), and "never called" is said only where there are at least 30 days of it, since with less a server may just not have been needed yet. For each server or skill that was never called and costs real tokens, one line says so: `never called in 30 days, 3.5k tokens per session: consider exclude`. Fleet only reports; it changes nothing.
+
+Both a skill the agent ran and a `/name` you typed count. For a typed command only the command name is read, never the text after it, and only names that match a skill fleet knows (a built-in such as `/compact` does not count). A session is a top-level session: a subagent's calls count toward the session that started it. With `--all` each host counts its own history and sends back only names and numbers, and the local side adds them up per name.
+
+**Privacy.** Transcripts hold your prompts, your files and tool output, and fleet does not keep any of it. It reads only tool names, skill names, session ids and times from each history, drops every other line as it goes, and neither stores nor sends the rest. What is printed, returned by `--json` or sent over ssh is names and counts, and the output ends with `read locally, names and counts only`. The bridge's `u` key shows the same counts, and its memory file never holds them. `--json` adds `usage`: for each agent its `status` (`ok`, `none` or `unavailable`), `days` of history, `sessions`, and the `calls` and `sessions` of each server and skill; with `--all` also `usageAll`, the hosts added up.
 
 ## Pushing from the bridge
 

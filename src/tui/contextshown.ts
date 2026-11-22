@@ -29,7 +29,8 @@ function kept(items: ContextItem[]): ContextItem[] {
 
 const agentOf = (a: AgentContext): AgentContext => ({ ...a, items: kept(a.items), notes: [] });
 
-export const shown = (report: ContextReport): ContextReport => ({ agents: report.agents.map(agentOf), notes: [] });
+/** Usage, when the report has it, is kept with every item it counted, since a row of it needs its item's size. It is only held in memory, never remembered (see `toMemory`). */
+export const shown = (report: ContextReport): ContextReport => ({ agents: report.agents.map((a) => (report.usage === undefined ? agentOf(a) : { ...a, items: a.items.map(plain), notes: [] })), notes: [], ...(report.usage === undefined ? {} : { usage: report.usage }) });
 
 // ---- what the cards say ----
 

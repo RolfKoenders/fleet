@@ -1,6 +1,8 @@
 import { homedir } from "node:os";
 import { currentDefinitions, measureContext } from "./context.ts";
 import { renderContext } from "./contextview.ts";
+import { collectUsage, PRIVACY_NOTE } from "./usage.ts";
+import { renderUsage } from "./usageview.ts";
 import { readHostName } from "./host.ts";
 import { agentsOnHost } from "./hostagents.ts";
 import type { ContextReport } from "./context.ts";
@@ -41,4 +43,15 @@ export function measureHere(configDir: string | null, home: string, now: Date): 
 export function context(configDir: string | null, color: boolean, home: string = homedir(), now: Date = new Date(), env: NodeJS.ProcessEnv = process.env): Result {
   const { report, messages } = measureHere(configDir, home, now);
   return { code: "ok", text: renderContext(report, levelFor(color, env)), messages, fields: { ...report } };
+}
+
+/**
+ * `fleet context --usage`: the same report, and under it how often each MCP server and skill was used in the last 30
+ * days, read from each agent's own history on this host. Slower than `context`, which reads no history. Only names
+ * and counts are kept or printed.
+ */
+export async function contextWithUsage(configDir: string | null, color: boolean, home: string = homedir(), now: Date = new Date(), env: NodeJS.ProcessEnv = process.env): Promise<Result> {
+  const here = measureHere(configDir, home, now);
+  const report: ContextReport = { ...here.report, usage: await collectUsage(here.report, home, env, now) };
+  return { code: "ok", text: [renderContext(report, levelFor(color, env)), "", ...renderUsage(report), "", PRIVACY_NOTE].join("\n"), messages: here.messages, fields: { ...report } };
 }

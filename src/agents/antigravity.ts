@@ -76,4 +76,8 @@ export const antigravity: Agent<"antigravity"> = {
     dirs: ["~/.gemini/config/rules"],
     setting: null,
   },
+
+  // https://antigravity.google/docs/cli/conversations/ : conversations are `~/.gemini/antigravity-cli/conversations/<uuid>.db`,
+  // SQLite files whose rows are protobuf-like blobs, and the format is not documented. Nothing is read.
+  usage: { read: async () => ({ ok: false, kind: "none", reason: "no readable history" }) },
 };
