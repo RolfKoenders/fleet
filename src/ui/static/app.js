@@ -1,6 +1,6 @@
 // The page: the shell, routing between screens, and drawing the state from state.js.
 import { ApiError, createClient, openStream } from "./api.js";
-import { dropToken, loadOps, pageToken, saveOps, tabStore } from "./session.js";
+import { dropToken, loadCaptured, loadOps, pageToken, saveCaptured, saveOps, tabStore } from "./session.js";
 import { linkBanner, linkUsable, linkWord } from "./link.js";
 import { jobLabel, jobsOf, withJobs } from "./jobs.js";
 import { changed, counts, lineDiff, splitLines, tokenize } from "./diff.js";
@@ -17,6 +17,8 @@ import { canCopyImage, CARD_SIZE, clipboardProblem, discussionUrl, embedFonts, F
 import { itemYaml, yamlPath, yamlTag } from "./yamlview.js";
 import { withFleetDoc } from "./fleet.js";
 import { fleetScreen } from "./fleetview.js";
+import { captureScreen } from "./captureview.js";
+import { decisionOf, doneWords, draftOf as captureDraft, idOf as captureId } from "./capture.js";
 import { heldFiles, idlePush, plain, pushEnd, pushEvent, routeOf, statusView, tokenOf, writtenNotice } from "./state.js";
 
 /** @typedef {import("./state.js").Held} Held */
@@ -53,7 +55,9 @@ $("local").textContent = `${location.host} · only this machine`;
  *   yaml: Record<string, string>, yamlErrors: Record<string, string>, yamlOpen: Set<string>,
  *   rm: RemoveState | null, removal: import("./hosts.js").InitState, removalError: string | null,
  *   card: { style: string, names: boolean, doc: any, svg: string | null, url: string | null, error: string | null, message: { text: string, tone: string } | null, busy: boolean }
- *   fleet: any, fleetError: string | null, fleetAsking: boolean, fleetOpen: Set<string>
+ *   fleet: any, fleetError: string | null, fleetAsking: boolean, fleetOpen: Set<string>,
+ *   capture: { doc: any, error: string | null, drafts: Record<string, import("./capture.js").Draft>, done: Record<string, string>, busy: string | null, notice: string | null },
+ *   captured: { kind: string, name: string }[],
  * }}
  */
 const model = {
@@ -67,11 +71,21 @@ const model = {
   rm: null, removal: idleInit(), removalError: null,
   card: { style: "machines", names: false, doc: null, svg: null, url: null, error: null, message: null, busy: false },
   fleet: null, fleetError: null, fleetAsking: false, fleetOpen: new Set(),
+  capture: { doc: null, error: null, drafts: {}, done: {}, busy: null, notice: null },
+  captured: [],
 };
 
 // The To push list is restored after a reload. See session.js: it holds edits only, never a plain secret value.
 if (token !== null) model.ops = loadOps(store);
 let savedOps = model.ops;
+// What Capture answered and has not pushed is restored with it: the same tab, names only.
+if (token !== null) {
+  const kept = loadCaptured(store);
+  model.captured = kept.captured;
+  model.capture.done = kept.done;
+}
+let savedCaptured = model.captured;
+let savedDone = model.capture.done;
 
 /** The token will never be valid again: this page is talking to a server that was started again. */
 function denied() {
@@ -135,6 +149,13 @@ function render() {
     savedOps = model.ops;
     saveOps(store, model.ops);
   }
+  if (model.captured !== savedCaptured || model.capture.done !== savedDone) {
+    savedCaptured = model.captured;
+    savedDone = model.capture.done;
+    saveCaptured(store, { captured: model.captured, done: model.capture.done });
+  }
+  const loose = Number(model.status?.unmanaged ?? 0);
+  $("capturecount").textContent = loose > 0 ? String(loose) : "";
   const s = model.status ? statusView(model.status) : null;
   fill($("repo"), ...(s ? [h("b", {}, s.host), ...(model.status?.repos?.fleet ? [h("span", {}, `${model.status.repos.fleet.branch ?? "detached"}@${String(model.status.repos.fleet.sha).slice(0, 7)}`)] : [])] : []));
 
@@ -173,6 +194,7 @@ function screen(route) {
   if (route === "catalog") return catalogScreen();
   if (route === "hosts") return hostsScreen();
   if (route === "card") return cardScreen();
+  if (route === "capture") return captureView();
   return secretsScreen();
 }
 
@@ -2002,6 +2024,8 @@ function focusHost(host) {
 
 function discardAll() {
   model.ops = [];
+  model.captured = [];
+  model.capture = { ...model.capture, done: {} };
   model.held = {};
   model.plan = null;
   model.messageEdited = false;
@@ -2029,11 +2053,13 @@ async function writeAndPush() {
       // Read the state after the answer: the stream has been filling it (lanes, log) while the call was open.
       model.push = pushEnd(model.push, end);
     } else {
-      const done = await client.write(model.ops, message, model.stagedSkills);
+      const done = await client.write(model.ops, message, model.stagedSkills, model.captured);
       model.push = pushEnd(model.push, done.push);
       // The files are committed whether or not the push went through, so the edits are no longer held either way.
       model.pushNotice = writtenNotice(done.written, done.code);
       model.ops = [];
+      model.captured = [];
+      model.capture = { ...model.capture, done: {} };
       model.plan = null;
       model.messageEdited = false;
     }
@@ -2044,6 +2070,7 @@ async function writeAndPush() {
   loadStatus();
   loadMatrix();
   loadSecrets();
+  if (routeOf(location.hash) === "capture") loadCapture();
 }
 
 async function loadStatus() {
@@ -2118,6 +2145,70 @@ async function openFleet() {
   askFleet();
 }
 
+// ---- Capture: what this machine has that is not from config
+
+const captureView = () =>
+  captureScreen({
+    doc: model.capture.doc,
+    error: model.capture.error,
+    usable: usable(),
+    busy: model.capture.busy,
+    drafts: model.capture.drafts,
+    done: model.capture.done,
+    agents: agentList(),
+    notice: model.capture.notice,
+    change: (id, draft) => {
+      model.capture = { ...model.capture, drafts: { ...model.capture.drafts, [id]: draft } };
+      render();
+    },
+    answer: (item, action) => void answerCapture(item, action),
+  });
+
+/** What this machine has now. Each item starts from the answer its defaults give, and keeps one the person already changed. */
+async function loadCapture() {
+  if (client === null) return;
+  try {
+    const doc = await client.capture();
+    const drafts = Object.fromEntries(doc.items.map((/** @type {any} */ item) => [captureId(item), model.capture.drafts[captureId(item)] ?? captureDraft(item)]));
+    model.capture = { ...model.capture, doc, drafts, error: null };
+  } catch (e) {
+    model.capture = { ...model.capture, error: e instanceof ApiError ? `${e.messages.join("; ") || e.message} (${e.code})` : "this machine could not be read" };
+  }
+  render();
+}
+
+/**
+ * One answer about one item. Taking over what already matches is done at once (it changes nothing in the config); the rest is
+ * worked out by the server into held edits, which go on To push with the ones already there.
+ * @param {any} item @param {"add" | "takeover" | "ignore"} action
+ */
+async function answerCapture(item, action) {
+  if (client === null || model.capture.busy !== null) return;
+  const id = captureId(item);
+  const draft = model.capture.drafts[id] ?? captureDraft(item);
+  model.capture = { ...model.capture, busy: id, error: null, notice: null };
+  render();
+  try {
+    if (action === "takeover") {
+      const out = await client.captureTakeover([{ kind: item.kind, name: item.name }]);
+      model.capture = { ...model.capture, notice: out.problems.length > 0 ? out.problems.map(plain).join("; ") : out.rewrites.length > 0 ? `Taken over. ${out.rewrites.length} of its entries differ and the next apply rewrites them.` : null };
+      await loadStatus();
+    } else {
+      const out = await client.captureBuild(model.ops, model.stagedSkills, decisionOf(item, action, draft));
+      model.ops = out.ops;
+      model.stagedSkills = out.staged;
+      if (out.takeover) model.captured = [...model.captured.filter((c) => c.kind !== item.kind || c.name !== item.name), { kind: item.kind, name: item.name }];
+      model.capture = { ...model.capture, done: { ...model.capture.done, [id]: doneWords(action, draft.scope) } };
+      refreshPreview();
+    }
+  } catch (e) {
+    model.capture = { ...model.capture, error: said(e, "that could not be worked out") };
+  }
+  model.capture = { ...model.capture, busy: null };
+  render();
+  if (action === "takeover") loadCapture();
+}
+
 /** Each screen reads what it shows when it is opened, so it is never older than the click that opened it. */
 function opened() {
   const route = routeOf(location.hash);
@@ -2125,6 +2216,7 @@ function opened() {
   render();
   if (route === "fleet") openFleet();
   if (route === "secrets") loadSecrets();
+  if (route === "capture") loadCapture();
   if (route === "card") loadCard();
   if (route === "review") loadPlan();
   if (route === "matrix" || route === "catalog" || route === "hosts") loadMatrix();

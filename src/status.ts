@@ -3,7 +3,8 @@ import { readdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { AGENT_IDS, AGENTS, hostAgents, isAgentId } from "./agents/index.ts";
-import type { AgentId } from "./agents/index.ts";
+import type { AgentId, Registered } from "./agents/index.ts";
+import { countUnmanaged, ignoredItems } from "./capture/machine.ts";
 import { planConflicts, planCounts } from "./apply.ts";
 import { readSchedule } from "./config.ts";
 import { MissingToolError, repoState } from "./git.ts";
@@ -49,6 +50,8 @@ export type StatusFields = {
   agents: AgentStatus[] | null;
   /** The ids of agents fleet applied config for earlier and cannot find on the host now. Ids, not sentences, so a reader words them itself. Null when the host's fleet does not send it. */
   notInstalled: AgentId[] | null;
+  /** MCP servers and skills on the host that are not from config and not in its `unmanaged` list (`fleet capture` lists them). Null when the host's fleet does not send it, or it could not be counted. */
+  unmanaged: number | null;
   tools: ToolVersions;
   /** The host's operating system, for the fleet card. Null when the host's fleet does not send it. */
   os: HostOs | null;
@@ -216,9 +219,19 @@ function lines(fields: StatusFields, color: boolean, clone: string | null): stri
     `pending: ${shown(fields.pending)}`,
     `conflicts: ${fields.conflicts === null || fields.conflicts === 0 ? shown(fields.conflicts) : paint(color, "yellow", String(fields.conflicts))}`,
     ...(fields.agents === null ? [] : [agentsLine(fields.agents)]),
+    ...(fields.unmanaged === null || fields.unmanaged === 0 ? [] : [`not from config: ${paint(color, "yellow", String(fields.unmanaged))} (fleet capture lists them)`]),
     "tools:",
     ...TOOL_NAMES.filter((name) => (isAgentId(name) && fields.agents !== null ? fields.agents.some((a) => a.id === name) : fields.tools[name] !== undefined)).map((name) => `  ${name}: ${shown(fields.tools[name])}`),
   ];
+}
+
+/** How many things capture would list on this host, or null when they cannot be read: a count is never worth a failed status. */
+function unmanagedOn(configDir: string, home: string, host: string, agents: Registered[]): number | null {
+  try {
+    return countUnmanaged(home, agents, ignoredItems(configDir, host));
+  } catch {
+    return null;
+  }
 }
 
 /** Reads this host. Writes nothing and uses no network. */
@@ -245,6 +258,7 @@ function collect(toolDir: string, configDir: string, home: string, host: string 
     os: statusOs(home) === "darwin" ? "macos" : "linux",
     agents: named.map((a) => ({ id: a.id, version: versions[a.id] ?? null, active: on.includes(a), pinned: pin?.includes(a.id) ?? false })),
     notInstalled,
+    unmanaged: host === null ? null : unmanagedOn(configDir, home, host, on),
     tools: {
       ...Object.fromEntries([...LEGACY_TOOL_KEYS.map((id) => [id, null]), ...named.map((a) => [a.id, versions[a.id] ?? null])]),
       sops: toolVersion("sops", SOPS_VERSION_ARGS, home),
@@ -330,6 +344,7 @@ export function statusFromDocument(doc: Obj): StatusFields | null {
     pending: count(doc.pending),
     conflicts: count(doc.conflicts),
     conflictList: conflictNames(doc.conflictList),
+    unmanaged: count(doc.unmanaged),
     agents: agentStatuses(doc.agents),
     os: doc.os === "linux" || doc.os === "macos" ? doc.os : null,
     notInstalled: Array.isArray(doc.notInstalled) ? AGENT_IDS.filter((id) => (doc.notInstalled as unknown[]).includes(id)) : null,

@@ -68,6 +68,7 @@ function factsOf(status) {
     { label: "timer", value: timer ?? "unknown", tone: timer === "active" ? "ok" : timer === null ? "" : "warn" },
     { label: "pending", value: pending === null ? "unknown" : String(pending), tone: pending ? "warn" : "" },
   ];
+  if (typeof status.unmanaged === "number" && status.unmanaged > 0) rows.push({ label: "not from config", value: `${status.unmanaged}: fleet capture`, tone: "warn" });
   const fleet = status.repos?.fleet;
   if (fleet) rows.push({ label: "clone", value: `${fleet.branch ?? "detached"}@${String(fleet.sha).slice(0, 7)}${fleet.clean ? "" : " dirty"}`, tone: fleet.clean ? "" : "warn" });
   return rows;

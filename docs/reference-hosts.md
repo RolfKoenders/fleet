@@ -17,7 +17,7 @@ How the two files combine depends on the key:
 | `settings` | Merged key by key, down to the leaves. The host's value wins at the same key. |
 | `files` | Merged by `target`. A host record replaces the default record with the same target and keeps its place. |
 
-`ssh`, `age` and `admin` are for one machine, so only a host file may set them. Fleet refuses them in the defaults.
+`ssh`, `age`, `admin` and `unmanaged` are for one machine, so only a host file may set them. Fleet refuses them in the defaults.
 
 An unknown key is an error in either file, and the message names the file and the key. This is why every host has to run a fleet version that knows a key before a file uses it.
 
@@ -218,8 +218,19 @@ Marks the machine you work from. Exactly one host file has `admin: true`. Its ke
 admin: true
 ```
 
+### `unmanaged`
+
+Type: list of strings. Default: none. Added in: not yet released.
+
+The MCP servers and skills on this machine that `fleet capture` and `fleet status` leave alone: each item is `mcp:<name>` or `skill:<name>`. An ignored item is not listed by capture, not counted as "not from config", and never touched: fleet only writes this list, it does not change the machine. A host file may have it; the defaults may not, because what one machine has by hand says nothing about another. `fleet capture mcp <name> --ignore` and the Ignore button of the Capture screen add to it. See [Capture](capture.md).
+
+```yaml
+unmanaged: [mcp:scratch-server, skill:my-notes]
+```
+
 ## See also
 
 - [`catalog/mcp.yaml`](reference-catalog-mcp.md) for the servers `mcp.include` picks from.
 - [`catalog/skills.yaml`](reference-catalog-skills.md) for the bundles `bundles` picks from.
 - [Setting up machines](setting-up-machines.md) for ssh, agents and the timer.
+- [Capture](capture.md) for what `unmanaged` hides.

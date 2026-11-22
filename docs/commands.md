@@ -181,6 +181,28 @@ fleet undo [--no-push] [--yes] [<commit>]
 
 **JSON.** Adds `commit` (the push that was reverted), `reverted` and `pushed`. When the revert was pushed, also the push's `hosts`.
 
+## `fleet capture`
+
+**Changes things.** It writes to this host, to the config repo or to other hosts.
+
+Turn the MCP servers and skills this machine has, and the config does not, into config: on a terminal it asks about each (add for this host, add for every host, ignore, or take over one that already matches), then writes and commits the config and asks before it pushes. Reads only this machine; a value that becomes a secret goes to sops and is never printed. Without a terminal it only reports what it found.
+
+```text
+fleet capture [mcp|skill <name> --host|--all|--ignore] [--yes] [--no-push]
+```
+
+**Options**
+
+- `--host`: Capture the named item for this host only.
+- `--all`: Capture the named item for every host.
+- `--ignore`: Stop listing the named item on this host (it is added to `unmanaged` in the host file).
+- `--yes`: Capture every item the way the defaults say (this host, a secret for each key named like one) and push without asking.
+- `--no-push`: Stop after the commit.
+
+**JSON.** Adds `items` (what was found: `kind`, `name`, `state`, `message`, `agents`, `variants` with the names of env variables and headers and never a value), `differs`, `unmanaged` and `notes`. It writes nothing unless `--yes`, or an item with `--host`, `--all` or `--ignore`, is given; then it adds `captured`, `commit`, `files`, `takenOver`, `rewrites` and `pushed`, and the push's own fields when it pushed.
+
+**Guide.** [Capture](capture.md)
+
 ## `fleet adopt`
 
 **Changes things.** It writes to this host, to the config repo or to other hosts.

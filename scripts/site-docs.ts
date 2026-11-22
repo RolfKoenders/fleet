@@ -31,6 +31,7 @@ export const NAV: Section[] = [
     pages: [
       page("bridge.md", "The bridge", "The full-screen view of every host, and pushing from it."),
       page("ui.md", "The page", "fleet ui: see and change your whole fleet in a browser."),
+      page("capture.md", "Capture", "Turn the MCP servers and skills a machine already has into config."),
       page("mcp-logins.md", "MCP logins", "How each tool logs in to an MCP server, on this machine and over ssh."),
       page("adding-an-agent.md", "Adding an agent", "What it takes for fleet to support another coding agent."),
     ],

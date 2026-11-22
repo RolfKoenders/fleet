@@ -58,6 +58,11 @@ function opOf(raw: unknown, i: number): EditOp {
       if (!ok) throw new BadRequest(`${at} is not an add or remove of a bundle or server for a host`);
       return { op: o.op, host: o.host as string, kind: o.kind as "bundles" | "mcp", name: o.name as string };
     }
+    case "addEverywhere": {
+      const ok = (o.kind === "bundles" || o.kind === "mcp") && typeof o.name === "string" && NAME.test(o.name);
+      if (!ok) throw new BadRequest(`${at} is not an add of a bundle or server for every host`);
+      return { op: "addEverywhere", kind: o.kind as "bundles" | "mcp", name: o.name as string };
+    }
     case "addServer":
       return { op: "addServer", ...serverOf(at, o) };
     case "addSource":
@@ -80,6 +85,11 @@ function opOf(raw: unknown, i: number): EditOp {
       return { op: "editHost", ...editedHostOf(at, o) };
     case "setSecret":
       return { op: "setSecret", ...setSecretOf(at, o) };
+    case "ignore": {
+      const ok = typeof o.host === "string" && NAME.test(o.host) && typeof o.item === "string" && /^(mcp|skill):[A-Za-z0-9][A-Za-z0-9._-]*$/.test(o.item) && o.item.length <= MAX_NAME + 6;
+      if (!ok) throw new BadRequest(`${at} is not an ignore of mcp:<name> or skill:<name> for a host`);
+      return { op: "ignore", host: o.host as string, item: o.item as string };
+    }
     default:
       throw new BadRequest(`${at} is not an edit the page may make`);
   }

@@ -369,3 +369,16 @@ i.seg.instructions { background: var(--brand); } i.seg.skills { background: var(
 .ctxlegend { margin: 14px 0 0; }
 @media (max-width: 760px) { .ctxagent { grid-template-columns: 64px minmax(80px, 1fr) 60px; } .fleetcards { grid-template-columns: minmax(0, 1fr); } }
 .fleetcard dl.facts.small { grid-template-columns: 100px minmax(0, 1fr); }
+
+/* Capture */
+.capture { display: grid; gap: var(--space-4); }
+.capture-item { padding: 14px 16px; }
+.capture-item h3 { margin: 0 0 6px; }
+.capture-form { display: grid; gap: 10px; margin: 8px 0 12px; }
+.capture-form .variants { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 10px; }
+.capture-form .variant { display: grid; gap: 6px; align-content: start; padding: 10px 12px; border: 1px solid var(--soft); border-radius: var(--radius); overflow-wrap: anywhere; }
+.capture-form .variant.on { border-color: var(--brand-line); background: var(--brand-wash); }
+.capture-form .keys { display: grid; gap: 6px; }
+.capture-form .keyrow { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.capture-form .keyrow input[type=text] { width: 16em; font: 13px var(--mono); }
+.capture-item .row:last-child { margin-bottom: 0; }

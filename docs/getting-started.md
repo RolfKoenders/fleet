@@ -53,6 +53,7 @@ fleet push -m "Add a skill"
 | `fleet apply` | Make this machine match its config |
 | `fleet push` | Publish the config and apply it; `--host <name>` applies only on that host |
 | `fleet undo [--no-push] [--yes] [<commit>]` | Revert the last recorded push, or a named one, and push the revert to the same scope; `--no-push` stops after the revert commit, `--yes` skips the prompt |
+| `fleet capture [mcp\|skill <name> --host\|--all\|--ignore] [--yes] [--no-push]` | Turn the MCP servers and skills this machine has, and the config does not, into config: it asks about each, writes and commits the config (secrets go to sops, never in the catalog) and asks before it pushes; without a terminal it only reports. See [Capture](docs/capture.md) |
 | `fleet adopt` | Take ownership of an MCP server or skill that already matches |
 | `fleet secrets` | Edit, set or rekey encrypted secrets |
 | `fleet skills update` | Move pinned skill sources to their latest commit; `--review` shows what changed first and asks per source |

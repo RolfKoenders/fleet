@@ -9,7 +9,7 @@ export const TOOL_KEYS = ["repo", "commit", "track"];
 /** Keys of `hosts/_defaults.yaml`, which a host file may also set. */
 export const SHARED_KEYS = ["vars", "bundles", "exclude", "mcp", "settings", "files", "agents", "timer"];
 /** Keys only a host file may set. */
-export const HOST_ONLY_KEYS = ["ssh", "age", "admin"];
+export const HOST_ONLY_KEYS = ["ssh", "age", "admin", "unmanaged"];
 /** What `mcp` holds, and what an entry of `files` holds. */
 export const MCP_SELECT_KEYS = ["include", "exclude"];
 export const FILE_RECORD_KEYS = ["source", "target"];

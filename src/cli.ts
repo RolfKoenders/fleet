@@ -5,6 +5,7 @@ import { parseArgs } from "node:util";
 import { adopt } from "./adopt.ts";
 import { agent } from "./agent.ts";
 import { apply, diff, failure } from "./apply.ts";
+import { capture } from "./capturecmd.ts";
 import { card } from "./card/command.ts";
 import { contextAll } from "./contextall.ts";
 import { context } from "./contextcmd.ts";
@@ -67,7 +68,7 @@ export type Command = {
   /** False for a command `fleet agent` does not teach: an agent has no use for it. */
   agent?: false;
   args: number;
-  run?: (ctx: { color: boolean; json: boolean; args: string[]; message: string | undefined; all: boolean; conflicts: boolean; shell: boolean; review: boolean; yes: boolean; noPush: boolean; timeout: number | undefined; view: string | undefined; host: string | undefined; port: number | undefined; open: boolean; style: string | undefined; names: boolean; badge: boolean; found: FoundConfig }) => Result | Relayed | Promise<Result | Relayed>;
+  run?: (ctx: { color: boolean; json: boolean; args: string[]; message: string | undefined; all: boolean; conflicts: boolean; shell: boolean; review: boolean; yes: boolean; noPush: boolean; thisHost: boolean; ignore: boolean; timeout: number | undefined; view: string | undefined; host: string | undefined; port: number | undefined; open: boolean; style: string | undefined; names: boolean; badge: boolean; found: FoundConfig }) => Result | Relayed | Promise<Result | Relayed>;
 };
 
 export const commands: Command[] = [
@@ -81,6 +82,7 @@ export const commands: Command[] = [
   { name: "apply", usage: "apply", summary: "Make this host match its config", effect: "change", json: "Adds `created`, `updated`, `removed`, `forgotten`, `unchanged`, `warnings`, `conflicts` and `timer`.", args: 0, run: ({ color, json, found }) => apply(toolDir, configOf(found), color, undefined, json ? ["apply", "--json"] : ["apply"]) },
   { name: "push", usage: "push [-m <message>] [--host <name>]", summary: "Publish changes to GitHub, then apply on every host (-m sets the commit message; --host applies only on that host: this one or one with an ssh destination, after publishing as usual)", effect: "change", options: [{ flag: "-m <message>", summary: "set the commit message" }, { flag: "--host <name>", summary: "apply only on this host" }], json: "Adds `hosts`: one entry for each host, with its `result`, `changes`, `conflicts`, `created`, `updated` and `removed`. A conflict on this host also adds a top-level `conflicts`.", args: 0, run: ({ color, message, host, found }) => push(toolDir, configOf(found), message, color, undefined, progressFor(process.env, process.stderr), host) },
   { name: "undo", usage: "undo [--no-push] [--yes] [<commit>]", summary: "Revert the last recorded push, or a named one, and push the revert to the same scope (--no-push stops after the revert commit; --yes skips the prompt)", effect: "change", options: [{ flag: "--no-push", summary: "stop after the revert commit" }, { flag: "--yes", summary: "skip the prompt" }], json: "Adds `commit` (the push that was reverted), `reverted` and `pushed`. When the revert was pushed, also the push's `hosts`.", args: 1, run: ({ color, json, args, yes, noPush, found }) => undo(toolDir, configOf(found), args, { noPush, yes, color, json, terminal: !json && process.stdin.isTTY === true && process.stdout.isTTY === true ? { stdin: process.stdin, stdout: process.stdout } : null }) },
+  { name: "capture", usage: "capture [mcp|skill <name> --host|--all|--ignore] [--yes] [--no-push]", summary: "Turn the MCP servers and skills this machine has, and the config does not, into config: on a terminal it asks about each (add for this host, add for every host, ignore, or take over one that already matches), then writes and commits the config and asks before it pushes. Reads only this machine; a value that becomes a secret goes to sops and is never printed. Without a terminal it only reports what it found", effect: "change", options: [{ flag: "--host", summary: "capture the named item for this host only" }, { flag: "--all", summary: "capture the named item for every host" }, { flag: "--ignore", summary: "stop listing the named item on this host (it is added to `unmanaged` in the host file)" }, { flag: "--yes", summary: "capture every item the way the defaults say (this host, a secret for each key named like one) and push without asking" }, { flag: "--no-push", summary: "stop after the commit" }], json: "Adds `items` (what was found: `kind`, `name`, `state`, `message`, `agents`, `variants` with the names of env variables and headers and never a value), `differs`, `unmanaged` and `notes`. It writes nothing unless `--yes`, or an item with `--host`, `--all` or `--ignore`, is given; then it adds `captured`, `commit`, `files`, `takenOver`, `rewrites` and `pushed`, and the push's own fields when it pushed.", args: 2, run: ({ color, json, args, yes, noPush, thisHost, all, ignore, found }) => capture(toolDir, configOf(found), args, { host: thisHost, all, ignore, yes, noPush, json, color, terminal: !json && process.stdin.isTTY === true && process.stdout.isTTY === true ? { stdin: process.stdin, stdout: process.stdout } : null, progress: progressFor(process.env, process.stderr) }) },
   { name: "adopt", usage: "adopt mcp|skill <name>", summary: "Record an existing MCP server or skill as fleet's", effect: "change", json: "Adds `adopted`, `left` and `conflicts`.", args: 2, run: ({ color, args, found }) => adopt(configOf(found), args, color) },
   // Unbounded: `secrets` checks its own arguments, so a value typed by mistake is never echoed back.
   { name: "secrets", usage: "secrets edit <file> | set <file> <NAME> | rekey", summary: "Edit, set or rekey encrypted secrets", effect: "change", json: "`rekey` adds `rekeyed`, the secrets files that were updated. `edit` and `set` add nothing.", args: Infinity, run: ({ args, found }) => secrets(configOf(found), args) },
@@ -159,11 +161,13 @@ function invalid(message: string): Result {
 
 function dispatch(argv: string[]): { result: Promise<Result | Relayed> | Result | Relayed; json: boolean } {
   const json = argv.includes("--json");
+  // `capture --host` takes no value, where `bridge --host` and `push --host` take a host name: parseArgs cannot give one flag both.
+  const capturing = argv.find((a) => !a.startsWith("-")) === "capture";
   let parsed;
   try {
     parsed = parseArgs({
-      args: argv,
-      options: { json: { type: "boolean" }, help: { type: "boolean" }, all: { type: "boolean" }, conflicts: { type: "boolean" }, shell: { type: "boolean" }, review: { type: "boolean" }, yes: { type: "boolean" }, "no-push": { type: "boolean" }, timeout: { type: "string" }, view: { type: "string" }, host: { type: "string" }, port: { type: "string" }, "no-open": { type: "boolean" }, style: { type: "string" }, names: { type: "boolean" }, badge: { type: "boolean" }, message: { type: "string", short: "m" } },
+      args: capturing ? argv.map((a) => (a === "--host" ? "--this-host" : a)) : argv,
+      options: { "this-host": { type: "boolean" }, ignore: { type: "boolean" }, json: { type: "boolean" }, help: { type: "boolean" }, all: { type: "boolean" }, conflicts: { type: "boolean" }, shell: { type: "boolean" }, review: { type: "boolean" }, yes: { type: "boolean" }, "no-push": { type: "boolean" }, timeout: { type: "string" }, view: { type: "string" }, host: { type: "string" }, port: { type: "string" }, "no-open": { type: "boolean" }, style: { type: "string" }, names: { type: "boolean" }, badge: { type: "boolean" }, message: { type: "string", short: "m" } },
       allowPositionals: true,
       strict: true,
     });
@@ -180,12 +184,14 @@ function dispatch(argv: string[]): { result: Promise<Result | Relayed> | Result 
   if (!command) return { result: invalid(`unknown command '${name}'`), json };
   if (rest.length > command.args) return { result: invalid(`unexpected argument '${rest[command.args]}'`), json };
   if (parsed.values.message !== undefined && command.name !== "push") return { result: invalid(`-m is only for 'push'`), json };
-  if (parsed.values.all && command.name !== "status" && command.name !== "doctor" && command.name !== "context") return { result: invalid(`--all is only for 'status', 'doctor' and 'context'`), json };
+  if (parsed.values.all && command.name !== "status" && command.name !== "doctor" && command.name !== "context" && command.name !== "capture") return { result: invalid(`--all is only for 'status', 'doctor', 'context' and 'capture'`), json };
   if (parsed.values.conflicts && command.name !== "status") return { result: invalid(`--conflicts is only for 'status'`), json };
   if (parsed.values.conflicts && parsed.values.all) return { result: invalid(`--conflicts and --all cannot be used together`), json };
   if (parsed.values.shell && command.name !== "demo") return { result: invalid(`--shell is only for 'demo'`), json };
-  if ((parsed.values.review || parsed.values.yes) && command.name !== "skills" && command.name !== "undo") return { result: invalid(`--review and --yes are only for 'skills update' and 'undo'`), json };
-  if (parsed.values["no-push"] && command.name !== "undo") return { result: invalid(`--no-push is only for 'undo'`), json };
+  if (parsed.values.review && command.name !== "skills") return { result: invalid(`--review is only for 'skills update'`), json };
+  if (parsed.values.yes && command.name !== "skills" && command.name !== "undo" && command.name !== "capture") return { result: invalid(`--yes is only for 'skills update', 'undo' and 'capture'`), json };
+  if (parsed.values["no-push"] && command.name !== "undo" && command.name !== "capture") return { result: invalid(`--no-push is only for 'undo' and 'capture'`), json };
+  if ((parsed.values["this-host"] || parsed.values.ignore) && command.name !== "capture") return { result: invalid(`--host without a name and --ignore are only for 'capture'`), json };
   if (parsed.values.timeout !== undefined && command.name !== "doctor") return { result: invalid(`--timeout is only for 'doctor'`), json };
   if (parsed.values.view !== undefined && command.name !== "bridge") return { result: invalid(`--view is only for 'bridge'`), json };
   if (parsed.values.host !== undefined && command.name !== "bridge" && command.name !== "push") return { result: invalid(`--host is only for 'bridge' and 'push'`), json };
@@ -198,7 +204,7 @@ function dispatch(argv: string[]): { result: Promise<Result | Relayed> | Result 
   if (parsed.values.message === "") return { result: invalid("the commit message after -m cannot be empty"), json };
   if (command.name === "help") return { result: helpResult(), json };
   if (!command.run) return { result: { code: "error", messages: [`fleet: '${name}' is not implemented yet`] }, json };
-  return { result: command.run({ color: !json && useColor(process.env, process.stdout.isTTY === true), json, args: rest, message: parsed.values.message, all: parsed.values.all === true, conflicts: parsed.values.conflicts === true, shell: parsed.values.shell === true, review: parsed.values.review === true, yes: parsed.values.yes === true, noPush: parsed.values["no-push"] === true, timeout, view: parsed.values.view, host: parsed.values.host, port, open: parsed.values["no-open"] !== true, style: parsed.values.style, names: parsed.values.names === true, badge: parsed.values.badge === true, found: findConfigDir() }), json };
+  return { result: command.run({ color: !json && useColor(process.env, process.stdout.isTTY === true), json, args: rest, message: parsed.values.message, all: parsed.values.all === true, conflicts: parsed.values.conflicts === true, shell: parsed.values.shell === true, review: parsed.values.review === true, yes: parsed.values.yes === true, noPush: parsed.values["no-push"] === true, thisHost: parsed.values["this-host"] === true, ignore: parsed.values.ignore === true, timeout, view: parsed.values.view, host: parsed.values.host, port, open: parsed.values["no-open"] !== true, style: parsed.values.style, names: parsed.values.names === true, badge: parsed.values.badge === true, found: findConfigDir() }), json };
 }
 
 export async function main(argv: string[], sink: Sink): Promise<number> {
