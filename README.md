@@ -23,6 +23,8 @@ curl -fsSL https://raw.githubusercontent.com/RolfKoenders/fleet/main/install.sh 
 fleet new ~/fleet-config
 ```
 
+The new repo is a commented example with placeholder skills and MCP servers. Ask your agent to run `fleet agent` and follow its onboarding recipe, or edit `hosts/` and `catalog/` yourself. `fleet init` fails until the placeholders are gone.
+
 Publish it as a private repo:
 
 ```sh
@@ -31,7 +33,7 @@ git add -A && git commit -m "Start my fleet config"
 gh repo create fleet-config --private --source . --remote origin --push
 ```
 
-Set up this machine:
+Set up this machine, using its name from `hosts/`. Init prints an age key once, so save it in your password manager:
 
 ```sh
 cd ~/fleet-config
@@ -70,6 +72,8 @@ The widget is a separate project: [fleet-omarchy](https://github.com/RolfKoender
 - [Setting up machines](https://rolflab.nl/fleet/docs/setting-up-machines/)
 - [The bridge](https://rolflab.nl/fleet/docs/bridge/)
 - [The page](https://rolflab.nl/fleet/docs/ui/)
+- [Logging in to MCP servers](https://rolflab.nl/fleet/docs/mcp-logins/)
+- [Adding an agent](https://rolflab.nl/fleet/docs/adding-an-agent/), and [Contributing](CONTRIBUTING.md)
 - [Commands reference](https://rolflab.nl/fleet/docs/commands/)
 - [Config reference](https://rolflab.nl/fleet/docs/reference-fleet-yaml/)
 - [FAQ](https://rolflab.nl/fleet/docs/faq/)
