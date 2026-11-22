@@ -4,12 +4,12 @@
 import { idlePush } from "./state.js";
 import { idleInit } from "./hosts.js";
 
-/** @typedef {{ kind: "push" | "init" | "remove" | "clone" | "check" | "secret", name?: string }} Job */
+/** @typedef {{ kind: "push" | "init" | "remove" | "clone" | "check" | "secret" | "fleet", name?: string }} Job */
 
 /** The jobs in a `hello` or `jobs` document: only well-formed ones. @param {any} doc @returns {Job[]} */
 export function jobsOf(doc) {
   const list = Array.isArray(doc?.jobs) ? doc.jobs : [];
-  return list.filter((/** @type {any} */ j) => j !== null && typeof j === "object" && ["push", "init", "remove", "clone", "check", "secret"].includes(j.kind)).map((/** @type {any} */ j) => (typeof j.name === "string" ? { kind: j.kind, name: j.name } : { kind: j.kind }));
+  return list.filter((/** @type {any} */ j) => j !== null && typeof j === "object" && ["push", "init", "remove", "clone", "check", "secret", "fleet"].includes(j.kind)).map((/** @type {any} */ j) => (typeof j.name === "string" ? { kind: j.kind, name: j.name } : { kind: j.kind }));
 }
 
 /** One job in words. @param {Job} job */
@@ -23,6 +23,8 @@ export function jobLabel(job) {
       return `removing ${job.name ?? "a host"} is running`;
     case "clone":
       return "a skill source is being cloned";
+    case "fleet":
+      return "asking every host";
     case "check":
       return `${job.name ?? "an MCP server"} is being checked`;
     default:

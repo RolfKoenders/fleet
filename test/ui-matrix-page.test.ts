@@ -51,8 +51,9 @@ test("the commit message is suggested from the edits", () => {
   assert.equal(opLabel(op("remove", "server", "docs")), "take server docs from server");
 });
 
-test("the matrix is the first screen", () => {
-  assert.equal(routeOf(""), "matrix");
+test("the fleet is the first screen, and the matrix the second", () => {
+  assert.equal(routeOf(""), "fleet");
+  assert.equal(routeOf("#/matrix"), "matrix");
   assert.equal(routeOf("#/status"), "status");
 });
 

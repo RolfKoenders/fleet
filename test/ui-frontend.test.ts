@@ -17,8 +17,8 @@ test("the token comes from the fragment, and a screen from the fragment after it
   assert.equal(tokenOf("#/matrix"), null);
   assert.equal(routeOf("#/hosts"), "hosts");
   assert.equal(routeOf("#hosts"), "hosts");
-  assert.equal(routeOf("#t=abc"), "matrix", "the token fragment is no screen");
-  assert.equal(routeOf("#/nope"), "matrix");
+  assert.equal(routeOf("#t=abc"), "fleet", "the token fragment is no screen");
+  assert.equal(routeOf("#/nope"), "fleet");
 });
 
 test("the reconnect delay doubles from half a second and stops at ten", () => {
@@ -221,7 +221,7 @@ async function withServer(body: (base: string, token: string) => Promise<void>) 
   }
 }
 
-const modules = ["app.js", "api.js", "state.js", "diff.js", "dom.js", "matrix.js", "catalog.js"];
+const modules = ["app.js", "api.js", "state.js", "diff.js", "dom.js", "matrix.js", "catalog.js", "fleet.js", "fleetview.js"];
 
 test("the page, its modules, its style and its bundled fonts are served with the right types", async () => {
   await withServer(async (base) => {
@@ -291,7 +291,7 @@ test("the page's chrome: the logo is the website's mark, the menu has Review & p
   assert.equal(mark(logo), mark(site.match(/<a class="brand"[\s\S]*?<\/svg>/)![0]), "the favicon is the website's logo");
   assert.equal(mark(html.match(/<a class="logo"[\s\S]*?<\/svg>/)![0]), mark(logo), "the header shows the same mark");
   const nav = [...html.match(/<nav[\s\S]*<\/nav>/)![0].matchAll(/<a href="#\/(\w+)"|<hr>/g)].map((m) => m[1] ?? "hr");
-  assert.deepEqual(nav, ["matrix", "catalog", "hosts", "secrets", "card", "hr", "review", "status"]);
+  assert.deepEqual(nav, ["fleet", "matrix", "catalog", "hosts", "secrets", "card", "hr", "review", "status"]);
   assert.match(html, /id="tray"[^>]*><span>To push<\/span>/);
   assert.doesNotMatch(html, /Held/, "the page says To push, not Held");
 });

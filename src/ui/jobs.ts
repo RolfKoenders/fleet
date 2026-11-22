@@ -2,12 +2,12 @@
  * The jobs `fleet ui` runs for the page: what they are, and what a page that joins late needs to catch up.
  *
  * A job is a push (also the write before it), setting up a host (`init`), removing one (`remove`), cloning a skill source, checking an MCP server,
- * or encrypting a secret. The page is told which ones run (`hello`, then a `jobs` event whenever the list changes), so
+ * encrypting a secret, or asking every host for the Fleet screen. The page is told which ones run (`hello`, then a `jobs` event whenever the list changes), so
  * it can label them and clear them on the matching end. While a push or an init runs, the events it sends are kept
  * (bounded) and replayed to a stream that opens meanwhile, so a second tab or a reload sees the progress so far.
  */
 
-export type Job = { kind: "push" | "init" | "remove" | "clone" | "check" | "secret"; name?: string };
+export type Job = { kind: "push" | "init" | "remove" | "clone" | "check" | "secret" | "fleet"; name?: string };
 
 /** The most events kept for one run. The `hosts` event, which draws a push's lanes, is never the one dropped. */
 export const REPLAY_MAX = 400;

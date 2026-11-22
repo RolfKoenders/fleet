@@ -49,6 +49,10 @@ export function createClient(token, fetcher = (...args) => fetch(...args), hooks
     secrets: () => call("/api/secrets"),
     /** The shareable card of this fleet, drawn by the server: `{svg, badge, text, unseen, hosts, share}`. Reads what fleet last saw, asks no host. @param {string} style @param {boolean} names */
     card: (style, names) => send("/api/card", { style, names }),
+    /** Every host as last seen (the bridge's memory), at once; nothing is asked. */
+    fleet: () => call("/api/fleet"),
+    /** Asks every host (an ssh call each) and answers when all have; each answer also arrives on the stream as a `fleet` event. */
+    refreshFleet: () => call("/api/fleet/refresh", { method: "POST" }),
     /** The skills in the source clones fleet already has. */
     skills: () => call("/api/skills"),
     /** Shallow-clones a repo to a temp directory on the server and lists its skills. @param {string} repo @param {string} path @param {string} branch */
@@ -137,7 +141,7 @@ export function openStream(token, handlers, deps = {}) {
       handlers.onLink("live");
       handlers.onHello(parse(/** @type {MessageEvent} */ (e).data));
     });
-    for (const name of ["push", "pushend", "init", "initend", "remove", "removeend", "jobs"]) {
+    for (const name of ["push", "pushend", "init", "initend", "remove", "removeend", "jobs", "fleet"]) {
       stream.addEventListener(name, (e) => handlers.onEvent(name, parse(/** @type {MessageEvent} */ (e).data)));
     }
     stream.onerror = () => {

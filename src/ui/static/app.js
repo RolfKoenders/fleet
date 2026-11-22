@@ -15,6 +15,8 @@ import { actionOf, afterSet, cellView, dialogTargets, heldNames, missingCount, r
 import { escapeAction, filterRows, hashWithQuery, hiddenWithChanges, nameMatches, queryOf, skillHits, slashFocuses } from "./filter.js";
 import { canCopyImage, CARD_SIZE, clipboardProblem, discussionUrl, embedFonts, FONT_FILES, fileName, STYLES as CARD_STYLES, unseenNote } from "./card.js";
 import { itemYaml, yamlPath, yamlTag } from "./yamlview.js";
+import { withFleetDoc } from "./fleet.js";
+import { fleetScreen } from "./fleetview.js";
 import { heldFiles, idlePush, plain, pushEnd, pushEvent, routeOf, statusView, tokenOf, writtenNotice } from "./state.js";
 
 /** @typedef {import("./state.js").Held} Held */
@@ -33,7 +35,7 @@ const store = tabStore();
 const fromAddress = tokenOf(location.hash);
 // The token leaves the address bar at once, so it is not in the history or a bookmark. It is kept for a reload of this tab only.
 const token = pageToken(store, fromAddress);
-if (fromAddress !== null) history.replaceState(null, "", location.pathname + "#/matrix");
+if (fromAddress !== null) history.replaceState(null, "", location.pathname + "#/fleet");
 
 $("local").textContent = `${location.host} · only this machine`;
 
@@ -51,6 +53,7 @@ $("local").textContent = `${location.host} · only this machine`;
  *   yaml: Record<string, string>, yamlErrors: Record<string, string>, yamlOpen: Set<string>,
  *   rm: RemoveState | null, removal: import("./hosts.js").InitState, removalError: string | null,
  *   card: { style: string, names: boolean, doc: any, svg: string | null, url: string | null, error: string | null, message: { text: string, tone: string } | null, busy: boolean }
+ *   fleet: any, fleetError: string | null, fleetAsking: boolean, fleetOpen: Set<string>
  * }}
  */
 const model = {
@@ -63,6 +66,7 @@ const model = {
   yaml: {}, yamlErrors: {}, yamlOpen: new Set(),
   rm: null, removal: idleInit(), removalError: null,
   card: { style: "machines", names: false, doc: null, svg: null, url: null, error: null, message: null, busy: false },
+  fleet: null, fleetError: null, fleetAsking: false, fleetOpen: new Set(),
 };
 
 // The To push list is restored after a reload. See session.js: it holds edits only, never a plain secret value.
@@ -162,6 +166,7 @@ function render() {
 
 /** @param {string} route */
 function screen(route) {
+  if (route === "fleet") return fleetView();
   if (route === "status") return statusScreen();
   if (route === "review") return reviewScreen();
   if (route === "matrix") return matrixScreen();
@@ -2063,11 +2068,62 @@ async function loadSecrets() {
   render();
 }
 
+// ---- Fleet: what each host last said at once, then every host asked, with no polling
+
+/** The Fleet screen: the document the server last sent, and what the buttons do. */
+const fleetView = () =>
+  fleetScreen({
+    doc: model.fleet,
+    error: model.fleetError,
+    asking: model.fleetAsking || model.jobs.some((j) => j.kind === "fleet"),
+    usable: usable(),
+    open: model.fleetOpen,
+    refresh: () => void askFleet(),
+    toggle: (host) => {
+      if (!model.fleetOpen.delete(host)) model.fleetOpen.add(host);
+      render();
+    },
+  });
+
+/** What the hosts last said, from the server's memory: no host is asked. */
+async function loadFleet() {
+  if (client === null) return;
+  try {
+    model.fleet = withFleetDoc(model.fleet, await client.fleet());
+    model.fleetError = null;
+  } catch (e) {
+    model.fleetError = e instanceof ApiError ? `${e.messages.join("; ") || e.message} (${e.code})` : "the hosts could not be read";
+  }
+  render();
+}
+
+/** Asks every host. The answers arrive on the stream one by one; the call's own answer is the last word. */
+async function askFleet() {
+  if (client === null || model.fleetAsking) return;
+  model.fleetAsking = true;
+  render();
+  try {
+    model.fleet = withFleetDoc(model.fleet, await client.refreshFleet());
+    model.fleetError = null;
+  } catch (e) {
+    model.fleetError = e instanceof ApiError ? `${e.messages.join("; ") || e.message} (${e.code})` : "the hosts could not be asked";
+  }
+  model.fleetAsking = false;
+  render();
+}
+
+/** What the screen shows at once, then every host asked. */
+async function openFleet() {
+  await loadFleet();
+  askFleet();
+}
+
 /** Each screen reads what it shows when it is opened, so it is never older than the click that opened it. */
 function opened() {
   const route = routeOf(location.hash);
   model.menu = false;
   render();
+  if (route === "fleet") openFleet();
   if (route === "secrets") loadSecrets();
   if (route === "card") loadCard();
   if (route === "review") loadPlan();
@@ -2080,7 +2136,7 @@ window.addEventListener("hashchange", () => {
   const fresh = tokenOf(location.hash);
   if (fresh === null) return;
   pageToken(store, fresh);
-  history.replaceState(null, "", location.pathname + "#/matrix");
+  history.replaceState(null, "", location.pathname + "#/fleet");
   location.reload();
 });
 window.addEventListener("hashchange", opened);
@@ -2089,6 +2145,7 @@ if (token !== null) {
   loadStatus();
   loadMatrix();
   loadSecrets();
+  if (routeOf(location.hash) === "fleet") openFleet();
   openStream(token, {
     onHello: (doc) => {
       // The server's list of running jobs is the truth for a connection that just opened. A push or init that runs starts afresh
@@ -2103,6 +2160,9 @@ if (token !== null) {
         const now = jobsOf(doc);
         Object.assign(model, withJobs(model, now, model.jobs));
         model.jobs = now;
+      } else if (name === "fleet") {
+        // A host answered: the document so far. The call that asked has the last word when it returns.
+        model.fleet = withFleetDoc(model.fleet, doc);
       } else if (name === "init") model.init = initLine(model.init, doc);
       else if (name === "initend") model.init = initEnd(model.init, doc);
       else if (name === "remove") model.removal = initLine(model.removal, doc);
