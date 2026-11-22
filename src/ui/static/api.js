@@ -47,6 +47,8 @@ export function createClient(token, fetcher = (...args) => fetch(...args), hooks
     status: () => call("/api/status"),
     matrix: () => call("/api/matrix"),
     secrets: () => call("/api/secrets"),
+    /** The shareable card of this fleet, drawn by the server: `{svg, badge, text, unseen, hosts, share}`. Reads what fleet last saw, asks no host. @param {string} style @param {boolean} names */
+    card: (style, names) => send("/api/card", { style, names }),
     /** The skills in the source clones fleet already has. */
     skills: () => call("/api/skills"),
     /** Shallow-clones a repo to a temp directory on the server and lists its skills. @param {string} repo @param {string} path @param {string} branch */

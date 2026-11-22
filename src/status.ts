@@ -50,7 +50,12 @@ export type StatusFields = {
   /** The ids of agents fleet applied config for earlier and cannot find on the host now. Ids, not sentences, so a reader words them itself. Null when the host's fleet does not send it. */
   notInstalled: AgentId[] | null;
   tools: ToolVersions;
+  /** The host's operating system, for the fleet card. Null when the host's fleet does not send it. */
+  os: HostOs | null;
 };
+
+/** The OS names a card shows. */
+export type HostOs = "linux" | "macos";
 
 /** A conflict as a short name: `detail` and `fix` stay with `status --conflicts`. */
 export type ConflictName = { kind: string; path: string };
@@ -237,6 +242,7 @@ function collect(toolDir: string, configDir: string, home: string, host: string 
     timer: timerState(home),
     schedule: host === null ? null : scheduleOf(configDir, host),
     ...counts,
+    os: statusOs(home) === "darwin" ? "macos" : "linux",
     agents: named.map((a) => ({ id: a.id, version: versions[a.id] ?? null, active: on.includes(a), pinned: pin?.includes(a.id) ?? false })),
     notInstalled,
     tools: {
@@ -325,6 +331,7 @@ export function statusFromDocument(doc: Obj): StatusFields | null {
     conflicts: count(doc.conflicts),
     conflictList: conflictNames(doc.conflictList),
     agents: agentStatuses(doc.agents),
+    os: doc.os === "linux" || doc.os === "macos" ? doc.os : null,
     notInstalled: Array.isArray(doc.notInstalled) ? AGENT_IDS.filter((id) => (doc.notInstalled as unknown[]).includes(id)) : null,
     tools: Object.fromEntries(TOOL_NAMES.filter((name) => tools[name] !== undefined || !isAgentId(name)).map((name) => [name, printable(tools[name])])) as ToolVersions,
   };

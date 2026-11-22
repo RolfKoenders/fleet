@@ -116,14 +116,15 @@ function normalize(text: string, w: { clone: string; home: string; source: { rem
 }
 
 /**
- * What `status --json` printed before it had `agents` and `notInstalled`, which are the only difference an upgrade makes to
- * these outputs. The stored files are from before, so the two fields are taken out here, and the tests of the status
+ * What `status --json` printed before it had `agents`, `notInstalled` and `os`, which are the only difference an upgrade makes to
+ * these outputs. The stored files are from before, so the three fields are taken out here, and the tests of the status
  * document check them.
  */
 const withoutNewStatusFields = (r: Run): Run => {
   const doc = JSON.parse(r.stdout) as Record<string, unknown>;
   delete doc.agents;
   delete doc.notInstalled;
+  delete doc.os;
   return { ...r, stdout: `${JSON.stringify(doc, null, 2)}\n` };
 };
 

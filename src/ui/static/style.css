@@ -325,3 +325,9 @@ html.modal main { overflow: hidden; }
 .filterbar { display: flex; align-items: center; gap: var(--space-3); margin: 0 0 var(--space-4); flex-wrap: wrap; }
 .filterbar .filter { flex: 0 1 380px; }
 .matrix .skill.hit th { color: var(--bright); }
+
+/* Card */
+.cardframe { margin: 14px 0; max-width: 1200px; background: var(--ink); line-height: 0; }
+.cardimg { display: block; width: 100%; height: auto; }
+.notice.okmsg { border-color: var(--brand-line); border-left-color: var(--brand); background: var(--brand-wash); color: var(--bright); }
+#card-message:empty { display: none; }
