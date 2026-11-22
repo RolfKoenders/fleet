@@ -2,7 +2,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { build, docLink, NAV, PAGES, type Docs } from "../scripts/site-docs.ts";
+import { build, docLink, PAGES, type Docs } from "../scripts/site-docs.ts";
 import { renderDoc } from "../scripts/site-markdown.ts";
 import { repoRoot } from "./helpers.ts";
 
@@ -24,15 +24,13 @@ test("site docs: the committed pages are what docs/*.md generates now", () => {
   assert.ok(out.search === read("site/docs/search.json"), "site/docs/search.json is out of date with docs/*.md: run 'npm run site:docs' and commit the result");
 });
 
-test("site docs: every doc is a page except the releasing guide, and an empty section is not rendered", () => {
+test("site docs: every doc is a page except the releasing guide", () => {
   assert.deepEqual(
     [...PAGES.map((p) => p.file)].sort(),
     readdirSync(join(repoRoot, "docs")).filter((f) => f.endsWith(".md") && f !== "releasing.md").sort(),
   );
-  assert.ok(NAV.some((s) => s.name === "Reference" && s.pages.length === 0), "Reference stays in the list for the stories that fill it");
   const out = built();
   for (const html of [out.index, ...Object.values(out.pages)]) {
-    assert.doesNotMatch(html, />Reference</, "an empty section is rendered");
     assert.doesNotMatch(html, /\u2014/);
   }
 });

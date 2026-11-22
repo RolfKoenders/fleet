@@ -7,6 +7,7 @@
     "test": "node --test \"test/**/*.test.ts\"",
     "site:frames": "node scripts/site-frames.ts",
     "site:changelog": "node scripts/site-changelog.ts",
+    "docs:commands": "node scripts/docs-commands.ts",
     "site:docs": "node scripts/site-docs.ts"
   },
   "devDependencies": {

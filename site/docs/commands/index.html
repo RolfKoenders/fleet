@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>fleet · Docs · Commands</title>
+  <meta name="description" content="Every fleet command and option, what it changes and its --json form.">
+  <meta property="og:title" content="fleet · Docs · Commands">
+  <meta property="og:description" content="Every fleet command and option, what it changes and its --json form.">
+  <meta property="og:image" content="https://rolflab.nl/fleet/social-preview.png">
+  <link rel="canonical" href="https://rolflab.nl/fleet/docs/commands/">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="theme-color" content="#0b0f14">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 120 84'%3E%3Cpath d='M8 20h22l10 10v32H8Z' fill='none' stroke='%233fb950' stroke-width='5'/%3E%3Cpath d='M40 42C62 42 62 16 84 16M40 42H84M40 42C62 42 62 68 84 68' fill='none' stroke='%237d8590' stroke-width='4'/%3E%3Crect x='84' y='9' width='32' height='14' rx='2' fill='none' stroke='%23e6edf3' stroke-width='4'/%3E%3Crect x='84' y='35' width='32' height='14' rx='2' fill='none' stroke='%23e6edf3' stroke-width='4'/%3E%3Crect x='84' y='61' width='32' height='14' rx='2' fill='none' stroke='%23e6edf3' stroke-width='4'/%3E%3C/svg%3E">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <!-- The terminal font is served from here: Google's subsets leave out the box drawing the TUI is made of. -->
+  <link rel="preload" href="../../fonts/JetBrainsMono-Regular.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="../../fonts/JetBrainsMono-Bold.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="../../style.css">
+  <script defer src="https://analytics.keeply.tools/script.js" data-website-id="ebccdcbe-ca21-4327-b7a4-57136d74c578" data-domains="rolflab.nl"></script>
+
+</head>
+<body data-base="../">
+  <div class="backdrop" aria-hidden="true"></div>
+
+  <header class="nav">
+    <a class="brand" href="../../" aria-label="fleet home">
+      <svg viewBox="0 0 120 84" aria-hidden="true"><path d="M8 20h22l10 10v32H8Z" fill="none" stroke="#3fb950" stroke-width="5"/><path d="M15 38h18M15 46h18M15 54h11" stroke="#3fb950" stroke-width="4"/><path d="M40 42C62 42 62 16 84 16M40 42H84M40 42C62 42 62 68 84 68" fill="none" stroke="#7d8590" stroke-width="4"/><g fill="none" stroke="#e6edf3" stroke-width="4"><rect x="84" y="9" width="32" height="14" rx="2"/><rect x="84" y="35" width="32" height="14" rx="2"/><rect x="84" y="61" width="32" height="14" rx="2"/></g></svg>
+      <span>fleet</span>
+    </a>
+    <nav>
+      <a href="../../#how">How it works</a>
+      <a href="../../#watch">Watch it land</a>
+      <a href="../../#bridge">The bridge</a>
+      <a href="../../#ui">In your browser</a>
+      <a href="../../#compare">Compare</a>
+      <a href="../../#whats-new">What's new</a>
+      <a href="../../#start">Get started</a>
+      <a href="../../docs/" data-umami-event="fleet-docs-click" aria-current="page" style="color:var(--text)">Docs</a>
+      <a class="gh" href="https://github.com/RolfKoenders/fleet" data-umami-event="fleet-github-click" data-umami-event-where="nav">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+        GitHub
+      </a>
+    </nav>
+  </header>
+
+  <main class="docpage">
+    <div class="doc-head">
+      <h1>Commands</h1>
+      <button type="button" class="doc-menu-btn" aria-expanded="false" aria-controls="doc-side">Menu</button>
+    </div>
+    <aside class="doc-side" id="doc-side">
+      <div class="doc-search" role="search">
+          <input type="search" id="doc-search" placeholder="Search the docs ( / )" autocomplete="off" aria-label="Search the docs">
+          <div class="doc-results" id="doc-results" hidden></div>
+        </div>
+        <nav class="doc-nav" aria-label="Docs">
+        <section><h3>Start</h3><a href="../getting-started/">Getting started</a><a href="../setting-up-machines/">Setting up machines</a></section>
+        <section><h3>Guides</h3><a href="../bridge/">The bridge</a><a href="../ui/">The page</a><a href="../mcp-logins/">MCP logins</a><a href="../adding-an-agent/">Adding an agent</a></section>
+        <section><h3>Reference</h3><a class="on" aria-current="page" href="../commands/">Commands</a></section>
+        <section><h3>FAQ</h3><a href="../faq/">FAQ</a></section>
+        </nav>
+        <nav class="doc-toc" aria-label="On this page"><h3>On this page</h3><a href="#options-for-every-command">Options for every command</a><a href="#fleet-status">fleet status</a><a href="#fleet-doctor">fleet doctor</a><a href="#fleet-context">fleet context</a><a href="#fleet-diff">fleet diff</a><a href="#fleet-bridge">fleet bridge</a><a href="#fleet-ui">fleet ui</a><a href="#fleet-card">fleet card</a><a href="#fleet-apply">fleet apply</a><a href="#fleet-push">fleet push</a><a href="#fleet-undo">fleet undo</a><a href="#fleet-adopt">fleet adopt</a><a href="#fleet-secrets">fleet secrets</a><a href="#fleet-skills">fleet skills</a><a href="#fleet-update">fleet update</a><a href="#fleet-new">fleet new</a><a href="#fleet-init">fleet init</a><a href="#fleet-demo">fleet demo</a><a href="#fleet-agent">fleet agent</a><a href="#fleet-help">fleet help</a></nav>
+    </aside>
+    <article class="doc-body">
+<p>Every <code>fleet</code> command and option, as <code>fleet help</code> lists them. Commands that read only change nothing. The others write to this host, to the config repo or to other hosts, so run them when you mean to.</p>
+<p>Add <code>--json</code> to a command for one JSON document on stdout. It always has <code>ok</code>, <code>code</code>, <code>host</code> and <code>messages</code>, and each command adds its own fields, listed under it below.</p>
+<h2 id="options-for-every-command">Options for every command</h2>
+<ul><li><code>--json</code>: Print one JSON document on stdout.</li><li><code>--help</code>: Show this list.</li></ul>
+<h2 id="fleet-status"><code>fleet status</code></h2>
+<p><b>Reads only.</b> It changes nothing.</p>
+<p>Report this host: fleet clone, applied state, timer, pending changes, conflicts and tool versions (--all asks every host over ssh; --conflicts lists this host's conflicts in full, reading only).</p>
+<pre class="doc-code"><code>fleet status [--all | --conflicts]</code></pre>
+<p><b>Options</b></p>
+<ul><li><code>--all</code>: Ask every host over ssh.</li><li><code>--conflicts</code>: List this host's conflicts in full, reading only.</li></ul>
+<p><b>JSON.</b> Adds <code>repos</code>, <code>applied</code>, <code>timer</code>, <code>schedule</code>, <code>pending</code>, <code>conflicts</code>, <code>conflictList</code>, <code>agents</code>, <code>notInstalled</code> and <code>tools</code>. With <code>--all</code>, also <code>hosts</code>: one record for each host, with its <code>result</code> and its <code>status</code>. With <code>--conflicts</code>, only <code>conflicts</code>: a list of <code>{kind, path, detail, fix}</code>.</p>
+<h2 id="fleet-doctor"><code>fleet doctor</code></h2>
+<p><b>Changes things.</b> It writes to this host, to the config repo or to other hosts.</p>
+<p>Start this host's MCP servers and ask each what it offers and how large its tool definitions are (saved as this host's doctor result), plus cheap local checks (--all asks every host over ssh). It runs the catalog's commands with real credentials and may make npx download packages, so it runs only when you ask for it, never from the timer.</p>
+<pre class="doc-code"><code>fleet doctor [--all] [--timeout &lt;seconds&gt;]</code></pre>
+<p><b>Options</b></p>
+<ul><li><code>--all</code>: Ask every host over ssh.</li><li><code>--timeout &lt;seconds&gt;</code>: Give each MCP server this long to answer, from just above 0 to 600 (default 30).</li></ul>
+<p><b>JSON.</b> Adds <code>checks</code> and <code>servers</code>. With <code>--all</code>, also <code>hosts</code>: one record for each host, with its <code>result</code> and its <code>doctor</code> fields.</p>
+<p><b>Guide.</b> <a href="../mcp-logins/">Logging in to MCP servers</a></p>
+<h2 id="fleet-context"><code>fleet context</code></h2>
+<p><b>Reads only.</b> It changes nothing.</p>
+<p>Show how much each agent on this host loads before the first prompt (instructions, skill descriptions, MCP tool definitions), as bars and an estimate in tokens, with the largest items (--all asks every host over ssh and draws all bars on one scale). MCP sizes are the ones the last doctor run saved; it starts no server and reads no secret.</p>
+<pre class="doc-code"><code>fleet context [--all]</code></pre>
+<p><b>Options</b></p>
+<ul><li><code>--all</code>: Ask every host over ssh.</li></ul>
+<p><b>JSON.</b> Adds <code>agents</code> and <code>notes</code>. With <code>--all</code>, also <code>hosts</code>: one record for each host.</p>
+<p><b>Guide.</b> <a href="../bridge/#startup-context">The bridge: startup context</a></p>
+<h2 id="fleet-diff"><code>fleet diff</code></h2>
+<p><b>Reads only.</b> It changes nothing.</p>
+<p>Show what apply would change, without changing anything.</p>
+<pre class="doc-code"><code>fleet diff</code></pre>
+<p><b>JSON.</b> Adds <code>created</code>, <code>updated</code>, <code>removed</code>, <code>forgotten</code>, <code>unchanged</code>, <code>warnings</code>, <code>conflicts</code> and <code>timer</code>. They list what apply would do.</p>
+<h2 id="fleet-bridge"><code>fleet bridge</code></h2>
+<p><b>Changes things.</b> It writes to this host, to the config repo or to other hosts.</p>
+<p>Open the full-screen view of every host, the matrix of what each gets, conflicts, timeline, secrets and catalog (--view opens on a screen, --host selects a host on it). It reads until you ask for more: P pushes after you type push, d runs doctor after you confirm (it starts real MCP servers). Needs a terminal.</p>
+<pre class="doc-code"><code>fleet bridge [--view &lt;screen&gt;] [--host &lt;name&gt;]</code></pre>
+<p><b>Options</b></p>
+<ul><li><code>--view &lt;name&gt;</code>: Open on this screen (home, matrix, conflicts, timeline, secrets, catalog, push, context).</li><li><code>--host &lt;name&gt;</code>: Select this host on that screen.</li></ul>
+<p><b>JSON.</b> <code>--json</code> is not available for this command.</p>
+<p><b>Guide.</b> <a href="../bridge/">The bridge</a></p>
+<h2 id="fleet-ui"><code>fleet ui</code></h2>
+<p><b>Changes things.</b> It writes to this host, to the config repo or to other hosts.</p>
+<p>Open a page in your browser that shows this host and can push, served from this process on 127.0.0.1 and guarded by a random token in the URL it prints. It stops on ctrl-c, or after 10 minutes with no page open. Not for agents; no --json.</p>
+<pre class="doc-code"><code>fleet ui [--port &lt;n&gt;] [--no-open]</code></pre>
+<p><b>Options</b></p>
+<ul><li><code>--port &lt;n&gt;</code>: Listen on this port (default: a free one).</li><li><code>--no-open</code>: Print the URL and do not open a browser.</li></ul>
+<p><b>JSON.</b> <code>--json</code> is not available for this command.</p>
+<p><b>Guide.</b> <a href="../ui/">The page</a></p>
+<h2 id="fleet-card"><code>fleet card</code></h2>
+<p><b>Changes things.</b> It writes to this host, to the config repo or to other hosts.</p>
+<p>Write fleet-card.svg (1200 x 630) here: an image of your fleet to share, with its counts, each host with its agents and OS, and a year of changes. Hosts are named host 1, host 2 unless --names; no server, skill, source or secret name is ever on it. --style picks machines (the default) or map; --badge writes a small fleet-badge.svg for a README instead. It reads what fleet last saw of each host and asks none.</p>
+<pre class="doc-code"><code>fleet card [--style machines|map] [--names] [--badge]</code></pre>
+<p><b>Options</b></p>
+<ul><li><code>--style &lt;name&gt;</code>: Machines (default) or map.</li><li><code>--names</code>: Show the real hostnames, not host 1, host 2.</li><li><code>--badge</code>: Write fleet-badge.svg, a small badge for a README.</li></ul>
+<p><b>JSON.</b> Adds <code>file</code>, <code>style</code>, <code>names</code>, <code>machines</code>, <code>agents</code>, <code>skills</code>, <code>mcpServers</code>, <code>changes</code>, <code>pushes</code>, <code>since</code> and <code>grid</code>.</p>
+<h2 id="fleet-apply"><code>fleet apply</code></h2>
+<p><b>Changes things.</b> It writes to this host, to the config repo or to other hosts.</p>
+<p>Make this host match its config.</p>
+<pre class="doc-code"><code>fleet apply</code></pre>
+<p><b>JSON.</b> Adds <code>created</code>, <code>updated</code>, <code>removed</code>, <code>forgotten</code>, <code>unchanged</code>, <code>warnings</code>, <code>conflicts</code> and <code>timer</code>.</p>
+<h2 id="fleet-push"><code>fleet push</code></h2>
+<p><b>Changes things.</b> It writes to this host, to the config repo or to other hosts.</p>
+<p>Publish changes to GitHub, then apply on every host (-m sets the commit message; --host applies only on that host: this one or one with an ssh destination, after publishing as usual).</p>
+<pre class="doc-code"><code>fleet push [-m &lt;message&gt;] [--host &lt;name&gt;]</code></pre>
+<p><b>Options</b></p>
+<ul><li><code>-m &lt;message&gt;</code>: Set the commit message.</li><li><code>--host &lt;name&gt;</code>: Apply only on this host.</li></ul>
+<p><b>JSON.</b> Adds <code>hosts</code>: one entry for each host, with its <code>result</code>, <code>changes</code>, <code>conflicts</code>, <code>created</code>, <code>updated</code> and <code>removed</code>. A conflict on this host also adds a top-level <code>conflicts</code>.</p>
+<p><b>Guide.</b> <a href="../getting-started/#working-with-fleet">Getting started: working with fleet</a></p>
+<h2 id="fleet-undo"><code>fleet undo</code></h2>
+<p><b>Changes things.</b> It writes to this host, to the config repo or to other hosts.</p>
+<p>Revert the last recorded push, or a named one, and push the revert to the same scope (--no-push stops after the revert commit; --yes skips the prompt).</p>
+<pre class="doc-code"><code>fleet undo [--no-push] [--yes] [&lt;commit&gt;]</code></pre>
+<p><b>Options</b></p>
+<ul><li><code>--no-push</code>: Stop after the revert commit.</li><li><code>--yes</code>: Skip the prompt.</li></ul>
+<p><b>JSON.</b> Adds <code>commit</code> (the push that was reverted), <code>reverted</code> and <code>pushed</code>. When the revert was pushed, also the push's <code>hosts</code>.</p>
+<h2 id="fleet-adopt"><code>fleet adopt</code></h2>
+<p><b>Changes things.</b> It writes to this host, to the config repo or to other hosts.</p>
+<p>Record an existing MCP server or skill as fleet's.</p>
+<pre class="doc-code"><code>fleet adopt mcp|skill &lt;name&gt;</code></pre>
+<p><b>JSON.</b> Adds <code>adopted</code>, <code>left</code> and <code>conflicts</code>.</p>
+<h2 id="fleet-secrets"><code>fleet secrets</code></h2>
+<p><b>Changes things.</b> It writes to this host, to the config repo or to other hosts.</p>
+<p>Edit, set or rekey encrypted secrets.</p>
+<pre class="doc-code"><code>fleet secrets edit &lt;file&gt; | set &lt;file&gt; &lt;NAME&gt; | rekey</code></pre>
+<p><b>JSON.</b> <code>rekey</code> adds <code>rekeyed</code>, the secrets files that were updated. <code>edit</code> and <code>set</code> add nothing.</p>
+<p><b>Guide.</b> <a href="../faq/#where-do-my-secrets-end-up">FAQ: where do my secrets end up?</a></p>
+<h2 id="fleet-skills"><code>fleet skills</code></h2>
+<p><b>Changes things.</b> It writes to this host, to the config repo or to other hosts.</p>
+<p>Move pinned skill sources to the head of their branch (--review shows what changed first, with anything risky flagged, and asks per source on a terminal; without one nothing moves unless --yes).</p>
+<pre class="doc-code"><code>fleet skills update [--review] [--yes] [&lt;source&gt;]</code></pre>
+<p><b>Options</b></p>
+<ul><li><code>--review</code>: Show what changed first, with anything risky flagged, and ask per source on a terminal.</li><li><code>--yes</code>: Move the pins without asking.</li></ul>
+<p><b>JSON.</b> Adds <code>updated</code> and <code>unchanged</code>: the sources that moved and the ones that did not. With <code>--review</code>, also <code>reviews</code>.</p>
+<p><b>Guide.</b> <a href="../getting-started/#reading-a-skill-update-before-it-moves">Getting started: reading a skill update before it moves</a></p>
+<h2 id="fleet-update"><code>fleet update</code></h2>
+<p><b>Changes things.</b> It writes to this host, to the config repo or to other hosts.</p>
+<p>Move the pinned tool commit in fleet.yaml to the newest release, or to the head of its branch when track names one (nothing is committed or applied).</p>
+<pre class="doc-code"><code>fleet update</code></pre>
+<p><b>JSON.</b> Adds <code>repo</code>, <code>track</code>, <code>from</code>, <code>to</code>, <code>updated</code> and <code>changes</code>, plus <code>release</code> when <code>track</code> is <code>releases</code>.</p>
+<p><b>Guide.</b> <a href="../faq/#how-do-i-update-fleet">FAQ: how do I update fleet?</a></p>
+<h2 id="fleet-new"><code>fleet new</code></h2>
+<p><b>Changes things.</b> It writes to this host, to the config repo or to other hosts.</p>
+<p>Start a config repo in &lt;dir&gt; from the examples, pinned to this tool commit.</p>
+<pre class="doc-code"><code>fleet new &lt;dir&gt;</code></pre>
+<p><b>JSON.</b> Adds <code>dir</code>, <code>pin</code> and <code>checklist</code>.</p>
+<p><b>Guide.</b> <a href="../getting-started/">Getting started</a></p>
+<h2 id="fleet-init"><code>fleet init</code></h2>
+<p><b>Changes things.</b> It writes to this host, to the config repo or to other hosts.</p>
+<p>Bootstrap a host and install its timer.</p>
+<pre class="doc-code"><code>fleet init &lt;host&gt;</code></pre>
+<p><b>JSON.</b> Adds what <code>apply</code> adds, plus <code>steps</code>, <code>checklist</code>, <code>missingSecrets</code>, <code>conflicts</code>, <code>recipient</code> and, when it made one, <code>backup</code>: the new age key.</p>
+<p><b>Guide.</b> <a href="../setting-up-machines/">Setting up machines</a></p>
+<h2 id="fleet-demo"><code>fleet demo</code></h2>
+<p><b>Reads only.</b> It changes nothing.</p>
+<p>Try the bridge on made-up hosts in a throwaway sandbox; nothing real is touched (--shell gives a shell in the sandbox instead, with a printed tour). Without a terminal, or with --json, it walks the tour itself.</p>
+<pre class="doc-code"><code>fleet demo [--shell]</code></pre>
+<p><b>Options</b></p>
+<ul><li><code>--shell</code>: Give a shell in the sandbox instead, with a printed tour.</li></ul>
+<p><b>JSON.</b> Adds <code>sandbox</code> and <code>steps</code>.</p>
+<p><b>Guide.</b> <a href="../bridge/#trying-it-on-made-up-hosts">The bridge: trying it on made-up hosts</a></p>
+<h2 id="fleet-agent"><code>fleet agent</code></h2>
+<p><b>Reads only.</b> It changes nothing.</p>
+<p>Print what an agent needs to know about fleet.</p>
+<pre class="doc-code"><code>fleet agent</code></pre>
+<p><b>JSON.</b> Adds <code>markdown</code> (the primer), <code>recipes</code> and <code>status</code>.</p>
+<h2 id="fleet-help"><code>fleet help</code></h2>
+<p><b>Reads only.</b> It changes nothing.</p>
+<p>List the commands.</p>
+<pre class="doc-code"><code>fleet help</code></pre>
+<p><b>JSON.</b> Adds <code>commands</code>: the name and summary of each command.</p>
+    </article>
+  </main>
+
+  <script src="../docs.js" defer></script>
+</body>
+</html>
