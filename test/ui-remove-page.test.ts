@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { REMOVE_ADMIN, REMOVE_SELF, bundleLosses, goLabel, heldForHost, hostRefusal, hostRuns, lossLine, mentions, removal, sourceSkills, touched } from "../src/ui/static/removing.js";
-import { REMOVE_ADMIN as SERVER_ADMIN, REMOVE_SELF as SERVER_SELF } from "../src/ui/hostremove.ts";
+import { REMOVE_ADMIN as SERVER_ADMIN, REMOVE_SELF as SERVER_SELF } from "../src/hostremove.ts";
 import { removalOp } from "../src/ui/static/editing.js";
 import { opLabel, suggestMessage } from "../src/ui/static/matrix.js";
 import { jobLabel, jobsOf, otherJobs, withJobs } from "../src/ui/static/jobs.js";

@@ -13,3 +13,6 @@ export const EXIT = {
 } as const;
 
 export type ExitName = keyof typeof EXIT;
+
+/** The name of an exit code, `error` for none: a child that could not run has no code. */
+export const codeName = (exit: number | null): string => (exit === null ? "error" : (Object.entries(EXIT).find(([, n]) => n === exit)?.[0] ?? "error"));

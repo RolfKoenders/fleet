@@ -5,7 +5,9 @@ import { join } from "node:path";
 import { InvalidConfigError } from "./config.ts";
 import { hostNames, secretsFile, writeSopsConfig } from "./recipients.ts";
 import { NeedsSecretError, findSops, firstLine, requireAgeKey, runSops, sopsEnv } from "./sops.ts";
+import type { SopsRun } from "./sops.ts";
 import type { Result } from "./output.ts";
+import { prompter } from "./prompt.ts";
 
 const SECRET_NAME = /^[A-Z][A-Z0-9_]*$/;
 
@@ -18,7 +20,7 @@ export async function secrets(configDir: string, args: string[], home: string = 
     if (sub === "edit") return edit(configDir, rest, home);
     if (sub === "rekey") return rekey(configDir, rest, home);
     if (sub === "set") return await set(configDir, rest, home);
-    return invalid(`usage: fleet secrets edit <file> | set <file> <NAME> | rekey`);
+    return invalid(`usage: fleet secrets edit <file> | set <file> <NAME> | rekey | rotate [NAME...]`);
   } catch (error) {
     if (error instanceof InvalidConfigError) return invalid(...error.problems);
     if (error instanceof NeedsSecretError) return { code: "needs-secret", messages: [`fleet: ${error.message}`] };
@@ -30,34 +32,6 @@ export async function secrets(configDir: string, args: string[], home: string = 
 function fileArg(configDir: string, name: string | undefined): string | Result {
   if (name !== undefined && (name === "shared" || hostNames(configDir).includes(name))) return name;
   return invalid(`the first argument must be 'shared' or a host with a file in hosts/ (${hostNames(configDir).join(", ") || "none"})`);
-}
-
-function promptHidden(label: string): Promise<string> {
-  const stdin = process.stdin;
-  process.stderr.write(label);
-  stdin.setRawMode(true);
-  stdin.setEncoding("utf8");
-  stdin.resume();
-  return new Promise((resolve, reject) => {
-    let value = "";
-    const finish = (settle: () => void) => {
-      stdin.off("data", onData);
-      stdin.setRawMode(false);
-      stdin.pause();
-      process.stderr.write("\n");
-      settle();
-    };
-    const onData = (chunk: string) => {
-      if (chunk.startsWith("\u001b")) return; // an arrow key or other escape sequence
-      for (const char of chunk) {
-        if (char === "\r" || char === "\n" || char === "\u0004") return finish(() => resolve(value));
-        if (char === "\u0003") return finish(() => reject(new Error("cancelled")));
-        if (char === "\u007f" || char === "\b") value = [...value].slice(0, -1).join("");
-        else if (char >= " ") value += char;
-      }
-    };
-    stdin.on("data", onData);
-  });
 }
 
 /** Writes `.sops.yaml`. A result when `file` has no recipients, so nothing could be encrypted for it. */
@@ -72,7 +46,7 @@ async function readStdin(): Promise<string> {
   return Buffer.concat(chunks).toString("utf8").replace(/\r?\n$/, "");
 }
 
-const ROTATE = "fleet: rekey does not rotate tokens: after a leaked key or a retired host, rotate the real tokens too";
+export const ROTATE = "fleet: rekey does not rotate tokens: after a leaked key or a retired host, rotate the real tokens too";
 
 function rekey(configDir: string, args: string[], home: string): Result {
   if (args.length > 0) return invalid("secrets rekey takes no arguments");
@@ -125,6 +99,11 @@ function edit(configDir: string, args: string[], home: string): Result {
   return { code: "ok", messages: [`fleet: edited ${secretsFile(file)}; \`fleet push\` commits it`] };
 }
 
+/** Sets `name` in the secrets file of `file`, which must exist. sops reads the value as JSON, so it is quoted; it travels on stdin, never in argv. */
+export function sopsSet(sops: string, configDir: string, home: string, file: string, name: string, value: string): SopsRun {
+  return runSops(sops, configDir, home, ["set", "--value-stdin", secretsFile(file), JSON.stringify([name])], JSON.stringify(value));
+}
+
 async function set(configDir: string, args: string[], home: string): Promise<Result> {
   if (args.length > 2) {
     return invalid("secrets set takes a file and a name only: the value comes from stdin, never an argument");
@@ -139,7 +118,7 @@ async function set(configDir: string, args: string[], home: string): Promise<Res
   const missing = writeConfigFor(configDir, file);
   if (missing !== null) return missing;
 
-  const value = process.stdin.isTTY ? await promptHidden(`Value for ${name} (hidden): `) : await readStdin();
+  const value = process.stdin.isTTY ? await prompter({ stdin: process.stdin, out: process.stderr }).secret(`Value for ${name} (hidden): `) : await readStdin();
   if (value === "") return invalid("the value is empty; pipe it on stdin");
 
   const path = join(configDir, secretsFile(file));
@@ -149,8 +128,7 @@ async function set(configDir: string, args: string[], home: string): Promise<Res
     mkdirSync(join(configDir, "secrets"), { recursive: true });
     writeFileSync(path, created.stdout);
   }
-  // sops reads this as JSON, so the value is quoted. It travels on stdin, never in argv.
-  const written = runSops(sops, configDir, home, ["set", "--value-stdin", secretsFile(file), JSON.stringify([name])], JSON.stringify(value));
+  const written = sopsSet(sops, configDir, home, file, name, value);
   if (written.status !== 0) return { code: "error", messages: [`fleet: sops could not set ${name}: ${firstLine(written.stderr)}`] };
   return { code: "ok", text: `set ${name} in ${secretsFile(file)}` };
 }

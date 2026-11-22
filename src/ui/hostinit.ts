@@ -2,11 +2,12 @@ import { existsSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { spawn } from "node:child_process";
 import { applyOps, hostFile, SHARED_HOST, validate } from "../edit/index.ts";
-import { EXIT } from "../exit.ts";
-import { runGit } from "../git.ts";
+import { codeName } from "../exit.ts";
+import { outsideChanges, runGit } from "../git.ts";
 import { hostNames } from "../recipients.ts";
+import type { Refusal } from "../refusal.ts";
 import { probedNode } from "../tools.ts";
-import { outsideChanges, readFiles } from "./edits.ts";
+import { readFiles } from "./edits.ts";
 import { nameLength } from "./opsof.ts";
 import { BadRequest } from "./request.ts";
 
@@ -87,10 +88,8 @@ export function previewHost(configDir: string, req: HostRequest): { refused: Ref
 
 export type InitDoc = { ok: boolean; code: string; exit: number | null; messages: string[]; written: string; removed: boolean; kept: boolean; output: string[] };
 
-export type Refusal = { status: number; code: string; message: string; extra?: Record<string, unknown> };
+export type { Refusal };
 export type InitOutcome = { refused: Refusal } | { doc: InitDoc };
-
-export const codeName = (exit: number | null): string => (exit === null ? "error" : (Object.entries(EXIT).find(([, n]) => n === exit)?.[0] ?? "error"));
 
 /** One line of the child's output as the page may show it: no escape sequence, no control character. */
 export const cleanLine = (line: string): string => line.replace(/\x1b\[[0-9;?]*[ -/]*[@-~]/g, "").replace(/[\u0000-\u0008\u000b-\u001f\u007f]/g, "");

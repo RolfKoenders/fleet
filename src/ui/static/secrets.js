@@ -105,3 +105,16 @@ export function heldNames(ops) {
 
 /** How many names a host needs and lacks, for the badge on the screen's tab. @param {SecretsTable | null | undefined} table */
 export const missingCount = (table) => (table?.names ?? []).reduce((n, row) => n + Object.values(row.cells).filter((c) => c.state === "missing").length, 0);
+
+/** The secret names a location hash asks the Secrets screen to show (`#/secrets?names=A,B`), or none for all of them. @param {string} hash @returns {string[]} */
+export function namesOf(hash) {
+  const at = hash.indexOf("?");
+  const raw = at < 0 ? "" : (new URLSearchParams(hash.slice(at + 1)).get("names") ?? "");
+  return raw.split(",").filter((n) => /^[A-Z][A-Z0-9_]*$/.test(n));
+}
+
+/** The hash that opens the Secrets screen on these names. @param {string[]} names */
+export const secretsHashFor = (names) => `#/secrets?${new URLSearchParams({ names: names.join(",") })}`;
+
+/** The rows of the names asked for, or every row when none were. @param {SecretRow[]} rows @param {string[]} names */
+export const rowsNamed = (rows, names) => (names.length === 0 ? rows : rows.filter((r) => names.includes(r.name)));

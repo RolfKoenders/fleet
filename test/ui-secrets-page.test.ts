@@ -2,7 +2,8 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { actionOf, afterSet, cellView, dialogTargets, fileOf, heldNames, MAX_VALUE, missingCount, setBody, valueProblem } from "../src/ui/static/secrets.js";
+import { actionOf, afterSet, cellView, dialogTargets, fileOf, heldNames, MAX_VALUE, missingCount, namesOf, rowsNamed, secretsHashFor, setBody, valueProblem } from "../src/ui/static/secrets.js";
+import { readableNames, ROTATE_NOW } from "../src/ui/static/removing.js";
 import { opLabel, suggestMessage } from "../src/ui/static/matrix.js";
 import { createClient } from "../src/ui/static/api.js";
 import { repoRoot } from "./helpers.ts";
@@ -105,4 +106,19 @@ test("the page keeps no value: the field is not named, not remembered and emptie
     assert.doesNotMatch(text, /localStorage|sessionStorage/, file);
     assert.doesNotMatch(text, /console\.(log|info|debug)/, file);
   }
+});
+
+test("the Rotate these now button opens the Secrets screen on the names a removed host could read, and nothing else", () => {
+  assert.deepEqual(readableNames({ shared: ["A_TOKEN", "B_KEY"], own: ["B_KEY", "C_KEY"] }), ["A_TOKEN", "B_KEY", "C_KEY"]);
+  const hash = secretsHashFor(["A_TOKEN", "C_KEY"]);
+  assert.equal(hash, "#/secrets?names=A_TOKEN%2CC_KEY");
+  assert.deepEqual(namesOf(hash), ["A_TOKEN", "C_KEY"]);
+  assert.deepEqual(namesOf("#/secrets"), []);
+  assert.deepEqual(namesOf("#/secrets?names=a_token,B-KEY,,C_KEY"), ["C_KEY"], "only secret names are taken from an address");
+  const rows = ["A_TOKEN", "B_KEY", "C_KEY"].map((name) => ({ name })) as any;
+  assert.deepEqual(rowsNamed(rows, ["C_KEY", "A_TOKEN"]).map((r: any) => r.name), ["A_TOKEN", "C_KEY"]);
+  assert.equal(rowsNamed(rows, []).length, 3);
+  assert.equal(ROTATE_NOW, "Rotate these now");
+  const app = readFileSync(join(repoRoot, "src/ui/static/app.js"), "utf8");
+  assert.match(app, /id: "rm-rotate"[^\n]*rotateNow\(rotatable\)/);
 });

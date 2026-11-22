@@ -2,7 +2,8 @@ import { takeOver } from "../adopt.ts";
 import type { TakenOver } from "../adopt.ts";
 import type { EditOp } from "../edit/index.ts";
 import { NeedsSecretError } from "../sops.ts";
-import { outsideChanges, writeAndCommit } from "../ui/edits.ts";
+import { outsideChanges } from "../git.ts";
+import { writeAndCommit } from "../ui/edits.ts";
 import type { StagedSkills } from "../ui/edits.ts";
 
 /** An item capture put in the config, which this machine then holds as it stands. */

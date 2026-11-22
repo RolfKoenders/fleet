@@ -2,12 +2,13 @@ import { having } from "../agents/index.ts";
 import type { AgentId } from "../agents/index.ts";
 import { detectAgents } from "../hostagents.ts";
 import { readCache } from "../tui/cache.ts";
+import { outsideChanges } from "../git.ts";
 import { readHostName } from "../host.ts";
 import { LockedError, acquirePushLock } from "../lock.ts";
 import { loadModel } from "../tui/model.ts";
 import { readSecrets } from "../tui/reads.ts";
 import { answerOf, buildAnswer, captureDoc, itemsOf, takeOverHere } from "./capture.ts";
-import { entryOf, outsideChanges, plan, preview, readFiles, secretOpProblem, WriteRefused, writeAndCommit } from "./edits.ts";
+import { entryOf, plan, preview, readFiles, secretOpProblem, WriteRefused, writeAndCommit } from "./edits.ts";
 import type { StagedSkills } from "./edits.ts";
 import { secretsTable } from "./secretsview.ts";
 import { setRequest, setSecret } from "./secretset.ts";
@@ -30,8 +31,9 @@ import { realProbe } from "../tui/probe.ts";
 import type { Probe } from "../tui/probe.ts";
 import { FleetWatch } from "./fleet.ts";
 import { yamlOf, yamlRequest } from "./yamlview.ts";
-import { addHost, hostFields, hostRequest, previewHost } from "./hostinit.ts";
-import { previewRemove, removeFields, removeHost, removeRefusal, removeRequest } from "./hostremove.ts";
+import { addHost, hostFields, hostRequest, previewHost, runChild } from "./hostinit.ts";
+import { previewRemove, removeHost, removeRefusal } from "../hostremove.ts";
+import { removeFields, removeRequest } from "./removerequest.ts";
 import type { FleetEvent } from "../events.ts";
 import type { PushEnd } from "../pushrun.ts";
 import type { Job } from "./jobs.ts";
@@ -426,7 +428,7 @@ export function routes(deps: ApiDeps): Route[] {
             throw error;
           }
           try {
-            const out = await removeHost(deps.configDir, deps.toolDir, deps.home, readHostName(deps.home), request, (text) => deps.broadcast("remove", { text }));
+            const out = await removeHost(deps.configDir, readHostName(deps.home), request, (say) => runChild(deps.toolDir, deps.configDir, deps.home, ["secrets", "rekey"], say), (text) => deps.broadcast("remove", { text }));
             if ("refused" in out) return refused(out.refused.status, out.refused.code, out.refused.message, out.refused.extra);
             deps.broadcast("removeend", out.doc);
             return { status: out.doc.exit === null ? 500 : 200, body: out.doc };

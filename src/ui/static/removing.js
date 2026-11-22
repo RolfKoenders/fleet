@@ -123,5 +123,11 @@ export const hostKeeps = (name) => `The machine keeps its files, and its timer w
 /** The secrets a removed host could read stay valid: rekeying changes who can read the files, not the values. */
 export const ROTATE = "Rekeying does not change a secret's value. This host has read these, so change them where they come from, then set the new values.";
 
+/** The names a removed host could read, shared ones first, each once. @param {{ shared: string[], own: string[] }} readable */
+export const readableNames = (readable) => [...new Set([...readable.shared, ...readable.own])];
+
+/** The button that leads from a finished removal to the Secrets screen, filtered to what the host could read. */
+export const ROTATE_NOW = "Rotate these now";
+
 /** The words of the button that goes ahead. @param {"forget" | "stage" | "run"} mode */
 export const goLabel = (mode) => (mode === "forget" ? "Drop the addition" : mode === "stage" ? "Remove, to push" : "Remove the host and push");

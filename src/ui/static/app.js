@@ -8,10 +8,10 @@ import { fill, h } from "./dom.js";
 import { ADD, addable, CATALOG_KINDS, closable, confirmLabel, fileOf, freshAdd, hostAsDraft, nearChanges, paneView } from "./adding.js";
 import { bundleDraft, checkLines, cloneKey, confirmText, needsLook, opWarnings, secretOf, secretsOf, serverDraft, shownAgents, skillChoices, sourceDraft, sourceEditDraft, sourceInputs, takeBack } from "./catalog.js";
 import { bundleFormOf, EDIT, EDIT_DROP_LABEL, EDIT_LABEL, editPaneView, freshEdit, hostEditDraft, hostFormOf, isAddition, ownOp, readOnlyLines, removalOp, serverAsAdded, serverFormOf, sourceFormOf, startOf, withEdit } from "./editing.js";
-import { bundleLosses, EMPTY_BUNDLE, goLabel, heldForHost, hostKeeps, hostRefusal, hostRuns, lossLine, NO_SKILLS_KNOWN, removal, REMOVE, ROTATE, sourceSkills, touched } from "./removing.js";
+import { bundleLosses, EMPTY_BUNDLE, goLabel, heldForHost, hostKeeps, hostRefusal, hostRuns, lossLine, NO_SKILLS_KNOWN, readableNames, removal, REMOVE, ROTATE, ROTATE_NOW, sourceSkills, touched } from "./removing.js";
 import { blockers, cellAction, DROPPED_BLOCKER, cellState, clickCell, opLabel, suggestMessage, summaryLine, WORDS } from "./matrix.js";
 import { confirmInit, elapsed, heldProblem, hostDraft, idleInit, initEnd, initLine, SETUP_DOC, startInit } from "./hosts.js";
-import { actionOf, afterSet, cellView, dialogTargets, heldNames, missingCount, retryText, valueProblem } from "./secrets.js";
+import { actionOf, afterSet, cellView, dialogTargets, heldNames, missingCount, namesOf, retryText, rowsNamed, secretsHashFor, valueProblem } from "./secrets.js";
 import { escapeAction, filterRows, hashWithQuery, hiddenWithChanges, nameMatches, queryOf, skillHits, slashFocuses } from "./filter.js";
 import { canCopyImage, CARD_SIZE, clipboardProblem, discussionUrl, embedFonts, FONT_FILES, fileName, STYLES as CARD_STYLES, unseenNote } from "./card.js";
 import { itemYaml, yamlPath, yamlTag } from "./yamlview.js";
@@ -1304,6 +1304,12 @@ function removalPane() {
   );
 }
 
+/** Closes the dialog of a finished removal and opens the Secrets screen on the secrets the host could read. @param {string[]} names */
+function rotateNow(names) {
+  closeRemove();
+  location.hash = secretsHashFor(names);
+}
+
 function renderRemove() {
   const r = model.rm;
   if (r === null || rmEl === null) return;
@@ -1330,6 +1336,7 @@ function renderRemove() {
     if (stale) words.push(h("div", { class: "notice bad inline", id: "rm-stale" }, r.dropped.map((/** @type {any} */ d) => d.reason).join("; ")));
     if (r.broken !== null) words.push(h("div", { class: "notice bad inline", id: "rm-broken" }, r.broken));
   }
+  const rotatable = done && r.host !== null ? readableNames(r.host.readable) : [];
   const goText = host ? (model.removal.running ? "Removing..." : `Remove ${r.name} and push`) : goLabel(plan?.mode ?? "stage");
   const go = host
     ? h("button", { type: "button", id: "rm-go", class: "btn danger", disabled: !ready, onclick: () => runRemove(r) }, goText)
@@ -1341,7 +1348,7 @@ function renderRemove() {
       { class: "adlg-form", autocomplete: "off", novalidate: true, onsubmit: (e) => e.preventDefault() },
       h("div", { class: "adlg-head" }, h("h3", { id: "rm-title" }, `${REMOVE[r.kind]}: ${r.name}`), h("span", { class: "muted" }, host ? (r.host === null ? "runs now" : hostRuns(r.name, r.host).head) : plan?.mode === "forget" ? "drops an addition: nothing is written" : "goes to To push; written when you push")),
       h("div", { class: "adlg-body" + (right.length === 0 ? " single" : "") }, h("div", { class: "form rmwords" }, ...words), ...(right.length === 0 ? [] : [h("div", { class: "formright" }, ...right)])),
-      h("div", { class: "adlg-foot" }, h("span", { class: "spacer" }), done ? h("button", { type: "button", id: "rm-done", class: "btn primary", onclick: closeRemove }, "Done") : h("button", { type: "button", id: "rm-cancel", class: "btn ghost", disabled: !rmClosable(), onclick: closeRemove }, ran && !model.removal.running ? "Close" : "Cancel"), done ? null : go),
+      h("div", { class: "adlg-foot" }, h("span", { class: "spacer" }), done && rotatable.length > 0 ? h("button", { type: "button", id: "rm-rotate", class: "btn primary", onclick: () => rotateNow(rotatable) }, ROTATE_NOW) : null, done ? h("button", { type: "button", id: "rm-done", class: "btn ghost", onclick: closeRemove }, "Done") : h("button", { type: "button", id: "rm-cancel", class: "btn ghost", disabled: !rmClosable(), onclick: closeRemove }, ran && !model.removal.running ? "Close" : "Cancel"), done ? null : go),
     ),
   );
   const log = rmEl.querySelector("#rmlog");
@@ -1724,11 +1731,16 @@ function secretsScreen() {
   const table = shownSecrets();
   if (model.secrets === null || table === null) return loadingOrError(title, model.secretsError);
   const held = heldNames(model.ops);
+  const only = namesOf(location.hash);
+  const shown = rowsNamed(table.names, only);
   return h(
     "div",
     {},
     h("h1", {}, title),
     h("p", { class: "sub" }, about),
+    only.length > 0
+      ? h("div", { class: "notice", id: "sec-only" }, `Showing the secrets a removed host could read: ${only.join(", ")}.${shown.length < only.length ? ` ${only.length - shown.length} of them no catalog server uses, so they are not listed here.` : ""} Replace each value, then revoke the old token wherever it was issued: fleet cannot. `, h("a", { href: "#/secrets", id: "sec-all" }, "Show all secrets"))
+      : null,
     ...[...model.secrets.problems, ...table.problems].slice(0, 2).map((/** @type {string} */ p) => h("div", { class: "notice" }, p)),
     table.names.length === 0
       ? h("div", { class: "panel empty" }, "No secrets yet. A secret appears here once a catalog server refers to it as secret:NAME.")
@@ -1739,7 +1751,7 @@ function secretsScreen() {
             "table",
             { class: "sec" },
             h("thead", {}, h("tr", {}, h("th", {}, "Name"), h("th", {}, "Used by"), ...table.hosts.map((x) => h("th", {}, x.name, x.age ? null : h("small", {}, "no age key"))), h("th", {}, ""))),
-            h("tbody", {}, ...table.names.map((/** @type {import("./secrets.js").SecretRow} */ row) => {
+            h("tbody", {}, ...shown.map((/** @type {import("./secrets.js").SecretRow} */ row) => {
               const action = actionOf(row);
               return h(
                 "tr",

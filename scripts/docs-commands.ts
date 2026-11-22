@@ -16,6 +16,7 @@ export const GUIDES: Record<string, { text: string; target: string }> = {
   capture: { text: "Capture", target: "capture.md" },
   push: { text: "Getting started: working with fleet", target: "getting-started.md#working-with-fleet" },
   secrets: { text: "FAQ: where do my secrets end up?", target: "faq.md#where-do-my-secrets-end-up" },
+  host: { text: "Retiring a machine", target: "setting-up-machines.md#retiring-a-machine" },
   skills: { text: "Getting started: reading a skill update before it moves", target: "getting-started.md#reading-a-skill-update-before-it-moves" },
   update: { text: "FAQ: how do I update fleet?", target: "faq.md#how-do-i-update-fleet" },
   new: { text: "Getting started", target: "getting-started.md" },

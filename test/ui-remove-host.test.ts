@@ -6,7 +6,7 @@ import { git, publish } from "./helpers.ts";
 import { acquirePushLock } from "../src/lock.ts";
 import { startUi } from "../src/ui/server.ts";
 import type { UiServer } from "../src/ui/server.ts";
-import { REMOVE_ADMIN, REMOVE_SELF } from "../src/ui/hostremove.ts";
+import { REMOVE_ADMIN, REMOVE_SELF } from "../src/hostremove.ts";
 import { identityOf, setup } from "./initworld.ts";
 import type { S } from "./initworld.ts";
 

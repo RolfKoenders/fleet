@@ -104,6 +104,26 @@ Git must be able to read and push your config repo without a prompt, from a laun
 
 `fleet diff` shows the same list without applying anything.
 
+## Retiring a machine
+
+`fleet host remove <name>` takes a machine out of the fleet, from another machine of the fleet. It refuses the machine you run it on and the only admin host (make another host the admin first), and it asks before it does anything. Without a terminal it needs `--yes`.
+
+It deletes `hosts/<name>.yaml` and `secrets/<name>.enc.yaml`, runs `fleet secrets rekey` so that no secrets file names the machine's key any more, then commits and pushes the config repo. `fleet ui` does the same from the Remove button on a host's card, with the same code. If rekey or the commit fails, every file is put back and nothing is committed. If only the push fails, the commit stays and the command says to run `fleet push`.
+
+If the machine has an ssh destination and answers, the command asks once whether to stop and remove its timer there, the way `timer: off` does, and does so on yes. It leaves the machine's agent config, skills and links alone. A machine that does not answer is told nothing, and the summary says so, with the commands that stop the timer by hand. Without the step, the machine's timer keeps running and reports errors until fleet is turned off there.
+
+### Rotating the secrets it could read
+
+Rekeying is not enough. It changes who can read the secrets files from now on. It does not change a value: every token the machine could read still works wherever it was issued, and the machine, or anyone with its key, can still open the older encrypted files in the git history. So the command ends with the list of secrets the machine could read, from its own file and from `shared`, and offers to rotate them now.
+
+`fleet secrets rotate [NAME...]` does that, and it is also the tool for a token that leaked or one that `fleet doctor` reports as rejected. Without names it lists every secret and asks which ones. After a removal, the secrets that were in `shared` are ticked. The machine's own secrets file is deleted, but its tokens still work where they came from, so they are listed too.
+
+For each secret it names the MCP servers that use it and the secrets files that hold it, then asks for the new value with hidden input, or a blank line to skip it. A value is never echoed, logged or shown, and it goes to sops on stdin. The new value is set in every secrets file that holds the secret, or in none of them. At the end it makes one commit, then offers to push and to run `fleet doctor --all`, which starts every host's MCP servers to check they work with the new values.
+
+Fleet keeps no to-do list. The summary lists what you skipped, and `fleet secrets rotate` picks them up later. It also reminds you to revoke each old token wherever it was issued (the service's token page), because fleet cannot do that.
+
+From a script, pipe a single value to `fleet secrets set <file> <NAME>`. `fleet secrets rotate` needs a terminal.
+
 ## The age key
 
 Init prints the key of the machine you work from once, when it makes the key. That key opens every secret, so save it in your password manager.
