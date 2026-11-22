@@ -185,6 +185,8 @@ function tryRevert(configDir: string, commit: string, files: string[]): RevertRe
 
   const reverted = runGit(configDir, "diff", "--cached", "--name-only").stdout.split("\n").filter((f) => f !== "");
   if (reverted.length === 0) {
+    // Nothing to commit, so end the revert rather than leave git in the middle of one.
+    abortRevert(configDir);
     return { ok: true, reverted: [] };
   }
 
