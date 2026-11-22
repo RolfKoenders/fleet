@@ -31,6 +31,7 @@ const TERMS: [string, string][] = [
   ["Conflict", "A difference fleet will not resolve by itself during apply, so it stops and reports instead of overwriting."],
   ["Doctor result", "What the last `fleet doctor` on a host found for each MCP server it picks. The only record of a server's tools, since nothing else starts a server."],
   ["Startup context", "What an agent on a host loads before the first prompt: its instructions, the descriptions of its skills, and the MCP tool definitions it is offered, whether fleet put them there or not. A size, estimated in tokens."],
+  ["Alert", "A message a host sends by itself after an apply its timer started, when its state changed: a new conflict, an apply that stops with an error, or back to ok. It goes to the desktop, an ntfy topic or a webhook, as the host's `notify:` says."],
 ];
 
 /** What each exit code means, written once. A new code in `exit.ts` fails to compile until it is described here. */

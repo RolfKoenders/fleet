@@ -89,3 +89,9 @@ _Avoid_: Health check, probe result
 **Startup context**:
 What an agent on a host loads before the first prompt: its instructions, the descriptions of its skills, and the MCP tool definitions it is offered, whether fleet put them there or not. A size, estimated in tokens.
 _Avoid_: Context budget, context cost, context usage
+
+## Alerts
+
+**Alert**:
+A message a host sends by itself after an apply its timer started, when its state changed: a new conflict, an apply that stops with an error, or back to ok. It goes to the desktop, an ntfy topic or a webhook, as the host's `notify:` says.
+_Avoid_: Notification, warning (a warning is a line in an apply's result; it never raises an alert)

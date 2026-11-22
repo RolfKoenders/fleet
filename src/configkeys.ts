@@ -7,12 +7,14 @@ export const FLEET_KEYS = ["tool"];
 export const TOOL_KEYS = ["repo", "commit", "track"];
 
 /** Keys of `hosts/_defaults.yaml`, which a host file may also set. */
-export const SHARED_KEYS = ["vars", "bundles", "exclude", "mcp", "settings", "files", "agents", "timer"];
+export const SHARED_KEYS = ["vars", "bundles", "exclude", "mcp", "settings", "files", "agents", "timer", "notify"];
 /** Keys only a host file may set. */
 export const HOST_ONLY_KEYS = ["ssh", "age", "admin", "unmanaged"];
 /** What `mcp` holds, and what an entry of `files` holds. */
 export const MCP_SELECT_KEYS = ["include", "exclude"];
 export const FILE_RECORD_KEYS = ["source", "target"];
+/** What `notify` holds when it is a map. */
+export const NOTIFY_KEYS = ["desktop", "ntfy", "ntfy_token", "webhook"];
 
 /** `catalog/mcp.yaml`: the one top-level key, and what a server holds. */
 export const MCP_CATALOG_KEYS = ["servers"];
@@ -36,6 +38,7 @@ export function referenceKeys(): Record<ReferenceFile, string[]> {
     if (key === "mcp") return inside(key, MCP_SELECT_KEYS);
     if (key === "files") return [key, ...inside(key, FILE_RECORD_KEYS, "[].")];
     if (key === "settings") return [`${key}.<agent>`];
+    if (key === "notify") return [key, ...inside(key, NOTIFY_KEYS)];
     return [key];
   });
   return {

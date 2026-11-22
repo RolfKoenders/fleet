@@ -69,7 +69,7 @@
 <p>Fleet reads the two files for the host it is on and merges them. A key in the defaults is a default for every host, and the host file adds to it, takes from it or replaces it.</p>
 <h2 id="how-a-host-file-layers-on-the-defaults">How a host file layers on the defaults</h2>
 <p>How the two files combine depends on the key:</p>
-<div class="doc-table"><table><thead><tr><th>Key</th><th>What the host file does</th></tr></thead><tbody><tr><td><code>bundles</code>, <code>mcp.include</code></td><td>Its list is added to the defaults' list.</td></tr><tr><td><code>exclude</code>, <code>mcp.exclude</code></td><td>Its names are taken off after both lists are added. Names in the defaults' <code>exclude</code> are taken off too.</td></tr><tr><td><code>agents</code>, <code>timer</code></td><td>Its value replaces the defaults' value.</td></tr><tr><td><code>vars</code></td><td>Merged name by name. The host's value wins at the same name.</td></tr><tr><td><code>settings</code></td><td>Merged key by key, down to the leaves. The host's value wins at the same key.</td></tr><tr><td><code>files</code></td><td>Merged by <code>target</code>. A host record replaces the default record with the same target and keeps its place.</td></tr></tbody></table></div>
+<div class="doc-table"><table><thead><tr><th>Key</th><th>What the host file does</th></tr></thead><tbody><tr><td><code>bundles</code>, <code>mcp.include</code></td><td>Its list is added to the defaults' list.</td></tr><tr><td><code>exclude</code>, <code>mcp.exclude</code></td><td>Its names are taken off after both lists are added. Names in the defaults' <code>exclude</code> are taken off too.</td></tr><tr><td><code>agents</code>, <code>timer</code></td><td>Its value replaces the defaults' value.</td></tr><tr><td><code>notify</code></td><td>Merged field by field: a field the host file sets replaces the defaults' field, and <code>notify: off</code> in the host file turns every alert off for that host.</td></tr><tr><td><code>vars</code></td><td>Merged name by name. The host's value wins at the same name.</td></tr><tr><td><code>settings</code></td><td>Merged key by key, down to the leaves. The host's value wins at the same key.</td></tr><tr><td><code>files</code></td><td>Merged by <code>target</code>. A host record replaces the default record with the same target and keeps its place.</td></tr></tbody></table></div>
 <p><code>ssh</code>, <code>age</code>, <code>admin</code> and <code>unmanaged</code> are for one machine, so only a host file may set them. Fleet refuses them in the defaults.</p>
 <p>An unknown key is an error in either file, and the message names the file and the key. This is why every host has to run a fleet version that knows a key before a file uses it.</p>
 <h2 id="example">Example</h2>
@@ -157,6 +157,33 @@ files:
 <p>Type: string. Default: <code>30m</code>. Added in: not yet released.</p>
 <p>How often the timer runs <code>fleet apply</code> on a machine: <code>5m</code>, <code>10m</code>, <code>15m</code>, <code>20m</code>, <code>30m</code>, a whole number of hours <code>1h</code> to <code>24h</code>, or <code>off</code>, which removes the timer so the host applies only on <code>fleet push</code> or by hand. Any other value is an error that lists these. See <a href="../setting-up-machines/#the-timers-schedule">the timer's schedule</a>.</p>
 <pre class="doc-code"><code>timer: 1h</code></pre>
+<h3 id="notify"><code>notify</code></h3>
+<p>Type: map, or <code>off</code>. Default: none, which means no alerts. Added in: not yet released.</p>
+<p>Where a machine sends an alert when an apply its timer started stops, or recovers: a new conflict, an apply that stops with an error, and back to ok. Each machine alerts about itself, and only after a timer run; <code>fleet push</code>, a manual <code>fleet apply</code> and <code>fleet init</code> show their result on screen. A machine that sets no <code>notify:</code> sends nothing. In a host file, <code>notify: off</code> turns all alerts off for that machine, whatever the defaults say. The fields below are merged one at a time with the defaults'. See <a href="../setting-up-machines/#alerts">alerts</a>.</p>
+<pre class="doc-code"><code>notify:
+  desktop: true
+  ntfy: secret:NTFY_URL</code></pre>
+<h3 id="notify-desktop"><code>notify.desktop</code></h3>
+<p>Type: boolean. Default: <code>false</code>. Added in: not yet released.</p>
+<p>Shows a desktop notification: <code>notify-send</code> on Linux, <code>osascript</code> on a Mac. A machine with no desktop session, or without the program, skips it without an error.</p>
+<pre class="doc-code"><code>notify:
+  desktop: true</code></pre>
+<h3 id="notify-ntfy"><code>notify.ntfy</code></h3>
+<p>Type: string. Default: none. Added in: not yet released.</p>
+<p>The full URL of an <a href="https://ntfy.sh">ntfy</a> topic, on ntfy.sh or your own server. Fleet posts the alert there: a problem at high priority with a warning tag, back to ok at default priority. Anyone who knows the topic can read it, so keep it in a secret: <code>secret:NAME</code> is replaced from the machine's encrypted secrets when the alert is sent. Any other value must be an <code>http</code> or <code>https</code> URL.</p>
+<pre class="doc-code"><code>notify:
+  ntfy: secret:NTFY_URL</code></pre>
+<h3 id="notify-ntfy-token"><code>notify.ntfy_token</code></h3>
+<p>Type: string. Default: none. Added in: not yet released.</p>
+<p>The access token for an ntfy server that needs a login, sent as a bearer token. Put it in a secret: <code>secret:NAME</code> is replaced from the machine's encrypted secrets when the alert is sent.</p>
+<pre class="doc-code"><code>notify:
+  ntfy: secret:NTFY_URL
+  ntfy_token: secret:NTFY_TOKEN</code></pre>
+<h3 id="notify-webhook"><code>notify.webhook</code></h3>
+<p>Type: string. Default: none. Added in: not yet released.</p>
+<p>A URL that gets a POST of a small JSON body, <code>{ "v": 1, "host", "event": "conflict" | "failed" | "ok", "message", "conflict": { "kind", "path" } | null, "time", "fleet" }</code>. <code>fleet</code> is the short commit of the machine's fleet clone. New fields may be added later, so a receiver should ignore the ones it does not know. A webhook URL often holds its own secret: keep it in <code>secret:NAME</code>. Any other value must be an <code>http</code> or <code>https</code> URL.</p>
+<pre class="doc-code"><code>notify:
+  webhook: secret:FLEET_WEBHOOK</code></pre>
 <h2 id="keys-only-in-a-host-file">Keys only in a host file</h2>
 <h3 id="ssh"><code>ssh</code></h3>
 <p>Type: string. Default: none. Added in: 1.0.0.</p>

@@ -13,6 +13,7 @@ How the two files combine depends on the key:
 | `bundles`, `mcp.include` | Its list is added to the defaults' list. |
 | `exclude`, `mcp.exclude` | Its names are taken off after both lists are added. Names in the defaults' `exclude` are taken off too. |
 | `agents`, `timer` | Its value replaces the defaults' value. |
+| `notify` | Merged field by field: a field the host file sets replaces the defaults' field, and `notify: off` in the host file turns every alert off for that host. |
 | `vars` | Merged name by name. The host's value wins at the same name. |
 | `settings` | Merged key by key, down to the leaves. The host's value wins at the same key. |
 | `files` | Merged by `target`. A host record replaces the default record with the same target and keeps its place. |
@@ -184,6 +185,63 @@ How often the timer runs `fleet apply` on a machine: `5m`, `10m`, `15m`, `20m`, 
 
 ```yaml
 timer: 1h
+```
+
+### `notify`
+
+Type: map, or `off`. Default: none, which means no alerts. Added in: not yet released.
+
+Where a machine sends an alert when an apply its timer started stops, or recovers: a new conflict, an apply that stops with an error, and back to ok. Each machine alerts about itself, and only after a timer run; `fleet push`, a manual `fleet apply` and `fleet init` show their result on screen. A machine that sets no `notify:` sends nothing. In a host file, `notify: off` turns all alerts off for that machine, whatever the defaults say. The fields below are merged one at a time with the defaults'. See [alerts](setting-up-machines.md#alerts).
+
+```yaml
+notify:
+  desktop: true
+  ntfy: secret:NTFY_URL
+```
+
+### `notify.desktop`
+
+Type: boolean. Default: `false`. Added in: not yet released.
+
+Shows a desktop notification: `notify-send` on Linux, `osascript` on a Mac. A machine with no desktop session, or without the program, skips it without an error.
+
+```yaml
+notify:
+  desktop: true
+```
+
+### `notify.ntfy`
+
+Type: string. Default: none. Added in: not yet released.
+
+The full URL of an [ntfy](https://ntfy.sh) topic, on ntfy.sh or your own server. Fleet posts the alert there: a problem at high priority with a warning tag, back to ok at default priority. Anyone who knows the topic can read it, so keep it in a secret: `secret:NAME` is replaced from the machine's encrypted secrets when the alert is sent. Any other value must be an `http` or `https` URL.
+
+```yaml
+notify:
+  ntfy: secret:NTFY_URL
+```
+
+### `notify.ntfy_token`
+
+Type: string. Default: none. Added in: not yet released.
+
+The access token for an ntfy server that needs a login, sent as a bearer token. Put it in a secret: `secret:NAME` is replaced from the machine's encrypted secrets when the alert is sent.
+
+```yaml
+notify:
+  ntfy: secret:NTFY_URL
+  ntfy_token: secret:NTFY_TOKEN
+```
+
+### `notify.webhook`
+
+Type: string. Default: none. Added in: not yet released.
+
+A URL that gets a POST of a small JSON body, `{ "v": 1, "host", "event": "conflict" | "failed" | "ok", "message", "conflict": { "kind", "path" } | null, "time", "fleet" }`. `fleet` is the short commit of the machine's fleet clone. New fields may be added later, so a receiver should ignore the ones it does not know. A webhook URL often holds its own secret: keep it in `secret:NAME`. Any other value must be an `http` or `https` URL.
+
+```yaml
+notify:
+  webhook: secret:FLEET_WEBHOOK
 ```
 
 ## Keys only in a host file

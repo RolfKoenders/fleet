@@ -11,6 +11,8 @@ import { MissingToolError, repoState } from "./git.ts";
 import type { RepoState } from "./git.ts";
 import { readHostName } from "./host.ts";
 import { appliedPaths, detectAgents, namedAgents, notInstalledWarning } from "./hostagents.ts";
+import { alertsStatus } from "./notify.ts";
+import type { AlertsStatus } from "./notify.ts";
 import { paint } from "./output.ts";
 import type { Result } from "./output.ts";
 import { parseSchedule, scheduleWord, statusOs, timerWord } from "./scheduler.ts";
@@ -55,6 +57,8 @@ export type StatusFields = {
   tools: ToolVersions;
   /** The host's operating system, for the fleet card. Null when the host's fleet does not send it. */
   os: HostOs | null;
+  /** The alerts this host sends after a timer run, and what became of the last. Null when none are set up, or the host's fleet does not send it. */
+  alerts: AlertsStatus | null;
 };
 
 /** The OS names a card shows. */
@@ -188,6 +192,13 @@ function agentsLine(agents: AgentStatus[]): string {
   return `agents: ${[`${names}${pinned}`, ...left].join(" ")}`;
 }
 
+/** `alerts: desktop, ntfy · last sent 2h ago (conflict) · ntfy failed: HTTP 403` */
+function alertsLine(alerts: AlertsStatus, color: boolean): string {
+  const last = alerts.last === null ? "nothing sent yet" : `last sent ${ago(alerts.last.ageSeconds)} (${alerts.last.event})`;
+  const failed = alerts.failures.map((f) => paint(color, "yellow", `${f.channel} failed: ${f.reason}`));
+  return `alerts: ${[alerts.channels.join(", "), last, ...failed].join(" · ")}`;
+}
+
 /** The schedule a status line names beside the timer's state, from the raw value a host's config or a host's answer holds. */
 const scheduleWordOf = (schedule: string): string => {
   const parsed = parseSchedule(schedule);
@@ -218,6 +229,7 @@ function lines(fields: StatusFields, color: boolean, clone: string | null): stri
     `timer: ${timer}${schedule}`,
     `pending: ${shown(fields.pending)}`,
     `conflicts: ${fields.conflicts === null || fields.conflicts === 0 ? shown(fields.conflicts) : paint(color, "yellow", String(fields.conflicts))}`,
+    ...(fields.alerts === null ? [] : [alertsLine(fields.alerts, color)]),
     ...(fields.agents === null ? [] : [agentsLine(fields.agents)]),
     ...(fields.unmanaged === null || fields.unmanaged === 0 ? [] : [`not from config: ${paint(color, "yellow", String(fields.unmanaged))} (fleet capture lists them)`]),
     "tools:",
@@ -256,6 +268,7 @@ function collect(toolDir: string, configDir: string, home: string, host: string 
     schedule: host === null ? null : scheduleOf(configDir, host),
     ...counts,
     os: statusOs(home) === "darwin" ? "macos" : "linux",
+    alerts: host === null ? null : alertsStatus(configDir, host, home),
     agents: named.map((a) => ({ id: a.id, version: versions[a.id] ?? null, active: on.includes(a), pinned: pin?.includes(a.id) ?? false })),
     notInstalled,
     unmanaged: host === null ? null : unmanagedOn(configDir, home, host, on),
@@ -326,6 +339,25 @@ function agentStatuses(value: unknown): AgentStatus[] | null {
   });
 }
 
+const ALERT_CHANNELS = ["desktop", "ntfy", "webhook"] as const;
+const ALERT_EVENTS = ["conflict", "failed", "ok"] as const;
+
+/** A host's `alerts`, cut down to the channels and events fleet knows and to printable text. Null when the host sent none. */
+function alertsFrom(value: unknown): AlertsStatus | null {
+  if (!isObject(value) || !Array.isArray(value.channels)) return null;
+  const channels = ALERT_CHANNELS.filter((c) => (value.channels as unknown[]).includes(c));
+  const last = isObject(value.last) ? value.last : null;
+  const event = ALERT_EVENTS.find((e) => e === last?.event);
+  const at = printable(last?.at);
+  const age = count(last?.ageSeconds);
+  const failures = (Array.isArray(value.failures) ? value.failures : []).flatMap((f: unknown) => {
+    const channel = isObject(f) ? ALERT_CHANNELS.find((c) => c === f.channel) : undefined;
+    const reason = isObject(f) ? printable(f.reason) : null;
+    return channel !== undefined && reason !== null ? [{ channel, reason }] : [];
+  });
+  return { channels, last: event !== undefined && at !== null && age !== null ? { event, at, ageSeconds: age } : null, failures };
+}
+
 /**
  * A remote host's status, cut down to the fields fleet knows and to printable text, because it is shown on a
  * terminal and a host can be wrong. Null when the document has no fleet clone state, such as a failed status.
@@ -347,6 +379,7 @@ export function statusFromDocument(doc: Obj): StatusFields | null {
     unmanaged: count(doc.unmanaged),
     agents: agentStatuses(doc.agents),
     os: doc.os === "linux" || doc.os === "macos" ? doc.os : null,
+    alerts: alertsFrom(doc.alerts),
     notInstalled: Array.isArray(doc.notInstalled) ? AGENT_IDS.filter((id) => (doc.notInstalled as unknown[]).includes(id)) : null,
     tools: Object.fromEntries(TOOL_NAMES.filter((name) => tools[name] !== undefined || !isAgentId(name)).map((name) => [name, printable(tools[name])])) as ToolVersions,
   };

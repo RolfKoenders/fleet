@@ -26,7 +26,25 @@ fleet status [--all | --conflicts]
 - `--all`: Ask every host over ssh.
 - `--conflicts`: List this host's conflicts in full, reading only.
 
-**JSON.** Adds `repos`, `applied`, `timer`, `schedule`, `pending`, `conflicts`, `conflictList`, `agents`, `notInstalled` and `tools`. With `--all`, also `hosts`: one record for each host, with its `result` and its `status`. With `--conflicts`, only `conflicts`: a list of `{kind, path, detail, fix}`.
+**JSON.** Adds `repos`, `applied`, `timer`, `schedule`, `pending`, `conflicts`, `conflictList`, `agents`, `notInstalled`, `alerts` and `tools`. `alerts` is null when the host sends none, and otherwise holds `channels`, `last` (the last alert: `event`, `at`, `ageSeconds`) and `failures` (`channel` and `reason` of each delivery that failed). With `--all`, also `hosts`: one record for each host, with its `result` and its `status`. With `--conflicts`, only `conflicts`: a list of `{kind, path, detail, fix}`.
+
+## `fleet notify`
+
+**Changes things.** It writes to this host, to the config repo or to other hosts.
+
+Send a test alert through every channel this host has (desktop, ntfy, webhook) and say what became of each. Alerts themselves are sent by the timer's apply, when a conflict or a failure starts or ends.
+
+```text
+fleet notify --test
+```
+
+**Options**
+
+- `--test`: Send the test alert.
+
+**JSON.** Adds `channels`: one entry for each channel this host has, with its `channel`, its `result` (`sent`, `skipped` or `failed`) and, when it did not send, a `reason`.
+
+**Guide.** [Setting up machines: alerts](setting-up-machines.md#alerts)
 
 ## `fleet doctor`
 

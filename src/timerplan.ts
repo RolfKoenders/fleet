@@ -101,12 +101,24 @@ export function timerText(change: TimerChange): string {
   return `timer: ${arrow}${scheduleWord(change.schedule)}`;
 }
 
+/** The control groups this process is in, as the kernel lists them. Empty where there are none to read. */
+const ownCgroups = (): string => {
+  try {
+    return readFileSync("/proc/self/cgroup", "utf8");
+  } catch {
+    return "";
+  }
+};
+
 /**
  * Whether this `fleet apply` was started by the timer itself. launchd gives a job its label as
  * `XPC_SERVICE_NAME`, which the agent's plist does not have to set, so the plist stays as it has always been.
- * systemd needs no such check: its script never stops `fleet.service`.
+ * systemd puts what a unit starts in that unit's control group, so a process in `fleet.service` was started by
+ * the timer. Neither the unit nor an environment variable is changed for this, and `INVOCATION_ID` would not do:
+ * a terminal launched as a service has it too.
  */
-export const startedByTimer = (os: Os, env: NodeJS.ProcessEnv): boolean => os === "darwin" && env.XPC_SERVICE_NAME === LAUNCHD_LABEL;
+export const startedByTimer = (os: Os, env: NodeJS.ProcessEnv, cgroups: string = os === "darwin" ? "" : ownCgroups()): boolean =>
+  os === "darwin" ? env.XPC_SERVICE_NAME === LAUNCHD_LABEL : /\/fleet\.service$/m.test(cgroups);
 
 /**
  * Runs the change's script on this host, the way `init` runs it: `sh`, the home's own bin first on `PATH`.
