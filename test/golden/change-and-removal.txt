@@ -81,7 +81,8 @@ exit 0
     "~/.claude/skills/notes"
   ],
   "warnings": [],
-  "conflicts": []
+  "conflicts": [],
+  "timer": null
 }
 --- stderr
 

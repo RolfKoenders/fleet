@@ -56,6 +56,25 @@ sudo loginctl enable-linger <user>
 
 Without systemd, run `fleet apply` by hand or from cron.
 
+## The timer's schedule
+
+Every machine pulls and applies by itself every 30 minutes. `timer:` changes that: in `hosts/_defaults.yaml` for every machine, or in a host file for that one, the host file winning the way host files layer on the defaults. `fleet status` shows the schedule beside the timer's state.
+
+```yaml
+# hosts/_defaults.yaml
+timer: 30m
+# hosts/server.yaml
+timer: 10m
+# hosts/laptop.yaml
+timer: off
+```
+
+Valid values are `5m`, `10m`, `15m`, `20m`, `30m`, a whole hour `1h` to `24h`, and `off`; anything else is a config error naming them. These are the schedules both systems can express: Linux's timer runs `OnUnitActiveSec` at the interval, and on a Mac the LaunchAgent fires at the minutes or hours the schedule divides the hour or day into, so a run missed while the Mac slept happens when it wakes.
+
+`timer: off` leaves a machine to `fleet push` over ssh and manual applies: apply stops the timer and deletes the systemd unit or the LaunchAgent, so nothing is left running. Setting a value again turns the timer back on.
+
+Apply keeps the installed timer in step: when `timer:` changes, the next apply rewrites the unit or the plist and restarts it, and `fleet diff` lists the change like any other. `fleet init` installs the timer with the schedule the machine's config asks for.
+
 ## macOS
 
 Use macOS 12.3 or newer: the scripts use `readlink -f`. `fleet init` reads the version with `sw_vers -productVersion` and stops with a missing prerequisite on an older one.
@@ -69,7 +88,7 @@ xcode-select --install   # for git, if you have no other
 
 Fleet finds Homebrew's tools without a login shell, so the timer works without `brew shellenv`.
 
-On a Mac the timer is a LaunchAgent, `~/Library/LaunchAgents/io.github.rolfkoenders.fleet.apply.plist`. It runs `fleet apply` when it loads (at login) and at :00 and :30 each hour, and a run missed while the Mac slept happens when it wakes. The output goes to `~/Library/Logs/fleet.log`. When that file passes 1 MB, the start of each apply cuts it down in place to its last 256 KB, at a line boundary. A log that is a symlink is left alone. Check it with `fleet status`, or `launchctl print gui/$(id -u)/io.github.rolfkoenders.fleet.apply`.
+On a Mac the timer is a LaunchAgent, `~/Library/LaunchAgents/io.github.rolfkoenders.fleet.apply.plist`. It runs `fleet apply` when it loads (at login) and at the minutes or hours the machine's `timer:` divides the hour or day into (:00 and :30 each hour by default), and a run missed while the Mac slept happens when it wakes. The output goes to `~/Library/Logs/fleet.log`. When that file passes 1 MB, the start of each apply cuts it down in place to its last 256 KB, at a line boundary. A log that is a symlink is left alone. Check it with `fleet status`, or `launchctl print gui/$(id -u)/io.github.rolfkoenders.fleet.apply`.
 
 A LaunchAgent runs only while its user is logged in at the desktop. `fleet init` over ssh to a Mac nobody is logged in to writes the file and stops with exit code 1, asking you to log in at the Mac, then run `fleet init <host>` again.
 

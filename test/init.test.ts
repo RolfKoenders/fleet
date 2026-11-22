@@ -214,8 +214,8 @@ test("a fresh host is brought up in order", () => {
   const events = readFileSync(join(s.home, "order.log"), "utf8").split("---\n").filter((e) => e.trim() !== "").map((e) => label(e.trim()));
   assert.deepEqual(events, ["prerequisites", "clone", "key", "push", "pull-and-link", "apply", "timer"]);
   assert.deepEqual(doc.steps.map((st: { name: string; state: string }) => [st.name, st.state]), [
-    ["prerequisites", "unchanged"], ["clone", "done"], ["key", "done"], ["recipient", "done"], ["pull-and-link", "done"], ["secrets", "unchanged"], ["apply", "done"], ["timer", "done"],
-  ]);
+    ["prerequisites", "unchanged"], ["clone", "done"], ["key", "done"], ["recipient", "done"], ["pull-and-link", "done"], ["secrets", "unchanged"], ["apply", "done"], ["timer", "unchanged"],
+  ], "the first apply installs the timer, so init's own step only finds it on");
 });
 
 test("a finished host is cloned, named, linked, applied and on the timer", () => {
@@ -330,7 +330,7 @@ test("running init again changes nothing", () => {
   assert.deepEqual(readFileSync(s.labKey), key);
   assert.deepEqual(readFileSync(join(s.units, "fleet.service")), unit);
   assert.equal(s.initCommits(), 1);
-  assert.deepEqual(s.systemctl().slice(4), [["--user", "is-active", "--quiet", "fleet.timer"]], "a timer that is already on is only asked, not enabled again");
+  assert.deepEqual(s.systemctl().slice(5), [["--user", "is-active", "--quiet", "fleet.timer"]], "a timer that is already on is only asked, not enabled again");
   const { doc } = s.json();
   assert.deepEqual(doc.steps.map((st: { state: string }) => st.state), ["unchanged", "unchanged", "unchanged", "unchanged", "unchanged", "unchanged", "unchanged", "unchanged"]);
 });
@@ -538,19 +538,37 @@ test("a config that does not validate exits 2 and leaves the timer off", () => {
   assert.equal(s.timerOn(), false);
 });
 
-test("the units are fixed, and systemctl is only ever called with --user", () => {
-  const s = setup();
+test("the units are fixed, and systemctl is only ever called with --user", () => {  const s = setup();
   assert.equal(s.run().code, EXIT.ok);
   assert.equal(readFileSync(join(s.units, "fleet.service"), "utf8"), SERVICE);
   assert.equal(readFileSync(join(s.units, "fleet.timer"), "utf8"), TIMER);
+  // The first apply already installs the timer; init's own step only finds it on and asks.
   assert.deepEqual(s.systemctl(), [
     ["--user", "is-active", "--quiet", "fleet.timer"],
     ["--user", "daemon-reload"],
     ["--user", "enable", "--now", "fleet.timer"],
     ["--user", "is-active", "--quiet", "fleet.timer"],
+    ["--user", "is-active", "--quiet", "fleet.timer"],
   ]);
   assert.deepEqual(readdirSync(s.units).sort(), ["fleet.service", "fleet.timer"]);
   assert.equal(s.timerOn(), true);
+});
+
+test("init installs the schedule the host file asks for, and off installs no timer at all", () => {
+  const s = setup({ lab: "timer: 10m\n" });
+  const r = s.run();
+  assert.equal(r.code, EXIT.ok, r.stderr);
+  assert.match(readFileSync(join(s.units, "fleet.timer"), "utf8"), /^OnUnitActiveSec=10m$/m);
+  assert.match(r.stdout, /runs 'fleet apply' every 10 minutes/);
+
+  const off = setup({ lab: "timer: off\n" });
+  const done = off.run();
+  assert.equal(done.code, EXIT.ok, done.stderr);
+  assert.equal(existsSync(join(off.units, "fleet.service")), false);
+  assert.equal(existsSync(join(off.units, "fleet.timer")), false);
+  assert.equal(off.timerOn(), false);
+  assert.deepEqual(off.systemctl(), [], "systemd is never asked");
+  assert.match(done.stdout, /server is on fleet without a timer/);
 });
 
 test("the service runs under systemd's bare environment, with no fnm and no ~/.profile", () => {

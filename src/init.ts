@@ -5,7 +5,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { AGENTS } from "./agents/index.ts";
 import { failure } from "./apply.ts";
-import { loadConfig } from "./config.ts";
+import { loadConfig, readSchedule } from "./config.ts";
 import { repoState, runGit, UnreachableError } from "./git.ts";
 import { readHostName } from "./host.ts";
 import { paint } from "./output.ts";
@@ -15,8 +15,8 @@ import type { Pin } from "./pin.ts";
 import type { Conflict } from "./plan.ts";
 import { syncAndPush } from "./push.ts";
 import { hostNames } from "./recipients.ts";
-import { MACOS_VERSION_COMMAND, macosVersionProblem, parseOs, schedulerFor } from "./scheduler.ts";
-import type { Os } from "./scheduler.ts";
+import { DEFAULT_SCHEDULE, MACOS_VERSION_COMMAND, macosVersionProblem, parseOs, schedulerFor } from "./scheduler.ts";
+import type { Os, Schedule } from "./scheduler.ts";
 import { namesIn } from "./secrets.ts";
 import { secrets } from "./secretscli.ts";
 import { ageKeyPath, parseSopsVersion, SOPS_VERSION_ARGS, sopsVersionProblem } from "./sops.ts";
@@ -58,6 +58,8 @@ type Ctx = {
   machine: Machine;
   /** The host's OS, read from the host by the first step, which no step before it needs. */
   os: Os;
+  /** The schedule the host's config asks for, read by the timer step, which the done message names. */
+  schedule: Schedule;
   steps: StepRecord[];
   messages: string[];
   checklist: string[];
@@ -97,7 +99,7 @@ const there = (ssh: string, dest: string): Machine => (body) => {
   return { status: r.status, stdout: r.stdout ?? "", stderr: r.stderr ?? "" };
 };
 
-type Prepared = Omit<Ctx, "os" | "steps" | "messages" | "checklist" | "backup" | "recipient" | "missingSecrets" | "conflicts">;
+type Prepared = Omit<Ctx, "os" | "schedule" | "steps" | "messages" | "checklist" | "backup" | "recipient" | "missingSecrets" | "conflicts">;
 
 function prepare(configDir: string, name: string | undefined, home: string): Prepared | Result {
   if (name === undefined) return invalid("usage: fleet init <host>");
@@ -471,8 +473,15 @@ function firstApply(ctx: Ctx): Outcome {
 // Step 8
 
 function timer(ctx: Ctx): Outcome {
+  // The config was validated whole by the secrets step, so this reads the one key the step needs. `off` is
+  // nothing to install: apply, which ran before this step, leaves a timer off when the config asks for none.
+  const problems: string[] = [];
+  const schedule = readSchedule(ctx.configDir, ctx.host, problems) ?? DEFAULT_SCHEDULE;
+  if (problems.length > 0) return { stop: invalid(...problems) };
+  ctx.schedule = schedule;
+  if (schedule === "off") return { changed: false };
   const scheduler = schedulerFor(ctx.os);
-  const r = ctx.machine(script("timer", scheduler.install(q)));
+  const r = ctx.machine(script("timer", scheduler.install(q, schedule)));
   const said = scheduler.explain(ctx.host, r.status, firstLine(r.stderr));
   if (said !== null) return { stop: { code: "error", messages: [said] } };
   if (r.status !== 0) return { stop: { code: "error", messages: [`fleet: ${ctx.host}: installing the timer failed (exit ${r.status ?? "none"}): ${firstLine(r.stderr)}`] } };
@@ -533,7 +542,7 @@ export async function init(configDir: string, name: string | undefined, color: b
   try {
     const prepared = prepare(configDir, name, home);
     if ("code" in prepared) return prepared;
-    ctx = { ...prepared, os: "linux", steps: [], messages: [], checklist: [], backup: null, recipient: null, missingSecrets: [], conflicts: [] };
+    ctx = { ...prepared, os: "linux", schedule: DEFAULT_SCHEDULE, steps: [], messages: [], checklist: [], backup: null, recipient: null, missingSecrets: [], conflicts: [] };
 
     for (const [i, step] of STEPS.entries()) {
       current = i;
@@ -548,7 +557,7 @@ export async function init(configDir: string, name: string | undefined, color: b
       ctx.steps.push({ step: i + 1, name: step.name, state: outcome.changed ? "done" : "unchanged", ...(outcome.detail ? { detail: outcome.detail } : {}) });
       if (progress()) say(`${at}: ${outcome.changed ? "done" : "unchanged"}${outcome.detail ? ` (${outcome.detail})` : ""}`);
     }
-    return finish(ctx, color, { code: "ok", text: schedulerFor(ctx.os).done(ctx.host) });
+    return finish(ctx, color, { code: "ok", text: schedulerFor(ctx.os).done(ctx.host, ctx.schedule) });
   } catch (error) {
     const result = failure(error) ?? { code: "error" as const, messages: [`fleet: ${(error as Error).message}`] };
     if (ctx === null) return result;

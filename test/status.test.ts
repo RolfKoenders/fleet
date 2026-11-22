@@ -10,7 +10,8 @@ import { findTool } from "../src/tools.ts";
 type Repo = { branch: string | null; sha: string; clean: boolean; ahead: number | null; behind: number | null };
 
 function withTools(home: string): string {
-  if (!existsSync(join(home, ".local/bin/systemctl"))) installStatusTools(home);
+  // makeHome puts the scheduler fakes in every home, so what says a test already set its own up is the config installFakeTool writes.
+  if (!existsSync(join(home, ".fake-systemctl.json"))) installStatusTools(home);
   return home;
 }
 
@@ -397,7 +398,7 @@ test("human status shows applied age, timer, counts and tools", () => {
   const r = runFleet(s.clone, ["status"], { home: withTools(s.home) });
   assert.equal(r.code, 0, r.stderr);
   assert.match(r.stdout, /^applied: never$/m);
-  assert.match(r.stdout, /^timer: active$/m);
+  assert.match(r.stdout, /^timer: active, every 30 minutes$/m);
   assert.match(r.stdout, /^pending: 1$/m);
   assert.match(r.stdout, /^conflicts: 0$/m);
   assert.match(r.stdout, /^tools:$/m);

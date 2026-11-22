@@ -103,8 +103,12 @@ function ageKey(home: string, usesSecrets: boolean | null): Check {
 
 const NO_SESSION = "no user session in this shell, as after sudo -iu, so systemd cannot be asked; run doctor over ssh or from a login shell";
 
-function timerCheck(home: string): Check {
+/** A host with `timer: off` has no timer on purpose, so an inactive one is the state it asked for. */
+const TIMER_OFF = "off in the config, so apply runs only when asked";
+
+function timerCheck(home: string, schedule: string | null): Check {
   const name = "timer";
+  if (schedule === "off") return { name, result: "ok", detail: TIMER_OFF };
   const timer = timerState(home);
   if (timer === "active") return { name, result: "ok", detail: "active" };
   if (timer !== null) return { name, result: "problem", detail: timer };
@@ -114,9 +118,9 @@ function timerCheck(home: string): Check {
   return { name, result: "problem", detail: "unknown (the scheduler is not installed or gave no answer)" };
 }
 
-function localChecks(home: string, usesSecrets: boolean | null): Check[] {
+function localChecks(home: string, usesSecrets: boolean | null, schedule: string | null): Check[] {
   return [
-    timerCheck(home),
+    timerCheck(home, schedule),
     ageKey(home, usesSecrets),
     skillLinks(home),
   ];
@@ -252,7 +256,7 @@ export async function doctor(configDir: string, color: boolean, timeoutSeconds: 
     if (failed === null) throw error;
   }
   // Whether secrets are used is read from the config, without decrypting anything.
-  const fields: DoctorFields = { checks: localChecks(home, config === null ? null : config.secrets.length > 0), servers: [] };
+  const fields: DoctorFields = { checks: localChecks(home, config === null ? null : config.secrets.length > 0, config?.timer ?? null), servers: [] };
   // The local checks still stand when the servers could not even be listed.
   const stopped = (result: Result): Result => ({ ...result, text: [`host: ${host}`, ...lines(fields, host, color)].join("\n"), fields: { ...fields } });
   if (failed !== null) return stopped(failed);

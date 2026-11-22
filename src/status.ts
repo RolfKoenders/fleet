@@ -5,13 +5,15 @@ import { join } from "node:path";
 import { AGENT_IDS, AGENTS, hostAgents, isAgentId } from "./agents/index.ts";
 import type { AgentId } from "./agents/index.ts";
 import { planConflicts, planCounts } from "./apply.ts";
+import { readSchedule } from "./config.ts";
 import { MissingToolError, repoState } from "./git.ts";
 import type { RepoState } from "./git.ts";
 import { readHostName } from "./host.ts";
 import { appliedPaths, detectAgents, namedAgents, notInstalledWarning } from "./hostagents.ts";
 import { paint } from "./output.ts";
 import type { Result } from "./output.ts";
-import { statusOs, timerWord } from "./scheduler.ts";
+import { parseSchedule, scheduleWord, statusOs, timerWord } from "./scheduler.ts";
+import type { Schedule } from "./scheduler.ts";
 import { SOPS_VERSION_ARGS } from "./sops.ts";
 import { readState } from "./state.ts";
 import type { AppliedState } from "./state.ts";
@@ -36,6 +38,8 @@ export type StatusFields = {
   applied: { at: string | null; ageSeconds: number | null; config: string | null };
   /** What `systemctl --user is-active fleet.timer` printed, or `active` or `inactive` for the LaunchAgent on macOS. */
   timer: string | null;
+  /** The schedule the config asks for, as the `timer:` key spells it (`10m`, `1h`, `off`), or null when the config cannot be read. */
+  schedule: string | null;
   /** Links and keys apply would create, update or remove. */
   pending: number | null;
   conflicts: number | null;
@@ -176,10 +180,23 @@ function agentsLine(agents: AgentStatus[]): string {
   return `agents: ${[`${names}${pinned}`, ...left].join(" ")}`;
 }
 
+/** The schedule a status line names beside the timer's state, from the raw value a host's config or a host's answer holds. */
+const scheduleWordOf = (schedule: string): string => {
+  const parsed = parseSchedule(schedule);
+  return parsed === null ? schedule : scheduleWord(parsed);
+};
+
+/** The schedule the config asks for on this host, without reporting problems: those are the plan's to say. */
+function scheduleOf(configDir: string, host: string): string | null {
+  return readSchedule(configDir, host, []);
+}
+
 /** The lines of one host's status, after its name. `clone` is the path of the fleet clone when it is known. */
 function lines(fields: StatusFields, color: boolean, clone: string | null): string[] {
   const { fleet } = fields.repos;
   const shown = (value: unknown) => (value === null ? "unknown" : String(value));
+  // A remote host's schedule is a string from its own config: shown as the word when fleet parses it, as it is otherwise.
+  const schedule = fields.schedule === null ? "" : `, ${scheduleWordOf(fields.schedule)}`;
   const timer = fields.timer === null ? "unknown" : paint(color, fields.timer === "active" ? "green" : "yellow", fields.timer);
   return [
     `fleet clone:${clone === null ? "" : ` ${clone}`}`,
@@ -190,7 +207,7 @@ function lines(fields: StatusFields, color: boolean, clone: string | null): stri
     `  behind: ${fleet.behind ?? "n/a"}`,
     fields.applied.at === null ? "applied: never" : `applied: ${ago(fields.applied.ageSeconds ?? 0)} (${fields.applied.at})`,
     ...(fields.applied.at === null ? [] : [`  config: ${fields.applied.config ?? "unknown"}`]),
-    `timer: ${timer}`,
+    `timer: ${timer}${schedule}`,
     `pending: ${shown(fields.pending)}`,
     `conflicts: ${fields.conflicts === null || fields.conflicts === 0 ? shown(fields.conflicts) : paint(color, "yellow", String(fields.conflicts))}`,
     ...(fields.agents === null ? [] : [agentsLine(fields.agents)]),
@@ -218,6 +235,7 @@ function collect(toolDir: string, configDir: string, home: string, host: string 
     repos: { fleet },
     applied: appliedAge(home, messages),
     timer: timerState(home),
+    schedule: host === null ? null : scheduleOf(configDir, host),
     ...counts,
     agents: named.map((a) => ({ id: a.id, version: versions[a.id] ?? null, active: on.includes(a), pinned: pin?.includes(a.id) ?? false })),
     notInstalled,
@@ -302,6 +320,7 @@ export function statusFromDocument(doc: Obj): StatusFields | null {
     repos: { fleet: { branch: printable(fleet.branch), sha: printable(fleet.sha) ?? "", clean: fleet.clean, ahead: count(fleet.ahead), behind: count(fleet.behind) } },
     applied: { at: printable(applied.at), ageSeconds: count(applied.ageSeconds), config: printable(applied.config) },
     timer: printable(doc.timer),
+    schedule: printable(doc.schedule),
     pending: count(doc.pending),
     conflicts: count(doc.conflicts),
     conflictList: conflictNames(doc.conflictList),

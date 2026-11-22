@@ -70,7 +70,8 @@ test("a Mac host gets a LaunchAgent, loaded with bootstrap into gui/<uid>, and n
   assert.equal(r.code, EXIT.ok, r.stderr);
   assert.match(r.stdout, new RegExp(`${LAUNCHD_LABEL} runs 'fleet apply' at login and every 30 minutes`));
   assert.equal(loaded(s), true);
-  assert.deepEqual(launchctl(s), [["print", domain], ["print", service], ["bootstrap", domain, plistPath(s)], ["print", service]]);
+  // The first apply loads the agent; init's own timer step only finds it loaded and asks about it.
+  assert.deepEqual(launchctl(s), [["print", domain], ["print", service], ["bootstrap", domain, plistPath(s)], ["print", service], ["print", domain], ["print", service]]);
   assert.equal(existsSync(join(s.lab, ".config/systemd")), false, "no systemd units on a Mac");
   assert.deepEqual(s.systemctl(), [], "systemctl is not called on a Mac");
   assert.deepEqual(launchctl(s).filter(([verb]) => verb === "load" || verb === "unload"), []);
@@ -96,8 +97,32 @@ test("the agent runs fleet apply by absolute path, at load and on the half hour,
   if (existsSync(plutil)) assert.equal(spawnSync(plutil, ["-lint", plistPath(s)], { encoding: "utf8" }).status, 0);
 });
 
-test("a rerun on a loaded agent only asks launchd, and a changed file boots it out and in again", () => {
-  const s = mac();
+test("the host file's schedule becomes the calendar entries: 6h is hours 0, 6, 12 and 18 at minute 0", () => {
+  const s = mac({ lab: "timer: 6h\n" });
+  const r = s.run();
+  assert.equal(r.code, EXIT.ok, r.stderr);
+  const plist = readFileSync(plistPath(s), "utf8");
+  assert.deepEqual(
+    [...plist.matchAll(/<dict>(?:<key>Hour<\/key><integer>(\d+)<\/integer>)?<key>Minute<\/key><integer>(\d+)<\/integer><\/dict>/g)].map((m) => [m[1] ?? null, m[2]]),
+    [["0", "0"], ["6", "0"], ["12", "0"], ["18", "0"]],
+  );
+  assert.match(r.stdout, /runs 'fleet apply' at login and every 6 hours/);
+  const plutil = "/usr/bin/plutil";
+  if (existsSync(plutil)) assert.equal(spawnSync(plutil, ["-lint", plistPath(s)], { encoding: "utf8" }).status, 0);
+});
+
+test("timer: off installs no LaunchAgent, and the done message says the host has no timer", () => {
+  const s = mac({ lab: "timer: off\n" });
+  const r = s.run();
+  assert.equal(r.code, EXIT.ok, r.stderr);
+  assert.equal(existsSync(plistPath(s)), false);
+  assert.equal(loaded(s), false);
+  assert.deepEqual(launchctl(s), [], "launchd is never asked");
+  assert.match(r.stdout, /server is on fleet without a timer/);
+  assert.match(r.stdout, /'fleet push' still reaches server over ssh/);
+});
+
+test("a rerun on a loaded agent only asks launchd, and a changed file boots it out and in again", () => {  const s = mac();
   assert.equal(s.run().code, EXIT.ok);
   rmSync(join(s.lab, "launchctl-calls.log"));
   assert.equal(s.run().code, EXIT.ok);
@@ -106,7 +131,8 @@ test("a rerun on a loaded agent only asks launchd, and a changed file boots it o
   rmSync(join(s.lab, "launchctl-calls.log"));
   writeFileSync(plistPath(s), "stale\n");
   assert.equal(s.run().code, EXIT.ok);
-  assert.deepEqual(launchctl(s), [["print", domain], ["print", service], ["bootout", service], ["bootstrap", domain, plistPath(s)], ["print", service]]);
+  // The apply rewrites and reloads a changed plist; init's timer step then finds it loaded and only asks.
+  assert.deepEqual(launchctl(s), [["print", domain], ["print", service], ["bootout", service], ["bootstrap", domain, plistPath(s)], ["print", service], ["print", domain], ["print", service]]);
   assert.match(readFileSync(plistPath(s), "utf8"), /RunAtLoad/);
 });
 
@@ -119,7 +145,8 @@ test("with no desktop login session the agent is written, init stops, and the me
   assert.match(r.stderr, /fleet init server/);
   assert.equal(existsSync(plistPath(s)), true, "the file is there for the next login");
   assert.equal(loaded(s), false);
-  assert.deepEqual(launchctl(s).map(([verb]) => verb), ["print"], "no bootstrap into a domain that is not there");
+  // The apply and init's timer step each ask once about a session that is not there, and neither bootstraps.
+  assert.deepEqual(launchctl(s).map(([verb]) => verb), ["print", "print"], "no bootstrap into a domain that is not there");
 
   rmSync(join(s.lab, "fake-no-session"));
   assert.equal(s.run().code, EXIT.ok, "the rerun finishes the job");

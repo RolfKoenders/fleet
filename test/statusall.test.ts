@@ -187,7 +187,7 @@ test("human output has one block per host and names the unreachable one", () => 
   assert.match(r.stdout, /^b: unreachable$/m);
   assert.match(r.stdout, /^c: timer \(no ssh destination; it applies on its own schedule\)$/m);
   assert.match(r.stdout, /^laptop \(this host\): ok$/m);
-  assert.match(r.stdout, /^ {2}timer: active$/m);
+  assert.match(r.stdout, /^ {2}timer: active, every 30 minutes$/m);
   assert.match(r.stdout, /^ {2}pending: 0$/m);
 });
 

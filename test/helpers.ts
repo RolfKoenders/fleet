@@ -70,11 +70,73 @@ export function removeAgent(home: string, binary: string): void {
 export function makeHome(host?: string): string {
   const home = tempDir("fleet-home-");
   installStubAgents(home);
+  installSchedulerFakes(home);
   if (host !== undefined) {
     mkdirSync(join(home, ".config/fleet"), { recursive: true });
     writeFileSync(join(home, ".config/fleet/host"), `${host}\n`);
   }
   return home;
+}
+
+/**
+ * Refuses the legacy verbs and any domain but `gui/<uid>`, and fails `bootstrap` of a loaded agent the way launchd does.
+ * The fake launchctl every test home gets; `init`'s worlds keep their state in `~/.fake-agent-loaded`.
+ */
+export const FAKE_LAUNCHCTL = `
+const fs = require("node:fs");
+const home = process.env.HOME;
+const args = process.argv.slice(2);
+fs.appendFileSync(home + "/launchctl-calls.log", JSON.stringify(args) + "\\n");
+const loaded = home + "/.fake-agent-loaded";
+const [verb, target, plist] = args;
+if (!["print", "bootstrap", "bootout"].includes(verb)) { process.stderr.write("fake launchctl: refusing " + verb + "\\n"); process.exit(2); }
+if (!/^gui\\/\\d+(\\/|$)/.test(target)) { process.stderr.write("fake launchctl: refusing domain " + target + "\\n"); process.exit(2); }
+const inDomain = target.split("/").length === 2;
+if (verb === "print") {
+  if (fs.existsSync(home + "/fake-no-session")) { process.stderr.write("Could not find domain for " + target + "\\n"); process.exit(113); }
+  process.exit(inDomain || fs.existsSync(loaded) ? 0 : 113);
+}
+if (verb === "bootstrap") {
+  if (fs.existsSync(home + "/fake-launchctl-fail")) { process.stderr.write("Bootstrap failed: 5: Input/output error\\n"); process.exit(5); }
+  if (fs.existsSync(loaded)) { process.stderr.write("Bootstrap failed: 5: Input/output error\\n"); process.exit(5); }
+  if (!fs.existsSync(plist)) { process.stderr.write("no such plist\\n"); process.exit(2); }
+  fs.writeFileSync(loaded, fs.readFileSync(plist));
+  process.exit(0);
+}
+if (verb === "bootout") { fs.rmSync(loaded, { force: true }); process.exit(0); }
+`;
+
+/**
+ * The fake systemctl every test home gets, so apply can install and remove the timer without touching a real
+ * systemd: the timer is on when `enable --now` has run and off after `disable`, the way a loaded unit is, and
+ * a timer that is not on prints `inactive` and exits 3, as the real one does.
+ */
+export const FAKE_SYSTEMCTL = `
+const fs = require("node:fs");
+const home = process.env.HOME;
+const args = process.argv.slice(2);
+fs.appendFileSync(home + "/systemctl-calls.log", JSON.stringify(args) + "\\n");
+if (args[0] !== "--user") { process.stderr.write("fake systemctl: refusing a call without --user\\n"); process.exit(2); }
+const on = home + "/.fake-timer-on";
+const [, verb, ...rest] = args;
+if (verb === "is-active") {
+  if (!fs.existsSync(on)) { console.log("inactive"); process.exit(3); }
+  if (!rest.includes("--quiet")) console.log("active");
+  process.exit(0);
+}
+if (verb === "daemon-reload" || verb === "restart") process.exit(0);
+if (verb === "enable") { if (rest.includes("--now")) fs.writeFileSync(on, "1"); process.exit(0); }
+if (verb === "disable") { fs.rmSync(on, { force: true }); process.exit(0); }
+process.exit(2);
+`;
+
+/** Installs the fake `systemctl` and `launchctl` a test home needs, in its `~/.local/bin`, which is first on the probe path. */
+export function installSchedulerFakes(home: string): void {
+  for (const [name, script] of [["systemctl", FAKE_SYSTEMCTL], ["launchctl", FAKE_LAUNCHCTL]] as const) {
+    const file = join(home, `.fake-${name}.js`);
+    writeFileSync(file, script);
+    writeExecutable(join(home, ".local/bin", name), `#!/bin/sh\nexec ${process.execPath} ${file} "$@"\n`);
+  }
 }
 
 export function writeExecutable(path: string, body: string): void {
