@@ -46,6 +46,16 @@ Then add another machine from this one:
 fleet init server
 ```
 
+## Share your fleet
+
+`fleet card` writes an image of your fleet to post or put in a README: the counts of machines, agents, skills and MCP servers, each machine with its agents and OS, and a year of changes. Hosts are `host 1`, `host 2` unless you add `--names`, and no server, skill or secret name is ever on it. `fleet card --badge` writes a small badge for your README. Post yours in [Show and tell](https://github.com/RolfKoenders/fleet/discussions/categories/show-and-tell).
+
+<p align="center">
+  <img alt="A fleet card: 3 machines, 2 agents, 4 skills and 2 MCP servers, a row for each of devbox, laptop and server, and an activity grid for the last 12 months. It is made from fleet demo's made-up hosts." src="site/card-machines.webp" width="600">
+</p>
+
+[![fleet: 3 machines, 2 agents](site/fleet-badge.svg)](https://github.com/RolfKoenders/fleet/discussions/categories/show-and-tell)
+
 ## Supported agents
 
 - Claude Code

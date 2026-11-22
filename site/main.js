@@ -313,8 +313,8 @@
 // fleet ui: the tabs switch between the screenshots and their captions.
 (() => {
   const CAPTIONS = {
+    fleet: "Every host with its status, its first conflict and its startup context. The page asks each host when it opens and shows what it last saw until they answer.",
     matrix: "Click a cell to give a host a bundle or a server, or take it away. The pane shows the change to its host file.",
-    edit: "Edit opens the same dialog as Add, filled in. Only the line you change is written; the comments around it stay.",
   };
   const caption = document.getElementById("ui-caption");
   const tabs = document.querySelectorAll(".ui-tabs button");
