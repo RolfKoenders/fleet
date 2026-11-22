@@ -1,0 +1,69 @@
+name: Bug report
+description: Report something that does not work as expected.
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug.
+
+  - type: input
+    id: fleet-version
+    attributes:
+      label: Fleet version
+      description: Copy the version shown by `fleet status`.
+      placeholder: "fleet 2.6.0"
+    validations:
+      required: true
+
+  - type: input
+    id: operating-system
+    attributes:
+      label: Operating system and version
+      placeholder: "macOS 15.6"
+    validations:
+      required: true
+
+  - type: textarea
+    id: agents
+    attributes:
+      label: Agents and versions
+      description: List each agent involved and its version.
+      placeholder: |
+        Claude Code 2.1.4
+        opencode 1.4.2
+    validations:
+      required: true
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect?
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Include commands and the smallest config that shows the problem.
+    validations:
+      required: true
+
+  - type: textarea
+    id: status-json
+    attributes:
+      label: fleet status --json output
+      description: Paste the output of `fleet status --json`. Before posting, check that it contains no secret values or personal paths.
+      render: json
+    validations:
+      required: true

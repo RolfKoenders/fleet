@@ -1,0 +1,26 @@
+name: Feature request
+description: Suggest an improvement to fleet.
+title: "[Feature]: "
+labels:
+  - feature
+body:
+  - type: textarea
+    id: want
+    attributes:
+      label: What do you want to do?
+    validations:
+      required: true
+
+  - type: textarea
+    id: why
+    attributes:
+      label: Why do you want to do it?
+    validations:
+      required: true
+
+  - type: textarea
+    id: today
+    attributes:
+      label: What do you do today instead?
+    validations:
+      required: true

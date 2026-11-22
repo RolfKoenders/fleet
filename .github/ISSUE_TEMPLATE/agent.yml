@@ -1,0 +1,59 @@
+name: Add an agent
+description: Propose support for a coding agent.
+title: "[Agent]: "
+labels:
+  - agent
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Read [Adding an agent](https://github.com/RolfKoenders/fleet/blob/main/docs/adding-an-agent.md) before filling this out.
+
+  - type: input
+    id: agent-name
+    attributes:
+      label: Agent name
+      placeholder: "Example Agent"
+    validations:
+      required: true
+
+  - type: input
+    id: cli-program
+    attributes:
+      label: CLI program
+      description: The program fleet can run to find the agent and print its version.
+      placeholder: "example"
+    validations:
+      required: true
+
+  - type: textarea
+    id: instructions-docs
+    attributes:
+      label: Official documentation for instructions
+      description: Link the official documentation that says where the agent keeps instructions. If it does not use instructions, say so.
+    validations:
+      required: true
+
+  - type: textarea
+    id: skills-docs
+    attributes:
+      label: Official documentation for skills
+      description: Link the official documentation that says where the agent keeps skills. If it does not use skills, say so.
+    validations:
+      required: true
+
+  - type: textarea
+    id: mcp-docs
+    attributes:
+      label: Official documentation for MCP servers
+      description: Link the official documentation for the MCP server file, keys and formats. If it does not use MCP servers, say so.
+    validations:
+      required: true
+
+  - type: textarea
+    id: settings-docs
+    attributes:
+      label: Official documentation for settings
+      description: Link the official documentation for the settings file, keys and formats. If it does not use settings, say so.
+    validations:
+      required: true
