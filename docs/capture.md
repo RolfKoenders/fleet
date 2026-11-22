@@ -7,7 +7,7 @@ You often set something up on a machine first: `claude mcp add`, or a skill fold
 ```sh
 fleet capture                                   # on a terminal: ask about each item
 fleet capture --json                            # report what it found, write nothing
-fleet capture mcp linear --host                 # add one item for this host
+fleet capture mcp tracker --host                 # add one item for this host
 fleet capture skill review --all                # add one item for every host
 fleet capture mcp scratch --ignore              # stop listing it on this host
 fleet capture --yes                             # every item the way the defaults say, then push
@@ -39,7 +39,7 @@ A captured server goes to every agent by default. Capture sets `only:` itself wh
 **Secrets.** Every env variable and header value is a possible secret.
 
 - A value whose name looks like a secret (`*_TOKEN`, `*_KEY`, `*SECRET*`, `*PASSWORD*`, `Authorization`) becomes `secret:NAME` by default. For every other value capture asks: secret or plain.
-- The name comes from the server and the key: `LINEAR_API_KEY`, or `LINEAR_AUTHORIZATION` for a header. An env key that already looks like a secret name and is unused elsewhere is kept as it is. You can rename before it is written, and a name that exists already is never replaced.
+- The name comes from the server and the key: `TRACKER_API_KEY`, or `TRACKER_AUTHORIZATION` for a header. An env key that already looks like a secret name and is unused elsewhere is kept as it is. You can rename before it is written, and a name that exists already is never replaced.
 - "This host" puts the value in that host's secrets file, "every host" in `secrets/shared.enc.yaml`. Fleet encrypts it with sops, one value at a time.
 - A secret never reaches the catalog, a log, an error, `--json` or the page as plain text. Capture shows the names of the keys and never their values, not even in the questions it asks.
 

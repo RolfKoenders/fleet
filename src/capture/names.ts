@@ -9,7 +9,7 @@ export function looksSecret(key: string): boolean {
   return /(^|_)(TOKEN|KEY)$/.test(name) || name.includes("SECRET") || name.includes("PASSWORD") || /^(PROXY_)?AUTHORIZATION$/.test(name);
 }
 
-/** `LINEAR_API_KEY` for the server `linear` and the key `API_KEY` (or `Api-Key`), `LINEAR_AUTHORIZATION` for its header. */
+/** `TRACKER_API_KEY` for the server `tracker` and the key `API_KEY` (or `Api-Key`), `TRACKER_AUTHORIZATION` for its header. */
 export function secretNameFor(server: string, key: string): string {
   const prefix = words(server);
   const name = words(key);
