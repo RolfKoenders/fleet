@@ -23,7 +23,11 @@ import { push } from "./push.ts";
 import { progressFor } from "./pushview.ts";
 import { emit, useColor } from "./output.ts";
 import type { Relayed, Result, Sink } from "./output.ts";
+import { host } from "./hostcli.ts";
+import { prompter } from "./prompt.ts";
+import type { Prompter, Terminal } from "./prompt.ts";
 import { secrets } from "./secretscli.ts";
+import { rotate } from "./secretsrotate.ts";
 import { skills } from "./skillsupdate.ts";
 import { status, statusAll, statusConflicts } from "./status.ts";
 import { undo } from "./undo.ts";
@@ -85,7 +89,8 @@ export const commands: Command[] = [
   { name: "capture", usage: "capture [mcp|skill <name> --host|--all|--ignore] [--yes] [--no-push]", summary: "Turn the MCP servers and skills this machine has, and the config does not, into config: on a terminal it asks about each (add for this host, add for every host, ignore, or take over one that already matches), then writes and commits the config and asks before it pushes. Reads only this machine; a value that becomes a secret goes to sops and is never printed. Without a terminal it only reports what it found", effect: "change", options: [{ flag: "--host", summary: "capture the named item for this host only" }, { flag: "--all", summary: "capture the named item for every host" }, { flag: "--ignore", summary: "stop listing the named item on this host (it is added to `unmanaged` in the host file)" }, { flag: "--yes", summary: "capture every item the way the defaults say (this host, a secret for each key named like one) and push without asking" }, { flag: "--no-push", summary: "stop after the commit" }], json: "Adds `items` (what was found: `kind`, `name`, `state`, `message`, `agents`, `variants` with the names of env variables and headers and never a value), `differs`, `unmanaged` and `notes`. It writes nothing unless `--yes`, or an item with `--host`, `--all` or `--ignore`, is given; then it adds `captured`, `commit`, `files`, `takenOver`, `rewrites` and `pushed`, and the push's own fields when it pushed.", args: 2, run: ({ color, json, args, yes, noPush, thisHost, all, ignore, found }) => capture(toolDir, configOf(found), args, { host: thisHost, all, ignore, yes, noPush, json, color, terminal: !json && process.stdin.isTTY === true && process.stdout.isTTY === true ? { stdin: process.stdin, stdout: process.stdout } : null, progress: progressFor(process.env, process.stderr) }) },
   { name: "adopt", usage: "adopt mcp|skill <name>", summary: "Record an existing MCP server or skill as fleet's", effect: "change", json: "Adds `adopted`, `left` and `conflicts`.", args: 2, run: ({ color, args, found }) => adopt(configOf(found), args, color) },
   // Unbounded: `secrets` checks its own arguments, so a value typed by mistake is never echoed back.
-  { name: "secrets", usage: "secrets edit <file> | set <file> <NAME> | rekey", summary: "Edit, set or rekey encrypted secrets", effect: "change", json: "`rekey` adds `rekeyed`, the secrets files that were updated. `edit` and `set` add nothing.", args: Infinity, run: ({ args, found }) => secrets(configOf(found), args) },
+  { name: "secrets", usage: "secrets edit <file> | set <file> <NAME> | rekey | rotate [NAME...]", summary: "Edit, set, rekey or rotate encrypted secrets (rotate replaces values one by one with hidden input, after a leaked token, a rejected one or a removed host; it needs a terminal)", effect: "change", json: "`rekey` adds `rekeyed`, the secrets files that were updated. `edit` and `set` add nothing. `rotate` has no `--json` form: it asks for each value on a terminal.", args: Infinity, run: ({ color, json, args, found }) => (args[0] === "rotate" ? rotate(configOf(found), { names: args.slice(1), prompt: asker(json), push: () => push(toolDir, configOf(found), undefined, color), doctor: () => doctorAll(configOf(found), color, undefined) }) : secrets(configOf(found), args)) },
+  { name: "host", usage: "host remove <name> [--yes]", summary: "Retire a host: delete its host file and secrets file, re-encrypt the secrets files without its key, commit and push, stop its timer over ssh if it answers and you agree, then offer to rotate the secrets it could read (without a terminal it needs --yes, and rotates nothing)", effect: "change", agent: false, options: [{ flag: "--yes", summary: "remove the host without asking, and stop its timer there if it answers" }], json: "Adds `removedHost` (the name, or null when nothing was removed), `committed`, `pushed`, `rekeyed`, `readable` (the secret names the host could read, `shared` and `own`), `timer` (`state` and `message`) and, when rotated, `rotation`.", args: 2, run: ({ json, color, args, yes, found }) => host(configOf(found), args, { yes, terminal: terminalOf(json), log: json ? undefined : (text) => process.stderr.write(`${text}\n`), toolDir, color }) },
   { name: "skills", usage: "skills update [--review] [--yes] [<source>]", summary: "Move pinned skill sources to the head of their branch (--review shows what changed first, with anything risky flagged, and asks per source on a terminal; without one nothing moves unless --yes)", effect: "change", options: [{ flag: "--review", summary: "show what changed first, with anything risky flagged, and ask per source on a terminal" }, { flag: "--yes", summary: "move the pins without asking" }], json: "Adds `updated` and `unchanged`: the sources that moved and the ones that did not. With `--review`, also `reviews`.", args: 2, run: ({ color, json, args, review, yes, found }) => skills(configOf(found), args, { review, yes, color, terminal: !json && process.stdin.isTTY === true && process.stdout.isTTY === true ? { stdin: process.stdin, stdout: process.stdout } : null }) },
   { name: "update", usage: "update", summary: "Move the pinned tool commit in fleet.yaml to the newest release, or to the head of its branch when track names one (nothing is committed or applied)", effect: "change", json: "Adds `repo`, `track`, `from`, `to`, `updated` and `changes`, plus `release` when `track` is `releases`.", args: 0, run: ({ found }) => update(configOf(found)) },
   { name: "new", usage: "new <dir>", summary: "Start a config repo in <dir> from the examples, pinned to this tool commit", effect: "change", json: "Adds `dir`, `pin` and `checklist`.", args: 1, run: ({ args }) => newConfig(toolDir, args[0]) },
@@ -94,6 +99,13 @@ export const commands: Command[] = [
   { name: "agent", usage: "agent", summary: "Print what an agent needs to know about fleet", effect: "read", json: "Adds `markdown` (the primer), `recipes` and `status`.", args: 0, run: ({ found }) => agent(toolDir, "dir" in found ? found.dir : null, commands.filter((c) => c.agent !== false)) },
   { name: "help", usage: "help", summary: "List the commands", effect: "read", json: "Adds `commands`: the name and summary of each command.", args: 0 },
 ];
+
+/** Where a command may ask questions: this terminal, with the prompts on stderr so stdout stays the result. Null for a script, and for `--json`. */
+const terminalOf = (json: boolean): Terminal | null => (!json && process.stdin.isTTY === true && process.stderr.isTTY === true ? { stdin: process.stdin, out: process.stderr } : null);
+const asker = (json: boolean): Prompter | null => {
+  const terminal = terminalOf(json);
+  return terminal === null ? null : prompter(terminal);
+};
 
 /** Aborts on ctrl-c or a terminate, for a command that runs until it is stopped. */
 function interrupted(): AbortSignal {
@@ -189,7 +201,7 @@ function dispatch(argv: string[]): { result: Promise<Result | Relayed> | Result 
   if (parsed.values.conflicts && parsed.values.all) return { result: invalid(`--conflicts and --all cannot be used together`), json };
   if (parsed.values.shell && command.name !== "demo") return { result: invalid(`--shell is only for 'demo'`), json };
   if (parsed.values.review && command.name !== "skills") return { result: invalid(`--review is only for 'skills update'`), json };
-  if (parsed.values.yes && command.name !== "skills" && command.name !== "undo" && command.name !== "capture") return { result: invalid(`--yes is only for 'skills update', 'undo' and 'capture'`), json };
+  if (parsed.values.yes && command.name !== "skills" && command.name !== "undo" && command.name !== "capture" && command.name !== "host") return { result: invalid(`--yes is only for 'skills update', 'undo', 'capture' and 'host remove'`), json };
   if (parsed.values["no-push"] && command.name !== "undo" && command.name !== "capture") return { result: invalid(`--no-push is only for 'undo' and 'capture'`), json };
   if ((parsed.values["this-host"] || parsed.values.ignore) && command.name !== "capture") return { result: invalid(`--host without a name and --ignore are only for 'capture'`), json };
   if (parsed.values.timeout !== undefined && command.name !== "doctor") return { result: invalid(`--timeout is only for 'doctor'`), json };

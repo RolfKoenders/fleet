@@ -1,27 +1,28 @@
 import { mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { hostFile, parseSopsText, reviewText } from "../edit/index.ts";
-import { InvalidConfigError } from "../config.ts";
-import { runGit } from "../git.ts";
-import { syncAndPush } from "../push.ts";
-import { hostNames, readRules, renderSopsConfig, secretsFile } from "../recipients.ts";
-import { parseFile } from "../yamlfile.ts";
-import { outsideChanges } from "./edits.ts";
-import { codeName, runChild } from "./hostinit.ts";
-import type { Refusal } from "./hostinit.ts";
-import { BadRequest } from "./request.ts";
+import { hostFile, parseSopsText, reviewText } from "./edit/index.ts";
+import { InvalidConfigError } from "./config.ts";
+import { codeName } from "./exit.ts";
+import { outsideChanges, runGit } from "./git.ts";
+import { syncAndPush } from "./push.ts";
+import { hostNames, readRules, renderSopsConfig, secretsFile } from "./recipients.ts";
+import type { Refusal } from "./refusal.ts";
+import { parseFile } from "./yamlfile.ts";
 
 /**
- * Remove a host. Like adding one, this is not a held edit: after the person has confirmed, the server deletes `hosts/<name>.yaml` and
- * `secrets/<name>.enc.yaml`, runs the real `fleet secrets rekey` as a child process (so `.sops.yaml` and every secrets file stop naming the
- * host's key), then commits and pushes the config repo. Its output is relayed as it comes.
+ * Remove a host, for `fleet host remove` and for the page. After the person has confirmed, this deletes `hosts/<name>.yaml` and
+ * `secrets/<name>.enc.yaml`, runs `fleet secrets rekey` (so `.sops.yaml` and every secrets file stop naming the host's key; the caller
+ * says how it runs), then commits and pushes the config repo. Its steps are relayed as they happen.
  *
  * Until the commit, a failure puts everything back as it was. After it, the removal is published work: when only the push failed, the
- * commit stays and the page says so. Nothing is done on the machine itself: it keeps its files, and its timer reports errors until fleet is
- * turned off there. Rekeying does not change a secret's value, so every secret the host could read is still known to it.
+ * commit stays and the caller says so. Nothing is done on the machine itself here: it keeps its files, and its timer reports errors until
+ * fleet is turned off there. Rekeying does not change a secret's value, so every secret the host could read is still known to it.
  */
 
 const NAME = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+
+/** Whether `name` can be the name of a host: not `shared`, whose file holds the secrets every host reads. */
+export const isHostName = (name: unknown): name is string => typeof name === "string" && NAME.test(name) && name.length <= 64 && name.toLowerCase() !== "shared";
 
 // The words of these refusals are shown by the page too, as the title of a disabled button (`static/removing.js`): a test holds them equal.
 export const REMOVE_SELF = (name: string): string => `${name} is the host this page runs on. Open fleet ui on another host to remove it.`;
@@ -38,22 +39,6 @@ export function removeRefusal(configDir: string, self: string | null, name: stri
 }
 
 export type RemoveRequest = { name: string };
-
-/** The name from a request body, checked. */
-export function removeFields(body: unknown): RemoveRequest {
-  if (typeof body !== "object" || body === null || Array.isArray(body)) throw new BadRequest("the body must be a JSON object");
-  const { name } = body as Record<string, unknown>;
-  if (typeof name !== "string" || !NAME.test(name) || name.length > 64 || name.toLowerCase() === "shared") throw new BadRequest("name must be the name of a host");
-  return { name };
-}
-
-/** The request body for removing a host: its name, and the confirmation. */
-export function removeRequest(body: unknown): RemoveRequest {
-  const request = removeFields(body);
-  // The page asks first, naming what will be deleted and what stays; a call that did not is refused.
-  if ((body as Record<string, unknown>).confirm !== true) throw new BadRequest("removing a host deletes its files and commits and pushes the config repo: it must be confirmed");
-  return request;
-}
 
 const read = (configDir: string, path: string): string | undefined => {
   try {
@@ -114,7 +99,20 @@ export function previewRemove(configDir: string, name: string): RemovePreview {
   return { name, ssh: typeof doc?.ssh === "string" ? doc.ssh : null, files, rekey: encrypts(configDir), rekeyed, readable: { shared: age === null ? [] : secretNames(shared), own: secretNames(own) } };
 }
 
-export type RemoveDoc = { ok: boolean; code: string; exit: number | null; messages: string[]; written: string; removed: boolean; restored: boolean; kept: boolean; output: string[] };
+export type RemoveDoc = {
+  ok: boolean;
+  code: string;
+  exit: number | null;
+  messages: string[];
+  written: string;
+  removed: boolean;
+  restored: boolean;
+  kept: boolean;
+  output: string[];
+  /** The host's ssh destination, and the names of the secrets it could read: what the caller needs after the files are gone. Never a value. */
+  ssh: string | null;
+  readable: RemovePreview["readable"];
+};
 export type RemoveOutcome = { refused: Refusal } | { doc: RemoveDoc };
 
 /** Every file `secrets rekey` or this removal may rewrite, with its text (`undefined`: not there), so a failure can put it back. */
@@ -128,8 +126,11 @@ function snapshot(configDir: string, name: string): Map<string, string | undefin
   return new Map([hostFile(name), ".sops.yaml", ...secrets].map((path) => [path, read(configDir, path)] as const));
 }
 
+/** Runs `fleet secrets rekey`, relaying its lines. Resolves to its exit code, or null when it could not run. */
+export type Rekey = (onLine: (text: string) => void) => Promise<number | null>;
+
 /** The caller holds the push lock for the whole of this: rekey does not take it, and a push must not start under it. */
-export async function removeHost(configDir: string, toolDir: string, home: string, self: string | null, req: RemoveRequest, onLine: (text: string) => void): Promise<RemoveOutcome> {
+export async function removeHost(configDir: string, self: string | null, req: RemoveRequest, rekeyWith: Rekey, onLine: (text: string) => void): Promise<RemoveOutcome> {
   const refuse = (r: Refusal): RemoveOutcome => ({ refused: r });
   const { name } = req;
   const found = outsideChanges(configDir);
@@ -137,6 +138,7 @@ export async function removeHost(configDir: string, toolDir: string, home: strin
   const no = removeRefusal(configDir, self, name);
   if (no !== null) return refuse(no);
 
+  const { ssh, readable } = previewRemove(configDir, name);
   const output: string[] = [];
   const say = (text: string) => {
     output.push(text);
@@ -158,7 +160,7 @@ export async function removeHost(configDir: string, toolDir: string, home: strin
   const failed = (exit: number | null, messages: string[]): RemoveOutcome => {
     restore();
     const left = outsideChanges(configDir);
-    return { doc: { ok: false, code: codeName(exit), exit, messages: [...messages, "fleet: the repo is as it was: nothing was committed", ...(left.length > 0 ? [`fleet: the config repo still has changes: ${left.join(", ")}`] : [])], written: path, removed: false, restored: left.length === 0, kept: false, output: output.slice(-200) } };
+    return { doc: { ok: false, code: codeName(exit), exit, messages: [...messages, "fleet: the repo is as it was: nothing was committed", ...(left.length > 0 ? [`fleet: the config repo still has changes: ${left.join(", ")}`] : [])], written: path, removed: false, restored: left.length === 0, kept: false, output: output.slice(-200), ssh, readable } };
   };
 
   say(`$ delete ${path}${before.has(secretsFile(name)) ? ` and ${secretsFile(name)}` : ""}`);
@@ -166,7 +168,7 @@ export async function removeHost(configDir: string, toolDir: string, home: strin
   rmSync(join(configDir, secretsFile(name)), { force: true });
   if (rekey) {
     say("$ fleet secrets rekey");
-    const exit = await runChild(toolDir, configDir, home, ["secrets", "rekey"], say);
+    const exit = await rekeyWith(say);
     if (exit !== 0) return failed(exit, [`fleet: fleet secrets rekey did not finish (${exit === null ? "it could not run" : `exit ${exit}`})`]);
   }
 
@@ -178,7 +180,7 @@ export async function removeHost(configDir: string, toolDir: string, home: strin
 
   // From here the removal is committed: a failure to publish leaves the commit, and says so.
   const kept = (exitCode: number | null, why: string): RemoveOutcome => ({
-    doc: { ok: false, code: codeName(exitCode), exit: exitCode, messages: [`fleet: ${name} is removed and committed, but ${why}`, "fleet: run fleet push from a terminal, or fix what the output names and push again, to publish it"], written: path, removed: true, restored: false, kept: true, output: output.slice(-200) },
+    doc: { ok: false, code: codeName(exitCode), exit: exitCode, messages: [`fleet: ${name} is removed and committed, but ${why}`, "fleet: run fleet push from a terminal, or fix what the output names and push again, to publish it"], written: path, removed: true, restored: false, kept: true, output: output.slice(-200), ssh, readable },
   });
   say("$ git push");
   try {
@@ -189,5 +191,5 @@ export async function removeHost(configDir: string, toolDir: string, home: strin
     return kept(null, "it could not be pushed");
   }
   const left = outsideChanges(configDir);
-  return { doc: { ok: true, code: "ok", exit: 0, messages: left.length > 0 ? [`fleet: the config repo still has changes: ${left.join(", ")}`] : [], written: path, removed: true, restored: false, kept: false, output: output.slice(-200) } };
+  return { doc: { ok: true, code: "ok", exit: 0, messages: left.length > 0 ? [`fleet: the config repo still has changes: ${left.join(", ")}`] : [], written: path, removed: true, restored: false, kept: false, output: output.slice(-200), ssh, readable } };
 }

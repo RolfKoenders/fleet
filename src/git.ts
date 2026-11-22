@@ -83,3 +83,13 @@ export function syncRepo(dir: string): { blocked: string | null; moved: boolean 
   if (!merge.ok) throw new Error(`cannot fast-forward ${dir}: ${merge.stderr.split("\n")[0]}`);
   return { blocked: null, moved: true };
 }
+
+/** `git status --porcelain` lines of the config repo: changes that are not committed. */
+export function outsideChanges(configDir: string): string[] {
+  // Not `runGit`: it trims its output, and the first line of a status starts with a space.
+  const gitPath = findTool("git");
+  if (gitPath === null) throw new MissingToolError("git is not installed");
+  const r = spawnSync(gitPath, ["status", "--porcelain", "--untracked-files=all"], { cwd: configDir, encoding: "utf8", env: { ...process.env, GIT_OPTIONAL_LOCKS: "0" } });
+  if (r.status !== 0) throw new Error(`git status failed in ${configDir}: ${r.stderr.split("\n")[0]}`);
+  return r.stdout.split("\n").filter((l) => l !== "");
+}

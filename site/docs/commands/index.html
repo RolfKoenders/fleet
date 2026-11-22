@@ -62,7 +62,7 @@
         <section><h3>Reference</h3><a class="on" aria-current="page" href="../commands/">Commands</a><a href="../reference-fleet-yaml/">fleet.yaml</a><a href="../reference-hosts/">Host files and defaults</a><a href="../reference-catalog-mcp/">catalog/mcp.yaml</a><a href="../reference-catalog-skills/">catalog/skills.yaml</a></section>
         <section><h3>FAQ</h3><a href="../faq/">FAQ</a></section>
         </nav>
-        <nav class="doc-toc" aria-label="On this page"><h3>On this page</h3><a href="#options-for-every-command">Options for every command</a><a href="#fleet-status">fleet status</a><a href="#fleet-doctor">fleet doctor</a><a href="#fleet-context">fleet context</a><a href="#fleet-diff">fleet diff</a><a href="#fleet-bridge">fleet bridge</a><a href="#fleet-ui">fleet ui</a><a href="#fleet-card">fleet card</a><a href="#fleet-apply">fleet apply</a><a href="#fleet-push">fleet push</a><a href="#fleet-undo">fleet undo</a><a href="#fleet-capture">fleet capture</a><a href="#fleet-adopt">fleet adopt</a><a href="#fleet-secrets">fleet secrets</a><a href="#fleet-skills">fleet skills</a><a href="#fleet-update">fleet update</a><a href="#fleet-new">fleet new</a><a href="#fleet-init">fleet init</a><a href="#fleet-demo">fleet demo</a><a href="#fleet-agent">fleet agent</a><a href="#fleet-help">fleet help</a></nav>
+        <nav class="doc-toc" aria-label="On this page"><h3>On this page</h3><a href="#options-for-every-command">Options for every command</a><a href="#fleet-status">fleet status</a><a href="#fleet-doctor">fleet doctor</a><a href="#fleet-context">fleet context</a><a href="#fleet-diff">fleet diff</a><a href="#fleet-bridge">fleet bridge</a><a href="#fleet-ui">fleet ui</a><a href="#fleet-card">fleet card</a><a href="#fleet-apply">fleet apply</a><a href="#fleet-push">fleet push</a><a href="#fleet-undo">fleet undo</a><a href="#fleet-capture">fleet capture</a><a href="#fleet-adopt">fleet adopt</a><a href="#fleet-secrets">fleet secrets</a><a href="#fleet-host">fleet host</a><a href="#fleet-skills">fleet skills</a><a href="#fleet-update">fleet update</a><a href="#fleet-new">fleet new</a><a href="#fleet-init">fleet init</a><a href="#fleet-demo">fleet demo</a><a href="#fleet-agent">fleet agent</a><a href="#fleet-help">fleet help</a></nav>
     </aside>
     <article class="doc-body">
 <p>Every <code>fleet</code> command and option, as <code>fleet help</code> lists them. Commands that read only change nothing. The others write to this host, to the config repo or to other hosts, so run them when you mean to.</p>
@@ -155,10 +155,18 @@
 <p><b>JSON.</b> Adds <code>adopted</code>, <code>left</code> and <code>conflicts</code>.</p>
 <h2 id="fleet-secrets"><code>fleet secrets</code></h2>
 <p><b>Changes things.</b> It writes to this host, to the config repo or to other hosts.</p>
-<p>Edit, set or rekey encrypted secrets.</p>
-<pre class="doc-code"><code>fleet secrets edit &lt;file&gt; | set &lt;file&gt; &lt;NAME&gt; | rekey</code></pre>
-<p><b>JSON.</b> <code>rekey</code> adds <code>rekeyed</code>, the secrets files that were updated. <code>edit</code> and <code>set</code> add nothing.</p>
+<p>Edit, set, rekey or rotate encrypted secrets (rotate replaces values one by one with hidden input, after a leaked token, a rejected one or a removed host; it needs a terminal).</p>
+<pre class="doc-code"><code>fleet secrets edit &lt;file&gt; | set &lt;file&gt; &lt;NAME&gt; | rekey | rotate [NAME...]</code></pre>
+<p><b>JSON.</b> <code>rekey</code> adds <code>rekeyed</code>, the secrets files that were updated. <code>edit</code> and <code>set</code> add nothing. <code>rotate</code> has no <code>--json</code> form: it asks for each value on a terminal.</p>
 <p><b>Guide.</b> <a href="../faq/#where-do-my-secrets-end-up">FAQ: where do my secrets end up?</a></p>
+<h2 id="fleet-host"><code>fleet host</code></h2>
+<p><b>Changes things.</b> It writes to this host, to the config repo or to other hosts.</p>
+<p>Retire a host: delete its host file and secrets file, re-encrypt the secrets files without its key, commit and push, stop its timer over ssh if it answers and you agree, then offer to rotate the secrets it could read (without a terminal it needs --yes, and rotates nothing).</p>
+<pre class="doc-code"><code>fleet host remove &lt;name&gt; [--yes]</code></pre>
+<p><b>Options</b></p>
+<ul><li><code>--yes</code>: Remove the host without asking, and stop its timer there if it answers.</li></ul>
+<p><b>JSON.</b> Adds <code>removedHost</code> (the name, or null when nothing was removed), <code>committed</code>, <code>pushed</code>, <code>rekeyed</code>, <code>readable</code> (the secret names the host could read, <code>shared</code> and <code>own</code>), <code>timer</code> (<code>state</code> and <code>message</code>) and, when rotated, <code>rotation</code>.</p>
+<p><b>Guide.</b> <a href="../setting-up-machines/#retiring-a-machine">Retiring a machine</a></p>
 <h2 id="fleet-skills"><code>fleet skills</code></h2>
 <p><b>Changes things.</b> It writes to this host, to the config repo or to other hosts.</p>
 <p>Move pinned skill sources to the head of their branch (--review shows what changed first, with anything risky flagged, and asks per source on a terminal; without one nothing moves unless --yes).</p>

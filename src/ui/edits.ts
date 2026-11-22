@@ -3,12 +3,10 @@ import { dirname, join } from "node:path";
 import { diff } from "../apply.ts";
 import { applyOps, CATALOG_FILES, DEFAULTS_FILE, entryProblem, entryValue, hostFile, parseSopsText, reviewText, secretsOwner, validate } from "../edit/index.ts";
 import type { Applied, EditKind, EditOp, Files, HostProblems, Value } from "../edit/index.ts";
-import { spawnSync } from "node:child_process";
-import { MissingToolError, runGit } from "../git.ts";
+import { runGit } from "../git.ts";
 import { existsSync } from "node:fs";
 import { parseCatalog } from "../catalog.ts";
 import { findSkills, sourceDir } from "../sources.ts";
-import { findTool } from "../tools.ts";
 import { hostNames, readRules } from "../recipients.ts";
 import { InvalidConfigError } from "../config.ts";
 import { loadModel } from "../tui/model.ts";
@@ -167,16 +165,6 @@ export function plan(configDir: string, home: string, ops: readonly EditOp[]) {
   const result = applyOps(readFiles(configDir), ops);
   const out = diff(configDir, false, home, result.files);
   return { code: out.code, text: out.text ?? "", messages: out.messages ?? [] };
-}
-
-/** `git status --porcelain` lines of the config repo: changes the page did not make. */
-export function outsideChanges(configDir: string): string[] {
-  // Not `runGit`: it trims its output, and the first line of a status starts with a space.
-  const gitPath = findTool("git");
-  if (gitPath === null) throw new MissingToolError("git is not installed");
-  const r = spawnSync(gitPath, ["status", "--porcelain", "--untracked-files=all"], { cwd: configDir, encoding: "utf8", env: { ...process.env, GIT_OPTIONAL_LOCKS: "0" } });
-  if (r.status !== 0) throw new Error(`git status failed in ${configDir}: ${r.stderr.split("\n")[0]}`);
-  return r.stdout.split("\n").filter((l) => l !== "");
 }
 
 export class WriteRefused extends Error {

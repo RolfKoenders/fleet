@@ -52,7 +52,7 @@ export function setRequest(body: unknown, configDir: string): SetRequest {
 }
 
 /** What a failed sops run is called. Chosen from what sops said, never repeating it. */
-const sopsFailure = (stderr: string, file: string): string =>
+export const sopsFailure = (stderr: string, file: string): string =>
   /no key could decrypt|failed to get the data key|could not decrypt data key/i.test(stderr)
     ? `this machine's age key cannot open ${file}: only a host that is a recipient of it can add to it`
     : `sops could not set the value in ${file}`;

@@ -44,7 +44,7 @@ test("every command fleet has is in the primer, once, as read-only or as changin
   const changing = commands.slice(commands.indexOf("### Changes things"));
   assert.match(readOnly, /^### Read-only$/m);
   const listed = (text: string) => [...text.matchAll(/^- `fleet ([a-z]+)/gm)].map((m) => m[1]);
-  assert.deepEqual([...listed(readOnly), ...listed(changing)].sort(), help.commands.map((c) => c.name).filter((n) => n !== "ui" && n !== "card").sort(), "ui and card are in the help but not in the primer");
+  assert.deepEqual([...listed(readOnly), ...listed(changing)].sort(), help.commands.map((c) => c.name).filter((n) => n !== "ui" && n !== "card" && n !== "host").sort(), "ui, card and host are in the help but not in the primer");
   assert.deepEqual(listed(readOnly).sort(), ["agent", "context", "demo", "diff", "help", "status"]);
   assert.deepEqual(listed(changing).sort(), ["adopt", "apply", "bridge", "capture", "doctor", "init", "new", "push", "secrets", "skills", "undo", "update"]);
 });

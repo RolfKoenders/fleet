@@ -55,7 +55,8 @@ fleet push -m "Add a skill"
 | `fleet undo [--no-push] [--yes] [<commit>]` | Revert the last recorded push, or a named one, and push the revert to the same scope; `--no-push` stops after the revert commit, `--yes` skips the prompt |
 | `fleet capture [mcp\|skill <name> --host\|--all\|--ignore] [--yes] [--no-push]` | Turn the MCP servers and skills this machine has, and the config does not, into config: it asks about each, writes and commits the config (secrets go to sops, never in the catalog) and asks before it pushes; without a terminal it only reports. See [Capture](docs/capture.md) |
 | `fleet adopt` | Take ownership of an MCP server or skill that already matches |
-| `fleet secrets` | Edit, set or rekey encrypted secrets |
+| `fleet secrets` | Edit, set, rekey or rotate encrypted secrets; `rotate` replaces values one by one with hidden input after a leak or a removed machine |
+| `fleet host remove <name>` | Retire a machine: delete its files, rekey, commit and push, stop its timer over ssh if it answers, and offer to rotate the secrets it could read. See [Retiring a machine](setting-up-machines.md#retiring-a-machine) |
 | `fleet skills update` | Move pinned skill sources to their latest commit; `--review` shows what changed first and asks per source |
 | `fleet update` | Move the pinned tool version to the newest release (or the latest commit of a branch, see `track` in `fleet.yaml`) and print what changed |
 | `fleet demo` | Try the bridge on made-up hosts in a throwaway sandbox; `--shell` gives a shell instead |

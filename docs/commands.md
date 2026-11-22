@@ -219,15 +219,33 @@ fleet adopt mcp|skill <name>
 
 **Changes things.** It writes to this host, to the config repo or to other hosts.
 
-Edit, set or rekey encrypted secrets.
+Edit, set, rekey or rotate encrypted secrets (rotate replaces values one by one with hidden input, after a leaked token, a rejected one or a removed host; it needs a terminal).
 
 ```text
-fleet secrets edit <file> | set <file> <NAME> | rekey
+fleet secrets edit <file> | set <file> <NAME> | rekey | rotate [NAME...]
 ```
 
-**JSON.** `rekey` adds `rekeyed`, the secrets files that were updated. `edit` and `set` add nothing.
+**JSON.** `rekey` adds `rekeyed`, the secrets files that were updated. `edit` and `set` add nothing. `rotate` has no `--json` form: it asks for each value on a terminal.
 
 **Guide.** [FAQ: where do my secrets end up?](faq.md#where-do-my-secrets-end-up)
+
+## `fleet host`
+
+**Changes things.** It writes to this host, to the config repo or to other hosts.
+
+Retire a host: delete its host file and secrets file, re-encrypt the secrets files without its key, commit and push, stop its timer over ssh if it answers and you agree, then offer to rotate the secrets it could read (without a terminal it needs --yes, and rotates nothing).
+
+```text
+fleet host remove <name> [--yes]
+```
+
+**Options**
+
+- `--yes`: Remove the host without asking, and stop its timer there if it answers.
+
+**JSON.** Adds `removedHost` (the name, or null when nothing was removed), `committed`, `pushed`, `rekeyed`, `readable` (the secret names the host could read, `shared` and `own`), `timer` (`state` and `message`) and, when rotated, `rotation`.
+
+**Guide.** [Retiring a machine](setting-up-machines.md#retiring-a-machine)
 
 ## `fleet skills`
 
