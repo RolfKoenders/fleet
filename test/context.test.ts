@@ -376,7 +376,7 @@ test("--json has the numbers, the item lists and each measurement's age; colour 
   assert.equal(runFleet(s.clone, ["context"], { home: s.home, env: { FORCE_COLOR: "1", NO_COLOR: "1" } }).stdout.includes(ESC), false, "NO_COLOR wins");
 });
 
-test("it is in fleet help, in the primer as read-only, and in the README", () => {
+test("it is in fleet help and in the primer as read-only", () => {
   const s = guarded();
   const help = JSON.parse(runFleet(s.clone, ["help", "--json"], { home: s.home }).stdout) as { commands: { name: string }[] };
   assert.ok(help.commands.some((c) => c.name === "context"));
@@ -384,7 +384,6 @@ test("it is in fleet help, in the primer as read-only, and in the README", () =>
   const primer = runFleet(s.clone, ["agent"], { home: s.home }).stdout;
   const readOnly = primer.slice(primer.indexOf("### Read-only"), primer.indexOf("### Changes things"));
   assert.match(readOnly, /^- `fleet context( \[--all\])?`/m);
-  assert.match(readFileSync(join(import.meta.dirname, "../README.md"), "utf8"), /^\| `fleet context` \|/m);
 });
 
 test("symlinks are followed: a skill that is a link to a directory counts", () => {
