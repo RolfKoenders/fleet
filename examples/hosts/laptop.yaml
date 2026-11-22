@@ -1,3 +1,5 @@
+# Every key in this file is explained at https://rolflab.nl/fleet/docs/reference-hosts/
+#
 # One file per host. The file's name is the host's name: `fleet init laptop` sets up the
 # machine this describes, and `fleet init` writes the name to ~/.config/fleet/host on it.
 

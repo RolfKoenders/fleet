@@ -4,6 +4,7 @@ import { isAbsolute, join, resolve } from "node:path";
 import { AGENT_IDS, AGENTS, having, hostAgents, isAgentId, leftAlone, SKILL_TARGETS, skillTargets } from "./agents/index.ts";
 import type { Agent, AgentId, Registered } from "./agents/index.ts";
 import { parseCatalog, pickBundles } from "./catalog.ts";
+import { FILE_RECORD_KEYS, HOST_ONLY_KEYS, MCP_SELECT_KEYS, SHARED_KEYS } from "./configkeys.ts";
 import type { Catalog } from "./catalog.ts";
 import { leftOutNote, mcpKeys, parseMcpCatalog } from "./mcp.ts";
 import type { Conflict } from "./plan.ts";
@@ -71,9 +72,6 @@ export type LoadOptions = {
 
 type UnresolvedRecord = { source: string; target: string };
 
-const SHARED_KEYS = ["vars", "bundles", "exclude", "mcp", "settings", "files", "agents", "timer"];
-const HOST_ONLY_KEYS = ["ssh", "age", "admin"];
-
 type Checked = { records: UnresolvedRecord[]; declared: Declared[]; vars: Record<string, string>; agents: AgentId[] | null; timer: Schedule | null };
 
 function checkFile(path: string, doc: Obj, hostFile: boolean, problems: string[]): Checked {
@@ -104,7 +102,7 @@ function checkFile(path: string, doc: Obj, hostFile: boolean, problems: string[]
       problems.push(`${path}: 'mcp' must be a map`);
     } else {
       for (const [key, value] of Object.entries(mcp)) {
-        if (key !== "include" && key !== "exclude") problems.push(`${path}: unknown key 'mcp.${key}'`);
+        if (!MCP_SELECT_KEYS.includes(key)) problems.push(`${path}: unknown key 'mcp.${key}'`);
         else if (!isStringList(value)) problems.push(`${path}: 'mcp.${key}' must be a list of strings`);
       }
     }
@@ -149,7 +147,7 @@ function checkFile(path: string, doc: Obj, hostFile: boolean, problems: string[]
     const at = `${path}: files[${i}]`;
     if (!isObject(entry)) return problems.push(`${at} must be a map with 'source' and 'target'`);
     for (const key of Object.keys(entry)) {
-      if (key !== "source" && key !== "target") problems.push(`${at}: unknown key '${key}'`);
+      if (!FILE_RECORD_KEYS.includes(key)) problems.push(`${at}: unknown key '${key}'`);
     }
     const { source, target } = entry;
     if ([source, target].some((v) => typeof v === "string" && hasSecretRef(v))) {

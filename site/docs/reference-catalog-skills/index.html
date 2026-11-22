@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>fleet · Docs · catalog/skills.yaml</title>
+  <meta name="description" content="Every key of a skill source and a bundle: commit, track, branch and review.">
+  <meta property="og:title" content="fleet · Docs · catalog/skills.yaml">
+  <meta property="og:description" content="Every key of a skill source and a bundle: commit, track, branch and review.">
+  <meta property="og:image" content="https://rolflab.nl/fleet/social-preview.png">
+  <link rel="canonical" href="https://rolflab.nl/fleet/docs/reference-catalog-skills/">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="theme-color" content="#0b0f14">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 120 84'%3E%3Cpath d='M8 20h22l10 10v32H8Z' fill='none' stroke='%233fb950' stroke-width='5'/%3E%3Cpath d='M40 42C62 42 62 16 84 16M40 42H84M40 42C62 42 62 68 84 68' fill='none' stroke='%237d8590' stroke-width='4'/%3E%3Crect x='84' y='9' width='32' height='14' rx='2' fill='none' stroke='%23e6edf3' stroke-width='4'/%3E%3Crect x='84' y='35' width='32' height='14' rx='2' fill='none' stroke='%23e6edf3' stroke-width='4'/%3E%3Crect x='84' y='61' width='32' height='14' rx='2' fill='none' stroke='%23e6edf3' stroke-width='4'/%3E%3C/svg%3E">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <!-- The terminal font is served from here: Google's subsets leave out the box drawing the TUI is made of. -->
+  <link rel="preload" href="../../fonts/JetBrainsMono-Regular.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="../../fonts/JetBrainsMono-Bold.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="../../style.css">
+  <script defer src="https://analytics.keeply.tools/script.js" data-website-id="ebccdcbe-ca21-4327-b7a4-57136d74c578" data-domains="rolflab.nl"></script>
+
+</head>
+<body data-base="../">
+  <div class="backdrop" aria-hidden="true"></div>
+
+  <header class="nav">
+    <a class="brand" href="../../" aria-label="fleet home">
+      <svg viewBox="0 0 120 84" aria-hidden="true"><path d="M8 20h22l10 10v32H8Z" fill="none" stroke="#3fb950" stroke-width="5"/><path d="M15 38h18M15 46h18M15 54h11" stroke="#3fb950" stroke-width="4"/><path d="M40 42C62 42 62 16 84 16M40 42H84M40 42C62 42 62 68 84 68" fill="none" stroke="#7d8590" stroke-width="4"/><g fill="none" stroke="#e6edf3" stroke-width="4"><rect x="84" y="9" width="32" height="14" rx="2"/><rect x="84" y="35" width="32" height="14" rx="2"/><rect x="84" y="61" width="32" height="14" rx="2"/></g></svg>
+      <span>fleet</span>
+    </a>
+    <nav>
+      <a href="../../#how">How it works</a>
+      <a href="../../#watch">Watch it land</a>
+      <a href="../../#bridge">The bridge</a>
+      <a href="../../#ui">In your browser</a>
+      <a href="../../#compare">Compare</a>
+      <a href="../../#whats-new">What's new</a>
+      <a href="../../#start">Get started</a>
+      <a href="../../docs/" data-umami-event="fleet-docs-click" aria-current="page" style="color:var(--text)">Docs</a>
+      <a class="gh" href="https://github.com/RolfKoenders/fleet" data-umami-event="fleet-github-click" data-umami-event-where="nav">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+        GitHub
+      </a>
+    </nav>
+  </header>
+
+  <main class="docpage">
+    <div class="doc-head">
+      <h1>catalog/skills.yaml</h1>
+      <button type="button" class="doc-menu-btn" aria-expanded="false" aria-controls="doc-side">Menu</button>
+    </div>
+    <aside class="doc-side" id="doc-side">
+      <div class="doc-search" role="search">
+          <input type="search" id="doc-search" placeholder="Search the docs ( / )" autocomplete="off" aria-label="Search the docs">
+          <div class="doc-results" id="doc-results" hidden></div>
+        </div>
+        <nav class="doc-nav" aria-label="Docs">
+        <section><h3>Start</h3><a href="../getting-started/">Getting started</a><a href="../setting-up-machines/">Setting up machines</a></section>
+        <section><h3>Guides</h3><a href="../bridge/">The bridge</a><a href="../ui/">The page</a><a href="../mcp-logins/">MCP logins</a><a href="../adding-an-agent/">Adding an agent</a></section>
+        <section><h3>Reference</h3><a href="../commands/">Commands</a><a href="../reference-fleet-yaml/">fleet.yaml</a><a href="../reference-hosts/">Host files and defaults</a><a href="../reference-catalog-mcp/">catalog/mcp.yaml</a><a class="on" aria-current="page" href="../reference-catalog-skills/">catalog/skills.yaml</a></section>
+        <section><h3>FAQ</h3><a href="../faq/">FAQ</a></section>
+        </nav>
+        <nav class="doc-toc" aria-label="On this page"><h3>On this page</h3><a href="#example">Example</a><a href="#keys">Keys</a><a href="#see-also">See also</a></nav>
+    </aside>
+    <article class="doc-body">
+<p><code>catalog/skills.yaml</code> says where skills come from and how they are grouped. A skill is a directory named after the skill, with a <code>SKILL.md</code> in it. A source is a git repo that holds skills. A bundle is a named list of skills that a host file picks as one unit with <code>bundles</code>. The file is optional and has two keys, <code>sources</code> and <code>bundles</code>.</p>
+<p>Fleet links each picked skill into the skills directory of every agent that reads one, such as <code>~/.claude/skills/&lt;name&gt;</code>. It also installs its own <code>fleet</code> skill from the tool. Do not list that one: <code>fleet</code>, <code>synced</code> and <code>.trash</code> are reserved names.</p>
+<p>A source is either pinned or followed:</p>
+<ul><li>A <b>pinned</b> source has a <code>commit</code> and a <code>track</code>. It sits at that commit until you run <code>fleet skills update</code>, so a change upstream cannot reach your machines unreviewed. Use it for skills other people write.</li><li>A <b>followed</b> source has a <code>branch</code>. Fleet keeps it on the newest commit of that branch and moves it at every apply. <code>fleet push</code> also commits and pushes it. Use it for skills you write yourself.</li></ul>
+<p>A source has exactly one of <code>commit</code> and <code>branch</code>.</p>
+<h2 id="example">Example</h2>
+<pre class="doc-code"><code>sources:
+  example-skills:
+    repo: https://github.com/example/skills.git
+    commit: 1234567890abcdef1234567890abcdef12345678
+    track: main
+    path: skills
+    review: true
+
+  my-skills:
+    repo: https://github.com/you/my-skills.git
+    branch: main
+    path: .
+
+bundles:
+  core: [review, debug]
+  extra: [notes]</code></pre>
+<h2 id="keys">Keys</h2>
+<h3 id="sources-name-repo"><code>sources.&lt;name&gt;.repo</code></h3>
+<p>Type: string, a URL. Default: none, required. Added in: 1.0.0.</p>
+<p>The git repo that holds the skills. Credentials in the URL (<code>user:password@</code>) are refused: use a git credential helper or an SSH key. A source's name is letters, digits, <code>.</code>, <code>_</code> and <code>-</code>, and starts with a letter or digit. Each machine keeps its clone under that name, so renaming a source clones it again.</p>
+<pre class="doc-code"><code>sources:
+  example-skills:
+    repo: https://github.com/example/skills.git</code></pre>
+<h3 id="sources-name-path"><code>sources.&lt;name&gt;.path</code></h3>
+<p>Type: string, a directory in the repo. Default: none, required. Added in: 1.0.0.</p>
+<p>The directory to search for skills. Skills are found at any depth below it. Use <code>.</code> for the whole repo. A path that is itself a skill, with a <code>SKILL.md</code> in it, offers just that skill. It cannot start with <code>/</code> or contain <code>..</code>.</p>
+<pre class="doc-code"><code>sources:
+  example-skills:
+    path: skills</code></pre>
+<h3 id="sources-name-commit"><code>sources.&lt;name&gt;.commit</code></h3>
+<p>Type: string, a full commit sha. Default: none. Added in: 1.0.0.</p>
+<p>Makes the source pinned: the commit to check out, as 40 lowercase hex characters. Needs <code>track</code>, and cannot be used with <code>branch</code>. <code>fleet skills update</code> moves it.</p>
+<pre class="doc-code"><code>sources:
+  example-skills:
+    commit: 1234567890abcdef1234567890abcdef12345678
+    track: main</code></pre>
+<h3 id="sources-name-track"><code>sources.&lt;name&gt;.track</code></h3>
+<p>Type: string, a branch name. Default: none, required for a pinned source. Added in: 1.0.0.</p>
+<p>The branch <code>fleet skills update</code> reads to find a newer commit. Only a pinned source has it.</p>
+<pre class="doc-code"><code>sources:
+  example-skills:
+    track: main</code></pre>
+<h3 id="sources-name-branch"><code>sources.&lt;name&gt;.branch</code></h3>
+<p>Type: string, a branch name. Default: none. Added in: 1.0.0.</p>
+<p>Makes the source followed: the branch fleet keeps it on. Cannot be used with <code>commit</code>, <code>track</code> or <code>review</code>.</p>
+<pre class="doc-code"><code>sources:
+  my-skills:
+    repo: https://github.com/you/my-skills.git
+    branch: main
+    path: .</code></pre>
+<h3 id="sources-name-review"><code>sources.&lt;name&gt;.review</code></h3>
+<p>Type: boolean. Default: <code>false</code>. Added in: 2.1.0.</p>
+<p>With <code>true</code>, <code>fleet skills update</code> shows what a move of this source brings in and asks before the pin moves, as if you had passed <code>--review</code>. Switch it on for skills other people write. Only a pinned source can have it, because a followed source moves at every apply and has no pin to review. Every host has to run 2.1.0 or newer before the catalog uses it.</p>
+<pre class="doc-code"><code>sources:
+  example-skills:
+    review: true</code></pre>
+<h3 id="bundles-name"><code>bundles.&lt;name&gt;</code></h3>
+<p>Type: list of strings, skill names. Default: none. Added in: 1.0.0.</p>
+<p>A named group of skills. A host file picks it with <code>bundles</code>. Each entry is the directory name of a skill, with no <code>/</code>. A skill can be in only one bundle and once in it, a skill's name must match exactly one directory in exactly one source, and the reserved names are refused.</p>
+<pre class="doc-code"><code>bundles:
+  core: [review, debug]
+  extra: [notes]</code></pre>
+<h2 id="see-also">See also</h2>
+<ul><li><a href="../reference-hosts/">Host files and defaults</a> for <code>bundles</code> and <code>exclude</code>.</li><li><a href="../getting-started/">Getting started</a> for <code>fleet skills update</code>.</li></ul>
+    </article>
+  </main>
+
+  <script src="../docs.js" defer></script>
+</body>
+</html>

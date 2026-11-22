@@ -131,6 +131,7 @@ On a Mac the timer is a LaunchAgent, so it runs while the user is logged in at t
 ## Docs
 
 - [Setting up machines](docs/setting-up-machines.md)
+- Config reference: [`fleet.yaml`](docs/reference-fleet-yaml.md), [host files and defaults](docs/reference-hosts.md), [`catalog/mcp.yaml`](docs/reference-catalog-mcp.md), [`catalog/skills.yaml`](docs/reference-catalog-skills.md)
 - [Adding an agent](docs/adding-an-agent.md), and [Contributing](CONTRIBUTING.md)
 - [The bridge](docs/bridge.md)
 - [The page (`fleet ui`)](docs/ui.md)

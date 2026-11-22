@@ -24,13 +24,14 @@ test("site docs: the committed pages are what docs/*.md generates now", () => {
   assert.ok(out.search === read("site/docs/search.json"), "site/docs/search.json is out of date with docs/*.md: run 'npm run site:docs' and commit the result");
 });
 
-test("site docs: every doc is a page except the releasing guide", () => {
+test("site docs: every doc is a page except the releasing guide, and the Reference section is on every page", () => {
   assert.deepEqual(
     [...PAGES.map((p) => p.file)].sort(),
     readdirSync(join(repoRoot, "docs")).filter((f) => f.endsWith(".md") && f !== "releasing.md").sort(),
   );
   const out = built();
   for (const html of [out.index, ...Object.values(out.pages)]) {
+    assert.match(html, /<h[23]>Reference<\/h[23]>/, "the Reference section is not rendered");
     assert.doesNotMatch(html, /\u2014/);
   }
 });

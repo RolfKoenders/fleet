@@ -1,3 +1,5 @@
+# Every key in this file is explained at https://rolflab.nl/fleet/docs/reference-fleet-yaml/
+#
 # The fleet tool version every machine runs.
 #
 # Fleet does not run whatever is newest. Each `fleet apply` checks out `commit` in the

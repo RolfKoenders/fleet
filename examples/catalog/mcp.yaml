@@ -1,3 +1,5 @@
+# Every key in this file is explained at https://rolflab.nl/fleet/docs/reference-catalog-mcp/
+#
 # MCP servers, defined once and rendered for each agent in its own file and shape.
 #
 # A server has either `command` (it runs on the machine, over stdio) or `transport` (it is a

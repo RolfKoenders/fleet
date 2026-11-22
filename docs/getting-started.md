@@ -7,7 +7,7 @@ curl -fsSL https://raw.githubusercontent.com/RolfKoenders/fleet/main/install.sh 
 fleet new ~/fleet-config
 ```
 
-The new repo is a commented example with placeholder skills and MCP servers. Ask your agent to run `fleet agent` and follow the onboarding recipe, or edit `hosts/` and `catalog/` yourself. `fleet init` fails until the placeholders are gone.
+The new repo is a commented example with placeholder skills and MCP servers. Ask your agent to run `fleet agent` and follow the onboarding recipe, or edit `hosts/` and `catalog/` yourself. Every key you can write is listed in the reference: [`fleet.yaml`](reference-fleet-yaml.md), [host files and defaults](reference-hosts.md), [`catalog/mcp.yaml`](reference-catalog-mcp.md) and [`catalog/skills.yaml`](reference-catalog-skills.md). `fleet init` fails until the placeholders are gone.
 
 Publish it as a private repo:
 
