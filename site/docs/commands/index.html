@@ -107,7 +107,7 @@
 <p><b>JSON.</b> Adds <code>created</code>, <code>updated</code>, <code>removed</code>, <code>forgotten</code>, <code>unchanged</code>, <code>warnings</code>, <code>conflicts</code> and <code>timer</code>. They list what apply would do.</p>
 <h2 id="fleet-bridge"><code>fleet bridge</code></h2>
 <p><b>Changes things.</b> It writes to this host, to the config repo or to other hosts.</p>
-<p>Open the full-screen view of every host, the matrix of what each gets, conflicts, timeline, secrets and catalog (--view opens on a screen, --host selects a host on it). It reads until you ask for more: P pushes after you type push, d runs doctor after you confirm (it starts real MCP servers). Needs a terminal.</p>
+<p>Open the full-screen view of every host: its status, the matrix of what each gets, conflicts, timeline, secrets, catalog, push and startup context (--view opens on a screen, --host selects a host on it). It reads until you ask for more: P pushes after you type push, d runs doctor after you confirm (it starts real MCP servers). Needs a terminal.</p>
 <pre class="doc-code"><code>fleet bridge [--view &lt;screen&gt;] [--host &lt;name&gt;]</code></pre>
 <p><b>Options</b></p>
 <ul><li><code>--view &lt;name&gt;</code>: Open on this screen (home, matrix, conflicts, timeline, secrets, catalog, push, context).</li><li><code>--host &lt;name&gt;</code>: Select this host on that screen.</li></ul>
@@ -115,7 +115,7 @@
 <p><b>Guide.</b> <a href="../bridge/">The bridge</a></p>
 <h2 id="fleet-ui"><code>fleet ui</code></h2>
 <p><b>Changes things.</b> It writes to this host, to the config repo or to other hosts.</p>
-<p>Open a page in your browser that shows this host and can push, served from this process on 127.0.0.1 and guarded by a random token in the URL it prints. It stops on ctrl-c, or after 10 minutes with no page open. Not for agents; no --json.</p>
+<p>Open a page in your browser that shows every host, edits the config and pushes it. It is served from this process on 127.0.0.1 and guarded by a random token in the URL it prints. It stops on ctrl-c, or after 10 minutes with no page open. Not for agents; no --json.</p>
 <pre class="doc-code"><code>fleet ui [--port &lt;n&gt;] [--no-open]</code></pre>
 <p><b>Options</b></p>
 <ul><li><code>--port &lt;n&gt;</code>: Listen on this port (default: a free one).</li><li><code>--no-open</code>: Print the URL and do not open a browser.</li></ul>

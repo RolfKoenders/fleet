@@ -29,6 +29,6 @@ Antigravity's documentation describes the login for an OAuth server in the Antig
 
 A server that takes a static header needs no login: put the header in the catalog entry (`headers`, with `secret:NAME` for the value). Antigravity passes `$VAR` and `${VAR}` in `env` and `headers` on as written, so put the value itself in the secret.
 
-If `fleet doctor` reports `bad-auth` for such a server, the server answered HTTP 401 or 403 with that secret. The doctor output names the secret, which secrets file holds it, and when that file's git history last changed the secret's ciphertext. Set a new value with `fleet secrets set` or in the Secrets screen of `fleet ui`.
+If `fleet doctor` reports `bad-auth` for such a server, the server answered HTTP 401 or 403 with that secret. The doctor output names the secret, which secrets file holds it, and when that file's git history last changed the secret's ciphertext. Replace the value with `fleet secrets rotate` or in the Secrets screen of `fleet ui`.
 
 Fleet does not write `oauth` or `authProviderType` into the entry. Antigravity does not support SSE servers, so an `sse` server is left out of its file (see [Setting up machines](setting-up-machines.md#which-agents-a-machine-gets)).

@@ -100,7 +100,7 @@ fleet diff
 
 **Changes things.** It writes to this host, to the config repo or to other hosts.
 
-Open the full-screen view of every host, the matrix of what each gets, conflicts, timeline, secrets and catalog (--view opens on a screen, --host selects a host on it). It reads until you ask for more: P pushes after you type push, d runs doctor after you confirm (it starts real MCP servers). Needs a terminal.
+Open the full-screen view of every host: its status, the matrix of what each gets, conflicts, timeline, secrets, catalog, push and startup context (--view opens on a screen, --host selects a host on it). It reads until you ask for more: P pushes after you type push, d runs doctor after you confirm (it starts real MCP servers). Needs a terminal.
 
 ```text
 fleet bridge [--view <screen>] [--host <name>]
@@ -119,7 +119,7 @@ fleet bridge [--view <screen>] [--host <name>]
 
 **Changes things.** It writes to this host, to the config repo or to other hosts.
 
-Open a page in your browser that shows this host and can push, served from this process on 127.0.0.1 and guarded by a random token in the URL it prints. It stops on ctrl-c, or after 10 minutes with no page open. Not for agents; no --json.
+Open a page in your browser that shows every host, edits the config and pushes it. It is served from this process on 127.0.0.1 and guarded by a random token in the URL it prints. It stops on ctrl-c, or after 10 minutes with no page open. Not for agents; no --json.
 
 ```text
 fleet ui [--port <n>] [--no-open]
