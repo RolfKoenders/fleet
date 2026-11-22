@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>fleet · Docs · FAQ</title>
+  <meta name="description" content="Where secrets end up, what the install script does, updating and more.">
+  <meta property="og:title" content="fleet · Docs · FAQ">
+  <meta property="og:description" content="Where secrets end up, what the install script does, updating and more.">
+  <meta property="og:image" content="https://rolflab.nl/fleet/social-preview.png">
+  <link rel="canonical" href="https://rolflab.nl/fleet/docs/faq/">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="theme-color" content="#0b0f14">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 120 84'%3E%3Cpath d='M8 20h22l10 10v32H8Z' fill='none' stroke='%233fb950' stroke-width='5'/%3E%3Cpath d='M40 42C62 42 62 16 84 16M40 42H84M40 42C62 42 62 68 84 68' fill='none' stroke='%237d8590' stroke-width='4'/%3E%3Crect x='84' y='9' width='32' height='14' rx='2' fill='none' stroke='%23e6edf3' stroke-width='4'/%3E%3Crect x='84' y='35' width='32' height='14' rx='2' fill='none' stroke='%23e6edf3' stroke-width='4'/%3E%3Crect x='84' y='61' width='32' height='14' rx='2' fill='none' stroke='%23e6edf3' stroke-width='4'/%3E%3C/svg%3E">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <!-- The terminal font is served from here: Google's subsets leave out the box drawing the TUI is made of. -->
+  <link rel="preload" href="../../fonts/JetBrainsMono-Regular.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="../../fonts/JetBrainsMono-Bold.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="../../style.css">
+  <script defer src="https://analytics.keeply.tools/script.js" data-website-id="ebccdcbe-ca21-4327-b7a4-57136d74c578" data-domains="rolflab.nl"></script>
+
+</head>
+<body data-base="../">
+  <div class="backdrop" aria-hidden="true"></div>
+
+  <header class="nav">
+    <a class="brand" href="../../" aria-label="fleet home">
+      <svg viewBox="0 0 120 84" aria-hidden="true"><path d="M8 20h22l10 10v32H8Z" fill="none" stroke="#3fb950" stroke-width="5"/><path d="M15 38h18M15 46h18M15 54h11" stroke="#3fb950" stroke-width="4"/><path d="M40 42C62 42 62 16 84 16M40 42H84M40 42C62 42 62 68 84 68" fill="none" stroke="#7d8590" stroke-width="4"/><g fill="none" stroke="#e6edf3" stroke-width="4"><rect x="84" y="9" width="32" height="14" rx="2"/><rect x="84" y="35" width="32" height="14" rx="2"/><rect x="84" y="61" width="32" height="14" rx="2"/></g></svg>
+      <span>fleet</span>
+    </a>
+    <nav>
+      <a href="../../#how">How it works</a>
+      <a href="../../#watch">Watch it land</a>
+      <a href="../../#bridge">The bridge</a>
+      <a href="../../#ui">In your browser</a>
+      <a href="../../#compare">Compare</a>
+      <a href="../../#whats-new">What's new</a>
+      <a href="../../#start">Get started</a>
+      <a href="../../docs/" data-umami-event="fleet-docs-click" aria-current="page" style="color:var(--text)">Docs</a>
+      <a class="gh" href="https://github.com/RolfKoenders/fleet" data-umami-event="fleet-github-click" data-umami-event-where="nav">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+        GitHub
+      </a>
+    </nav>
+  </header>
+
+  <main class="docpage">
+    <div class="doc-head">
+      <h1>FAQ</h1>
+      <button type="button" class="doc-menu-btn" aria-expanded="false" aria-controls="doc-side">Menu</button>
+    </div>
+    <aside class="doc-side" id="doc-side">
+      <div class="doc-search" role="search">
+          <input type="search" id="doc-search" placeholder="Search the docs ( / )" autocomplete="off" aria-label="Search the docs">
+          <div class="doc-results" id="doc-results" hidden></div>
+        </div>
+        <nav class="doc-nav" aria-label="Docs">
+        <section><h3>Start</h3><a href="../getting-started/">Getting started</a><a href="../setting-up-machines/">Setting up machines</a></section>
+        <section><h3>Guides</h3><a href="../bridge/">The bridge</a><a href="../ui/">The page</a><a href="../mcp-logins/">MCP logins</a><a href="../adding-an-agent/">Adding an agent</a></section>
+        <section><h3>FAQ</h3><a class="on" aria-current="page" href="../faq/">FAQ</a></section>
+        </nav>
+        <nav class="doc-toc" aria-label="On this page"><h3>On this page</h3><a href="#where-do-my-secrets-end-up">Where do my secrets end up?</a><a href="#what-if-i-lose-the-age-key">What if I lose the age key?</a><a href="#does-fleet-touch-skills-or-settings-it-did-not-write">Does fleet touch skills or settings it did not write?</a><a href="#why-does-fleet-say-an-agent-is-not-installed">Why does fleet say an agent is not installed?</a><a href="#when-does-a-change-reach-a-machine">When does a change reach a machine?</a><a href="#what-does-the-install-script-do">What does the install script do?</a><a href="#how-do-i-update-fleet">How do I update fleet?</a><a href="#should-i-work-in-local-share-fleet-fleet">Should I work in ~/.local/share/fleet/fleet?</a><a href="#does-it-run-on-macos">Does it run on macOS?</a></nav>
+    </aside>
+    <article class="doc-body">
+<h2 id="where-do-my-secrets-end-up">Where do my secrets end up?</h2>
+<p>They are encrypted in <code>secrets/</code> in your config repo. On apply, fleet decrypts the ones a machine needs and writes them in plaintext into the settings files of your agents, at mode 600, because the tools read them from there.</p>
+<h2 id="what-if-i-lose-the-age-key">What if I lose the age key?</h2>
+<p>Nobody can read the secrets without a key that can decrypt them, and the key of the machine you work from is the only one that opens all of them. Keep it in your password manager.</p>
+<h2 id="does-fleet-touch-skills-or-settings-it-did-not-write">Does fleet touch skills or settings it did not write?</h2>
+<p>No. It leaves other entries in <code>~/.claude/skills</code> alone, and in a settings file it changes only the keys your config names. If something is already at a path fleet wants to write, that is a conflict, and fleet stops.</p>
+<h2 id="why-does-fleet-say-an-agent-is-not-installed">Why does fleet say an agent is not installed?</h2>
+<p>A machine gets the agents installed on it, and fleet found none of <code>&lt;agent&gt;</code> although it applied config for it on this machine earlier. (An agent that was never set up here is not mentioned, however much the config says about it.) It leaves everything of that agent alone until it is installed, and says so on each apply, diff and status. If the machine should not have the agent at all, name the agents it keeps in its host file: <code>agents: [claude]</code>. See <a href="../setting-up-machines/#which-agents-a-machine-gets">setting up machines</a>, which also covers removing an agent's config.</p>
+<h2 id="when-does-a-change-reach-a-machine">When does a change reach a machine?</h2>
+<p><code>fleet push</code> applies it straight away on every machine with an <code>ssh:</code> line in its host file. Every machine also pulls and applies every 30 minutes, so one that was offline catches up. A machine with no <code>ssh:</code> line gets changes only this way.</p>
+<h2 id="what-does-the-install-script-do">What does the install script do?</h2>
+<p>It checks for git and Node, clones the tool into <code>~/.local/share/fleet/fleet</code>, and links <code>fleet</code> into <code>~/.local/bin</code>. It uses no sudo and installs nothing else, and <a href="https://github.com/RolfKoenders/fleet/blob/main/install.sh">you can read it first</a>. Running it again changes nothing.</p>
+<h2 id="how-do-i-update-fleet">How do I update fleet?</h2>
+<p>Your machines run the tool commit pinned in <code>fleet.yaml</code>, so a new version reaches them only when you choose to take it. <code>fleet update</code> moves the pin to the newest release and prints what changed; a major version is flagged, and its "You need to do" section is the one to read first. If <code>track:</code> in <code>fleet.yaml</code> names a branch instead of <code>releases</code>, it moves to that branch's latest commit. Read the output and <code>git diff</code>, then run <code>fleet push</code>.</p>
+<h2 id="should-i-work-in-local-share-fleet-fleet">Should I work in <code>~/.local/share/fleet/fleet</code>?</h2>
+<p>No. That is the copy your machine runs, and fleet moves it to the pinned commit. To work on the tool, use a separate checkout and run its own <code>bin/fleet</code>.</p>
+<h2 id="does-it-run-on-macos">Does it run on macOS?</h2>
+<p>Yes, macOS 12.3 or newer. The timer is a LaunchAgent instead of a systemd timer, and the scripts and tool search know Homebrew. See <a href="../setting-up-machines/#macos">macOS</a>.</p>
+    </article>
+  </main>
+
+  <script src="../docs.js" defer></script>
+</body>
+</html>

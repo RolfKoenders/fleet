@@ -5,6 +5,7 @@
 import { readFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { sections } from "../src/changelog.ts";
+import { esc, inline as mdInline } from "./site-markdown.ts";
 
 type Release = { version: string; date: string; kinds: { kind: string; items: string[] }[] };
 
@@ -12,7 +13,6 @@ const REPO = "https://github.com/RolfKoenders/fleet";
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const KINDS = ["Added", "Changed", "Fixed", "Security", "You need to do"];
 
-const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 const slug = (kind: string) => kind.toLowerCase().replace(/[^a-z]+/g, "-").replace(/-$/, "");
 /** "12 Nov 2026", or "12 Nov" without the year. Formatted by hand so the output does not depend on the locale or time zone. */
 const day = (date: string, year: boolean) => {
@@ -43,11 +43,7 @@ const count = (r: Release) => r.kinds.reduce((n, k) => n + k.items.length, 0);
 const changes = (r: Release) => `${count(r)} ${count(r) === 1 ? "change" : "changes"}`;
 
 /** Inline markdown as HTML: code, links (a relative one points into the repo) and bold. */
-const inline = (s: string) =>
-  esc(s)
-    .replace(/`([^`]+)`/g, "<code>$1</code>")
-    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, text: string, url: string) => `<a href="${url.startsWith("http") ? url : `${REPO}/blob/main/${url}`}">${text}</a>`)
-    .replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>");
+const inline = (s: string) => mdInline(s, (url) => (url.startsWith("http") ? url : `${REPO}/blob/main/${url}`));
 
 /** Where the first sentence ends: a full stop and a space, not inside `code` or a "quote". -1 when it never does. */
 export const sentenceEnd = (text: string) => {
@@ -112,11 +108,12 @@ const page = (indexHtml: string, all: Release[]) => {
     .replace(/<meta property="og:title"[^>]*>/, '<meta property="og:title" content="fleet · Changelog">')
     .replace(/<meta property="og:description"[^>]*>/, '<meta property="og:description" content="Every release of fleet, with what you need to do before you push.">')
     .replace(/<link rel="canonical"[^>]*>/, '<link rel="canonical" href="https://rolflab.nl/fleet/changelog/">')
-    .replace(/(href|src)="(fonts\/|style\.css)/g, '$1="../$2');
+    .replace(/(href|src)="(fonts\/|style\.css|docs\/)/g, '$1="../$2');
   const nav = indexHtml.match(/<header class="nav">[\s\S]*?<\/header>/)![0]
     .replace(/href="#top"/, 'href="../"')
     .replace(/href="#(how|watch|bridge|ui|compare|start)"/g, 'href="../#$1"')
     .replace('<a href="#whats-new">What\'s new</a>', '<a href="../#whats-new">What\'s new</a>')
+    .replace(/href="docs\/"/, 'href="../docs/"')
     .replace(/(<a href="\.\.\/#start">)/, '<a href="./" aria-current="page" style="color:var(--text)">Changelog</a>\n      $1');
   return `${meta}
 </head>

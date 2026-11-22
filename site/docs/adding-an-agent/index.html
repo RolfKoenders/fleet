@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>fleet · Docs · Adding an agent</title>
+  <meta name="description" content="What it takes for fleet to support another coding agent.">
+  <meta property="og:title" content="fleet · Docs · Adding an agent">
+  <meta property="og:description" content="What it takes for fleet to support another coding agent.">
+  <meta property="og:image" content="https://rolflab.nl/fleet/social-preview.png">
+  <link rel="canonical" href="https://rolflab.nl/fleet/docs/adding-an-agent/">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="theme-color" content="#0b0f14">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 120 84'%3E%3Cpath d='M8 20h22l10 10v32H8Z' fill='none' stroke='%233fb950' stroke-width='5'/%3E%3Cpath d='M40 42C62 42 62 16 84 16M40 42H84M40 42C62 42 62 68 84 68' fill='none' stroke='%237d8590' stroke-width='4'/%3E%3Crect x='84' y='9' width='32' height='14' rx='2' fill='none' stroke='%23e6edf3' stroke-width='4'/%3E%3Crect x='84' y='35' width='32' height='14' rx='2' fill='none' stroke='%23e6edf3' stroke-width='4'/%3E%3Crect x='84' y='61' width='32' height='14' rx='2' fill='none' stroke='%23e6edf3' stroke-width='4'/%3E%3C/svg%3E">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <!-- The terminal font is served from here: Google's subsets leave out the box drawing the TUI is made of. -->
+  <link rel="preload" href="../../fonts/JetBrainsMono-Regular.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="../../fonts/JetBrainsMono-Bold.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="../../style.css">
+  <script defer src="https://analytics.keeply.tools/script.js" data-website-id="ebccdcbe-ca21-4327-b7a4-57136d74c578" data-domains="rolflab.nl"></script>
+
+</head>
+<body data-base="../">
+  <div class="backdrop" aria-hidden="true"></div>
+
+  <header class="nav">
+    <a class="brand" href="../../" aria-label="fleet home">
+      <svg viewBox="0 0 120 84" aria-hidden="true"><path d="M8 20h22l10 10v32H8Z" fill="none" stroke="#3fb950" stroke-width="5"/><path d="M15 38h18M15 46h18M15 54h11" stroke="#3fb950" stroke-width="4"/><path d="M40 42C62 42 62 16 84 16M40 42H84M40 42C62 42 62 68 84 68" fill="none" stroke="#7d8590" stroke-width="4"/><g fill="none" stroke="#e6edf3" stroke-width="4"><rect x="84" y="9" width="32" height="14" rx="2"/><rect x="84" y="35" width="32" height="14" rx="2"/><rect x="84" y="61" width="32" height="14" rx="2"/></g></svg>
+      <span>fleet</span>
+    </a>
+    <nav>
+      <a href="../../#how">How it works</a>
+      <a href="../../#watch">Watch it land</a>
+      <a href="../../#bridge">The bridge</a>
+      <a href="../../#ui">In your browser</a>
+      <a href="../../#compare">Compare</a>
+      <a href="../../#whats-new">What's new</a>
+      <a href="../../#start">Get started</a>
+      <a href="../../docs/" data-umami-event="fleet-docs-click" aria-current="page" style="color:var(--text)">Docs</a>
+      <a class="gh" href="https://github.com/RolfKoenders/fleet" data-umami-event="fleet-github-click" data-umami-event-where="nav">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+        GitHub
+      </a>
+    </nav>
+  </header>
+
+  <main class="docpage">
+    <div class="doc-head">
+      <h1>Adding an agent</h1>
+      <button type="button" class="doc-menu-btn" aria-expanded="false" aria-controls="doc-side">Menu</button>
+    </div>
+    <aside class="doc-side" id="doc-side">
+      <div class="doc-search" role="search">
+          <input type="search" id="doc-search" placeholder="Search the docs ( / )" autocomplete="off" aria-label="Search the docs">
+          <div class="doc-results" id="doc-results" hidden></div>
+        </div>
+        <nav class="doc-nav" aria-label="Docs">
+        <section><h3>Start</h3><a href="../getting-started/">Getting started</a><a href="../setting-up-machines/">Setting up machines</a></section>
+        <section><h3>Guides</h3><a href="../bridge/">The bridge</a><a href="../ui/">The page</a><a href="../mcp-logins/">MCP logins</a><a class="on" aria-current="page" href="../adding-an-agent/">Adding an agent</a></section>
+        <section><h3>FAQ</h3><a href="../faq/">FAQ</a></section>
+        </nav>
+        <nav class="doc-toc" aria-label="On this page"><h3>On this page</h3><a href="#what-an-agent-has-to-be">What an agent has to be</a><a href="#the-steps">The steps</a><a href="#checking-it">Checking it</a><a href="#what-review-looks-at">What review looks at</a></nav>
+    </aside>
+    <article class="doc-body">
+<p>What fleet knows about an agent is one module in <code>src/agents/</code> and one line in the registry. Nothing else names an agent: the rest of the tool loops over the registry. Antigravity CLI (<code>src/agents/antigravity.ts</code>) was added this way and is the example to read next to this page.</p>
+<h2 id="what-an-agent-has-to-be">What an agent has to be</h2>
+<p>An agent is accepted when all of these hold:</p>
+<ul><li>It keeps its configuration in <b>user-level files</b> fleet can merge: a settings file, an MCP file, instructions or a skills directory under the user's home. An agent that is configured only in a cloud console, an app database or per project does not fit.</li><li>It is <b>maintained</b>: it has releases, and its documentation is current.</li><li>It installs on <b>Linux and macOS</b>, with a program on the path (or in a directory its installer uses, or one of the shim directories fleet searches, such as mise's) that prints a version.</li><li>It is <b>documented</b>: the official documentation says where each file is and what its keys mean. Fleet cannot check a path against the code, so the module cites the page.</li></ul>
+<h2 id="the-steps">The steps</h2>
+<ol><li><b>Read the documentation, then the real agent.</b> Install it in a throwaway home (<code>HOME=$(mktemp -d)</code>) and look at what it reads and writes. Never run it against your own home to find out.</li><li><b>Write <code>src/agents/&lt;id&gt;.ts</code>.</b> It exports an <code>Agent</code> (see <code>src/agents/types.ts</code>): an id that host files will use (renaming it later breaks every config), a name, the binary, the arguments that print its version, and <code>homes</code>, the paths that belong to it alone. Then the optional parts it has:<ul><li><code>settings</code>: the file the agent also writes, and <code>denied</code>, the dotted paths no config may own (what the agent writes itself, account and credential keys, keys it ignores).</li><li><code>mcp</code>: the file, the key the servers are under, <code>render</code> for the entry of a server in the agent's shape, <code>read</code> for the way back (doctor uses it), <code>skip</code> for an entry the agent does not load, and <code>transports</code> when it cannot take all of stdio, http and sse.</li><li><code>skills</code>: the directory fleet links skills into, and every directory the agent reads, lowest precedence first.</li><li><code>instructions</code>: the files and directories it reads as instructions.</li></ul></li><li><b>Cite the documentation</b> in a comment for every path, key and format the module uses: one URL per fact, so a reviewer can check it. A path or key with no source is not merged.</li><li><b>Add one line to <code>AGENTS</code> in <code>src/agents/index.ts</code></b>, last, because the order is the order fleet lists agents in. The compiler then asks for the rest: the demo's version line in <code>src/demo/fakes.ts</code>. The demo's machines have only the agents in <code>DEMO_AGENTS</code> (<code>src/demo/sandbox.ts</code>) installed, so a new agent is not on them unless you add it there.</li><li><b>Run the conformance suite.</b> <code>test/agents.conformance.test.ts</code> runs against every registered agent: identity, MCP render and read for each transport, denied keys refused as they are, below them and above them, the location checks, and an apply followed by taking everything away in a temp home. It needs no edit to cover the new agent. An agent whose MCP writes must go through its own binary needs a fake of its own in <code>FAKES</code>; most need none, because the suite installs a fake that prints a version.</li><li><b>Add the agent's own tests</b> for what is particular to it (<code>test/antigravity.test.ts</code>): the shape of its entries, the keys it refuses, a host without it.</li><li><b>List it.</b> Add it to the Supported agents lists in <code>README.md</code> and <code>site/index.html</code>, to the term Agent in <code>GLOSSARY.md</code> and in <code>src/agent.ts</code> (a test keeps the two equal), and give <code>examples/hosts/_defaults.yaml</code> the link of the shared instructions into its file. The list in <code>fleet agent</code> comes from the registry.</li><li><b>Add a line to <code>CHANGELOG.md</code></b> under <code>## Unreleased</code>.</li></ol>
+<h2 id="checking-it">Checking it</h2>
+<pre class="doc-code"><code>npm run typecheck
+npm test</code></pre>
+<p>Then apply the example config in a temp <code>HOME</code> with the real agent on the path and ask the agent itself what it sees: <code>HOME=&lt;tmp&gt; agy mcp list</code> lists the servers fleet wrote, for example. If the agent only reads a file once you sign in, say so in the pull request and show what you could check.</p>
+<p>Never run <code>fleet apply</code>, <code>fleet init</code> or the agent against your real home while you work on this.</p>
+<h2 id="what-review-looks-at">What review looks at</h2>
+<ul><li>Every path, key and format has a documentation link, and the link says what the comment claims.</li><li><code>homes</code> hold only what is the agent's: a folder shared with another tool (Antigravity CLI and Gemini CLI both use <code>~/.gemini</code>) is listed by the files and directories that are the agent's alone.</li><li><code>denied</code> has what the agent writes itself, so a config cannot own a key the agent keeps rewriting.</li><li>A host without the agent is unchanged: no file written, no word in <code>diff</code>, <code>apply</code> or <code>status</code>. Nothing in the module makes this so: for every agent, fleet names it only on a host that has it installed, pins it in <code>agents:</code>, or has applied config for it.</li><li>Config that already exists keeps working after the agent is registered. If the new agent cannot take something existing config says (an sse server for every agent), it leaves it out and says so, and does not turn the config into an error.</li></ul>
+    </article>
+  </main>
+
+  <script src="../docs.js" defer></script>
+</body>
+</html>

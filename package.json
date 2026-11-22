@@ -6,7 +6,8 @@
     "typecheck": "tsc --noEmit && tsc --noEmit -p src/ui/static",
     "test": "node --test \"test/**/*.test.ts\"",
     "site:frames": "node scripts/site-frames.ts",
-    "site:changelog": "node scripts/site-changelog.ts"
+    "site:changelog": "node scripts/site-changelog.ts",
+    "site:docs": "node scripts/site-docs.ts"
   },
   "devDependencies": {
     "@types/node": "^22.18.0",

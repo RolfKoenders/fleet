@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>fleet · Docs · Getting started</title>
+  <meta name="description" content="Install fleet, create your config and set up your first machines.">
+  <meta property="og:title" content="fleet · Docs · Getting started">
+  <meta property="og:description" content="Install fleet, create your config and set up your first machines.">
+  <meta property="og:image" content="https://rolflab.nl/fleet/social-preview.png">
+  <link rel="canonical" href="https://rolflab.nl/fleet/docs/getting-started/">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="theme-color" content="#0b0f14">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 120 84'%3E%3Cpath d='M8 20h22l10 10v32H8Z' fill='none' stroke='%233fb950' stroke-width='5'/%3E%3Cpath d='M40 42C62 42 62 16 84 16M40 42H84M40 42C62 42 62 68 84 68' fill='none' stroke='%237d8590' stroke-width='4'/%3E%3Crect x='84' y='9' width='32' height='14' rx='2' fill='none' stroke='%23e6edf3' stroke-width='4'/%3E%3Crect x='84' y='35' width='32' height='14' rx='2' fill='none' stroke='%23e6edf3' stroke-width='4'/%3E%3Crect x='84' y='61' width='32' height='14' rx='2' fill='none' stroke='%23e6edf3' stroke-width='4'/%3E%3C/svg%3E">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <!-- The terminal font is served from here: Google's subsets leave out the box drawing the TUI is made of. -->
+  <link rel="preload" href="../../fonts/JetBrainsMono-Regular.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="../../fonts/JetBrainsMono-Bold.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="../../style.css">
+  <script defer src="https://analytics.keeply.tools/script.js" data-website-id="ebccdcbe-ca21-4327-b7a4-57136d74c578" data-domains="rolflab.nl"></script>
+
+</head>
+<body data-base="../">
+  <div class="backdrop" aria-hidden="true"></div>
+
+  <header class="nav">
+    <a class="brand" href="../../" aria-label="fleet home">
+      <svg viewBox="0 0 120 84" aria-hidden="true"><path d="M8 20h22l10 10v32H8Z" fill="none" stroke="#3fb950" stroke-width="5"/><path d="M15 38h18M15 46h18M15 54h11" stroke="#3fb950" stroke-width="4"/><path d="M40 42C62 42 62 16 84 16M40 42H84M40 42C62 42 62 68 84 68" fill="none" stroke="#7d8590" stroke-width="4"/><g fill="none" stroke="#e6edf3" stroke-width="4"><rect x="84" y="9" width="32" height="14" rx="2"/><rect x="84" y="35" width="32" height="14" rx="2"/><rect x="84" y="61" width="32" height="14" rx="2"/></g></svg>
+      <span>fleet</span>
+    </a>
+    <nav>
+      <a href="../../#how">How it works</a>
+      <a href="../../#watch">Watch it land</a>
+      <a href="../../#bridge">The bridge</a>
+      <a href="../../#ui">In your browser</a>
+      <a href="../../#compare">Compare</a>
+      <a href="../../#whats-new">What's new</a>
+      <a href="../../#start">Get started</a>
+      <a href="../../docs/" data-umami-event="fleet-docs-click" aria-current="page" style="color:var(--text)">Docs</a>
+      <a class="gh" href="https://github.com/RolfKoenders/fleet" data-umami-event="fleet-github-click" data-umami-event-where="nav">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+        GitHub
+      </a>
+    </nav>
+  </header>
+
+  <main class="docpage">
+    <div class="doc-head">
+      <h1>Getting started</h1>
+      <button type="button" class="doc-menu-btn" aria-expanded="false" aria-controls="doc-side">Menu</button>
+    </div>
+    <aside class="doc-side" id="doc-side">
+      <div class="doc-search" role="search">
+          <input type="search" id="doc-search" placeholder="Search the docs ( / )" autocomplete="off" aria-label="Search the docs">
+          <div class="doc-results" id="doc-results" hidden></div>
+        </div>
+        <nav class="doc-nav" aria-label="Docs">
+        <section><h3>Start</h3><a class="on" aria-current="page" href="../getting-started/">Getting started</a><a href="../setting-up-machines/">Setting up machines</a></section>
+        <section><h3>Guides</h3><a href="../bridge/">The bridge</a><a href="../ui/">The page</a><a href="../mcp-logins/">MCP logins</a><a href="../adding-an-agent/">Adding an agent</a></section>
+        <section><h3>FAQ</h3><a href="../faq/">FAQ</a></section>
+        </nav>
+        <nav class="doc-toc" aria-label="On this page"><h3>On this page</h3><a href="#working-with-fleet">Working with fleet</a></nav>
+    </aside>
+    <article class="doc-body">
+<p>Install fleet and create your config:</p>
+<pre class="doc-code"><code>curl -fsSL https://raw.githubusercontent.com/RolfKoenders/fleet/main/install.sh | sh
+fleet new ~/fleet-config</code></pre>
+<p>The new repo is a commented example with placeholder skills and MCP servers. Ask your agent to run <code>fleet agent</code> and follow the onboarding recipe, or edit <code>hosts/</code> and <code>catalog/</code> yourself. <code>fleet init</code> fails until the placeholders are gone.</p>
+<p>Publish it as a private repo:</p>
+<pre class="doc-code"><code>cd ~/fleet-config
+git add -A &amp;&amp; git commit -m "Start my fleet config"
+gh repo create fleet-config --private --source . --remote origin --push</code></pre>
+<p>Set up this machine, using its name from <code>hosts/</code>. Init prints an age key once, so save it in your password manager:</p>
+<pre class="doc-code"><code>cd ~/fleet-config
+fleet init laptop</code></pre>
+<p>Then add your other machines from this one:</p>
+<pre class="doc-code"><code>fleet init server</code></pre>
+<h2 id="working-with-fleet">Working with fleet</h2>
+<p>Change the config, check the result, and publish it:</p>
+<pre class="doc-code"><code>fleet diff
+fleet push -m "Add a skill"</code></pre>
+<p><code>fleet push</code> applies the change on every machine with an <code>ssh:</code> line in its host file. Every machine also pulls and applies by itself every 30 minutes. On a terminal it shows each host's progress live and leaves a summary; piped, it prints one timestamped line per host start and result.</p>
+<div class="doc-table"><table><thead><tr><th>Command</th><th>What it does</th></tr></thead><tbody><tr><td><code>fleet status</code></td><td>Report this machine; <code>--all</code> asks every machine over ssh; <code>--conflicts</code> lists this machine's conflicts in full, reading only</td></tr><tr><td><code>fleet bridge [--view &lt;screen&gt;] [--host &lt;name&gt;]</code></td><td>The full-screen view of every host (needs a terminal), optionally opened on a screen and a host; pushes and doctor only on your confirmation. See <a href="../bridge/">the bridge</a></td></tr><tr><td><code>fleet ui [--port &lt;n&gt;] [--no-open]</code></td><td>Open a page in your browser to see and search what every host gets, add, edit and remove MCP servers, skill sources, bundles and hosts, set secrets, and push with live progress; it listens on <code>127.0.0.1</code> only and stops after 10 minutes with no page open. See <a href="../ui/">the page</a></td></tr><tr><td><code>fleet doctor</code></td><td>Start this machine's MCP servers, check each answers and measure how large its tools are (saved as the doctor result); <code>--all</code> asks every machine over ssh. Runs commands with real credentials and may download packages, so it runs only when you ask</td></tr><tr><td><code>fleet context</code></td><td>Show how much each agent on this machine loads before the first prompt (instructions, skill descriptions, MCP tool definitions) as coloured bars and an estimate in tokens, with the largest items; <code>--all</code> asks every machine over ssh and draws all the bars on one scale, so you can see which machine carries the most. MCP sizes come from the last <code>fleet doctor</code>; reads only, starts no server</td></tr><tr><td><code>fleet diff</code></td><td>Show what an apply would change</td></tr><tr><td><code>fleet apply</code></td><td>Make this machine match its config</td></tr><tr><td><code>fleet push</code></td><td>Publish the config and apply it; <code>--host &lt;name&gt;</code> applies only on that host</td></tr><tr><td><code>fleet adopt</code></td><td>Take ownership of an MCP server or skill that already matches</td></tr><tr><td><code>fleet secrets</code></td><td>Edit, set or rekey encrypted secrets</td></tr><tr><td><code>fleet skills update</code></td><td>Move pinned skill sources to their latest commit; <code>--review</code> shows what changed first and asks per source</td></tr><tr><td><code>fleet update</code></td><td>Move the pinned tool version to the newest release (or the latest commit of a branch, see <code>track</code> in <code>fleet.yaml</code>) and print what changed</td></tr><tr><td><code>fleet demo</code></td><td>Try the bridge on made-up hosts in a throwaway sandbox; <code>--shell</code> gives a shell instead</td></tr><tr><td><code>fleet agent</code></td><td>Print what an agent needs to know, including task recipes</td></tr></tbody></table></div>
+<p>Add <code>--json</code> to any command for output a script can read.</p>
+<h3 id="reading-a-skill-update-before-it-moves">Reading a skill update before it moves</h3>
+<p>A skill is instructions your agents follow, so a third-party update changes what they do. <code>fleet skills update --review [&lt;source&gt;]</code> reads each pinned source that would move, without moving anything, and reports the commits between the pins, each skill you use that changed with its diff size (other changed skills are only counted), and what to look at:</p>
+<pre class="doc-code"><code>acme-skills  c19e2a1 → 7d04f6b, 14 commits, 6 of your 38 skills changed (3 others)
+
+  ~ grilling                 +12 −3
+  ! diagnose  scripts/trace.sh   new script; new URL https://…
+  ! tdd       SKILL.md           allowed-tools: + Bash(curl:*)
+  i triage    SKILL.md           description changed</code></pre>
+<p>Warnings (<code>!</code>) are a file with the exec bit, a new script, a new URL, a new <code>bash</code> or <code>sh</code> code block in <code>SKILL.md</code>, a change to <code>allowed-tools</code>, and a new hooks or settings file. A changed <code>description</code> is info (<code>i</code>), because it changes when the skill triggers. The flags are a reading aid, not a verdict.</p>
+<p>On a terminal it then asks for each source: <code>d</code> shows the full diff of the skills you use, <code>y</code> moves the pin, <code>n</code> keeps it. Without a terminal, or with <code>--json</code>, it only reports, and a pin moves only with <code>--yes</code>. Followed sources are never reviewed.</p>
+<p>To review a source every time without typing <code>--review</code>, put <code>review: true</code> on it in <code>catalog/skills.yaml</code>. Switch it on for skills other people write and leave it off for your own: a plain <code>fleet skills update</code> then reviews the first and moves the second as before. Only a pinned source can have it.</p>
+    </article>
+  </main>
+
+  <script src="../docs.js" defer></script>
+</body>
+</html>

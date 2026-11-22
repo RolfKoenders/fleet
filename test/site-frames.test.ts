@@ -1,7 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { readdirSync, readFileSync } from "node:fs";
 import { hostname, homedir, tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, sep } from "node:path";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { record } from "../scripts/site-frames/record.ts";
@@ -37,8 +37,9 @@ test("site: the page loads its frames as data and imports nothing from the tool"
   for (const f of files) {
     const text = readFileSync(join(repoRoot, "site", f), "utf8");
     assert.doesNotMatch(text, /\bimport\b[^;\n]*["'`]|import\(|require\(/, `${f} imports a module`);
-    // The changelog page quotes what the changelog says, which may name the tool's code.
-    if (f !== join("changelog", "index.html")) assert.doesNotMatch(text, /src\/|\.\.\/(test|scripts)/, `${f} refers to the tool's code`);
+    // The changelog page quotes what the changelog says and the docs pages quote docs/, either of which may name the tool's code.
+    const quotesItsSource = f === join("changelog", "index.html") || f.startsWith(`docs${sep}`);
+    if (!quotesItsSource) assert.doesNotMatch(text, /src\/|\.\.\/(test|scripts)/, `${f} refers to the tool's code`);
   }
 });
 
