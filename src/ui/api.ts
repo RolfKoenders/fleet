@@ -25,6 +25,9 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { findSkills, sourceDir } from "../sources.ts";
 import { RealPusher } from "../tui/pusher.ts";
+import { realProbe } from "../tui/probe.ts";
+import type { Probe } from "../tui/probe.ts";
+import { FleetWatch } from "./fleet.ts";
 import { yamlOf, yamlRequest } from "./yamlview.ts";
 import { addHost, hostFields, hostRequest, previewHost } from "./hostinit.ts";
 import { previewRemove, removeFields, removeHost, removeRefusal, removeRequest } from "./hostremove.ts";
@@ -60,8 +63,15 @@ import type { Job } from "./jobs.ts";
  *                      `fleet push` as `POST /api/push` does. Refuses, writing nothing, when a push is running (409 `locked`),
  *                      when the config repo has changes of its own (409 `outside-changes`), when an edit is stale (409 `stale`)
  *                      or when a host would not load, the preview's skill check included (422 `invalid`).
- *   GET  /api/events   Server-Sent Events (served by the server itself, not here): `hello`, `push` (a fleet event) and
- *                      `pushend` (the end document). EventSource cannot send headers, so this one route also takes the
+ *   GET  /api/fleet    Every host of the config, this host first: what each last said (`status`, `context`, `conflicts`), whether that is from the
+ *                      current run (`live`) or from the bridge's memory file (`seenSeconds` old, not live), and why a host did not answer (`result`,
+ *                      `detail`). Nothing is asked: it answers at once from what is known.
+ *   POST /api/fleet/refresh  Asks every host (status, startup context and, for a host with conflicts, the conflicts in full: the bridge's own
+ *                      read-only questions, an ssh call each) as a job, sending the document as a `fleet` event each time a host answers, and
+ *                      answers it when every host has. A host that answers is remembered in the bridge's own memory file (see `tui/cache.ts`);
+ *                      one that does not keeps what was remembered. A second call while one runs waits for that one. Body: none.
+ *   GET  /api/events   Server-Sent Events (served by the server itself, not here): `hello`, `push` (a fleet event),
+ *                      `pushend` (the end document) and `fleet` (the document of `/api/fleet`, while hosts are being asked). EventSource cannot send headers, so this one route also takes the
  *                      token as `?token=`.
  *
  *   POST /api/card     Body `{"style": "machines" | "map", "names": false}` (both optional). The card of this fleet, drawn by the same code as `fleet card`,
@@ -135,9 +145,14 @@ export type ApiDeps = {
   busy(job: Job): () => void;
   /** The temp clones of the Add-a-skill-source form; the server clears them when it stops. */
   clones: CloneStore;
+  /** What the hosts are asked with. Default: the bridge's own, over ssh. Tests supply their own. */
+  probe?: Probe;
+  /** Aborted when the server stops, so a question to a host does not outlive it. */
+  signal?: AbortSignal;
 };
 
 export function routes(deps: ApiDeps): Route[] {
+  const fleet = new FleetWatch({ configDir: deps.configDir, home: deps.home, probe: deps.probe ?? realProbe(deps.toolDir, deps.configDir, deps.home), changed: (doc) => deps.broadcast("fleet", { ok: true, ...doc }) });
   return [
     {
       method: "GET",
@@ -145,6 +160,23 @@ export function routes(deps: ApiDeps): Route[] {
       handle: () => {
         const result = status(deps.toolDir, deps.configDir, false, deps.home);
         return { status: 200, body: { ok: result.code === "ok", code: result.code, messages: result.messages ?? [], host: readHostName(deps.home), ...result.fields } };
+      },
+    },
+    {
+      method: "GET",
+      path: "/api/fleet",
+      handle: () => ({ status: 200, body: { ok: true, ...fleet.doc() } }),
+    },
+    {
+      method: "POST",
+      path: "/api/fleet/refresh",
+      handle: async () => {
+        const done = deps.busy({ kind: "fleet" });
+        try {
+          return { status: 200, body: { ok: true, ...(await fleet.refresh(deps.signal)) } };
+        } finally {
+          done();
+        }
       },
     },
     {

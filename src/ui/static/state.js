@@ -1,13 +1,13 @@
 // The page's state and the rules that move it. Pure: nothing here touches the DOM, the network or the clock, so
 // `node --test` runs it. `app.js` draws it.
 
-/** The screens. Matrix is the first. */
-export const ROUTES = ["matrix", "catalog", "hosts", "secrets", "card", "status", "review"];
+/** The screens. Fleet is the first: it shows every host, and is where the page opens. */
+export const ROUTES = ["fleet", "matrix", "catalog", "hosts", "secrets", "card", "status", "review"];
 
-/** The screen a location hash names (`#/hosts`), `matrix` for none or an unknown one. @param {string} hash */
+/** The screen a location hash names (`#/hosts`), `fleet` for none or an unknown one. @param {string} hash */
 export function routeOf(hash) {
   const name = hash.replace(/^#\/?/, "").split("?")[0];
-  return ROUTES.find((r) => r === name) ?? "matrix";
+  return ROUTES.find((r) => r === name) ?? "fleet";
 }
 
 /**

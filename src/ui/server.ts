@@ -8,6 +8,7 @@ import type { ApiResponse } from "./api.ts";
 import { CloneStore } from "./clones.ts";
 import { Jobs } from "./jobs.ts";
 import type { Job } from "./jobs.ts";
+import type { Probe } from "../tui/probe.ts";
 
 /**
  * The server behind `fleet ui`. It can write config and push, so it must be reachable by you and nothing else:
@@ -30,6 +31,8 @@ export type UiOptions = {
   idleMs?: number;
   /** Where the page's files are. Default: `static/` beside this file. */
   staticDir?: string;
+  /** What the Fleet screen asks the hosts with. Default: the bridge's own probe, over ssh. */
+  probe?: Probe;
 };
 
 export type UiServer = {
@@ -82,11 +85,14 @@ export async function startUi(options: UiOptions): Promise<UiServer> {
   };
   const jobs = new Jobs((list) => broadcast("jobs", { jobs: list }));
   const clones = new CloneStore();
+  const stopping = new AbortController();
   const api = routes({
     clones,
     toolDir: options.toolDir,
     configDir: options.configDir,
     home: options.home,
+    ...(options.probe === undefined ? {} : { probe: options.probe }),
+    signal: stopping.signal,
     broadcast,
     busy: (job: Job) => {
       if (idleTimer) clearTimeout(idleTimer);
@@ -115,6 +121,7 @@ export async function startUi(options: UiOptions): Promise<UiServer> {
 
   async function shutdown(why: "idle" | "closed"): Promise<void> {
     if (idleTimer) clearTimeout(idleTimer);
+    stopping.abort();
     for (const stream of streams) stream.end();
     streams.clear();
     clones.clear();

@@ -1,6 +1,6 @@
 # The page
 
-`fleet ui` starts a small web server inside the fleet process, prints its URL and opens your browser on it. The page shows this host, and pushes with live progress. It is a way to do from a browser what the bridge does in a terminal. Like the bridge, it is for you, not for an agent: `fleet agent` does not list it, and it has no `--json` form.
+`fleet ui` starts a small web server inside the fleet process, prints its URL and opens your browser on it. The page shows every host, edits the config and pushes with live progress. It is a way to do from a browser what the bridge does in a terminal. Like the bridge, it is for you, not for an agent: `fleet agent` does not list it, and it has no `--json` form.
 
 ```sh
 fleet ui                  # a free port, opens the browser
@@ -13,17 +13,28 @@ It stops on ctrl-c, or by itself after 10 minutes with no page open. A push or a
 ### Reload, and when the server goes away
 
 - **Reload is safe.** The token is kept in `sessionStorage`, which belongs to that tab alone (it is never in the address or the history after the page loads, and no other tab sees it). So F5 keeps the page working. The To push list is kept there too and comes back after a reload: it holds only edits, and an edit never holds a plain secret value (a value goes to the server once, in its own request, and the edit is sops ciphertext). While a push or a host set-up runs, the browser asks before the tab is closed or reloaded.
-- **A tab that joins mid-run catches up.** The server tells every new page which jobs run (a push, `fleet init` of a host, a clone, a check, a secret being encrypted) and replays the last events of the running push or init, so a second tab or a reload shows the lanes and log so far, and labels the job correctly (a host set-up is not shown as a push). The header names every running job.
+- **A tab that joins mid-run catches up.** The server tells every new page which jobs run (a push, `fleet init` of a host, a clone, a check, a secret being encrypted, every host being asked for the Fleet screen) and replays the last events of the running push or init, so a second tab or a reload shows the lanes and log so far, and labels the job correctly (a host set-up is not shown as a push). The header names every running job.
 - **Not answering.** If `fleet ui` stopped, was restarted, or this machine slept, the header says `not answering` and a banner says what to do: run `fleet ui` again and open the new URL in the same tab. Push, Add and Set value are off meanwhile, and the page keeps trying.
 - **Token no longer valid.** If the server answers but refuses the page's token, it was started again. The page stops retrying (a refused token never becomes valid), says so, and the To push list is restored when you open the new URL in the same tab. A new tab without the URL cannot do anything, as before.
 
 ## What is on the page
 
-A header with this host, its checkout and whether the live connection is up (it reconnects by itself if the server drops it), and a menu: Matrix, Catalog, Hosts, Secrets, Card, Review & push and Status. The page is plain files under `src/ui/static/` that fleet serves as they are: no build step, no framework and no dependency, and nothing is loaded from another origin, including its font (JetBrains Mono, bundled in `src/ui/static/fonts/` with its licence, a copy of the landing page's).
+A header with this host, its checkout and whether the live connection is up (it reconnects by itself if the server drops it), and a menu: Fleet, Matrix, Catalog, Hosts, Secrets, Card, Review & push and Status. The page opens on Fleet. The page is plain files under `src/ui/static/` that fleet serves as they are: no build step, no framework and no dependency, and nothing is loaded from another origin, including its font (JetBrains Mono, bundled in `src/ui/static/fonts/` with its licence, a copy of the landing page's).
+
+### Fleet
+
+The first screen: every host in the config at once, and what each loads before the first prompt. It is the bridge's host cards and `fleet context --all` in a browser.
+
+- **What was last seen comes first.** The screen opens on what the bridge remembered of each host, marked `seen 2 h ago, not live`, and then asks every host: when the screen opens and again on **Refresh**, never on a timer. Each ask is an ssh call per host (the status and the startup context, the same read-only questions the bridge asks), so it runs as a job: the page stays usable while it runs, the header says `asking every host`, and each host's card changes as its answer arrives. A second page that asks while one is out waits for that one, so the hosts are asked once.
+- **The memory is the bridge's own file**, `~/.local/state/fleet/bridge-hosts.json`, read and written by the page and the bridge alike, so each opens on what the other last saw. It holds each host's last good status and startup context cut to what the cards show, no secret, and it is written when a host answers. This host is read in place and is not remembered, as in the bridge.
+- **A card for each host**, this host first: `ok`, or `conflicts` naming the first one, or `unreachable over ssh` with when it was last seen (and what it said then, kept and marked), or `timer` for a host with no ssh destination, whose status cannot be asked. Under it, when it last applied, its timer, what is pending, its fleet checkout and its agents, with a word for one fleet has applied config for and cannot find. A card that shows memory instead of an answer has a dashed edge and says `not live`.
+- **The fix of a conflict.** A host that reports conflicts is asked for them in full, like the bridge's Conflicts screen does, and its card gets a **Show the fix** button that opens each conflict with what is wrong and the command that clears it. A host on an older pin says that its detail needs a newer pin. A host that did not answer has no detail to show.
+- **Startup context for every host and agent**, as bars on one scale: a full bar is the heaviest agent of any host, so hosts can be compared. A bar is split into instructions, skills and MCP servers, and under it is what each weighs. A server nobody has measured makes the total a lower bound: it is shown with a `+` (`~4.2k+`) and never as zero, and the MCP part says `not measured`. A host with no startup context says why (an older pin, no ssh destination, unreachable); one that is only remembered is marked not live.
+- **Doctor is not on this screen.** It starts the MCP servers with their real credentials, which asking the hosts must not do.
 
 ### Matrix
 
-The first screen, named like the bridge's Matrix screen and read the same way. One row per skill bundle and per MCP server, one column per host. A bundle row opens to show its skills, which are read-only. A cell says where the item comes from for that host:
+Named like the bridge's Matrix screen and read the same way. One row per skill bundle and per MCP server, one column per host. A bundle row opens to show its skills, which are read-only. A cell says where the item comes from for that host:
 
 | Cell | Meaning |
 | --- | --- |
@@ -159,6 +170,8 @@ Every route is JSON under `/api/` and sits behind the checks below. Request bodi
 | Route | Does |
 | --- | --- |
 | `GET /api/status` | what `fleet status --json` knows about this host |
+| `GET /api/fleet` | every host of the config, this host first: its `status` and startup `context` (each with `live` and, when remembered, how many seconds ago it was seen), `result` and `detail` when it did not answer, and `conflicts` in full for a live host that has some. It asks nothing: it answers at once from the bridge's memory file and the answers of the last two minutes |
+| `POST /api/fleet/refresh` | asks every host (status, startup context, and the conflicts of a host that has some: read-only, an ssh call each) as a job, sends the document as a `fleet` event each time a host answers, remembers each answer in the bridge's memory file, and answers the document when every host has. A second call while one runs waits for it. No body |
 | `GET /api/matrix` | hosts, bundles with their skills, servers, and each host's cell; plus `outside`, the uncommitted changes in the config repo |
 | `GET /api/secrets` | secret names and who can read them, and `table`: each name against each host as set, missing or unused, never a value |
 | `POST /api/secrets/set` | `{name, value, files, ops}`: encrypts one value into the secrets file of each of `files` (`shared` or a host) with sops in a private temp dir, and answers the `setSecret` edits to push that carry those files. Nothing is written to the repo, and the value is in no answer, error, log or event; 400 `invalid`, 409 `stale`, 422 `no-recipient`, `needs-secret`, `sops-failed`, `recipients` or `invalid` |
@@ -177,7 +190,7 @@ Every route is JSON under `/api/` and sits behind the checks below. Request bodi
 | `POST /api/hosts/remove` | `{name, confirm: true}`: deletes the host's files, runs the real `fleet secrets rekey`, commits and pushes, streaming its output as `remove` events and answering when it ends (`removed`, `kept` when only the push failed); 409 `locked`, `outside-changes`, `self`, `admin` or `stale` |
 | `POST /api/write` | `{ops, message}`: writes, commits, then pushes; 409 `locked`, `outside-changes` or `stale`, 422 `invalid` |
 | `POST /api/push` | runs `fleet push` with what is already committed |
-| `GET /api/events` | the stream of live push events, and of `init` and `remove` output. It starts with `hello` (`pushing`, and `jobs`: what runs, each `{kind, name?}` with kind `push`, `init`, `remove`, `clone`, `check` or `secret`), then replays the events of a running push, init or removal (the last 400), then sends `jobs` whenever the list changes |
+| `GET /api/events` | the stream of live push events, and of `init` and `remove` output. It starts with `hello` (`pushing`, and `jobs`: what runs, each `{kind, name?}` with kind `push`, `init`, `remove`, `clone`, `check`, `secret` or `fleet`), then replays the events of a running push, init or removal (the last 400), then sends `jobs` whenever the list changes. While the hosts are asked for the Fleet screen it sends a `fleet` event, the document of `GET /api/fleet`, each time a host answers |
 
 ## Who can reach it
 
