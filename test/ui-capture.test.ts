@@ -33,15 +33,15 @@ async function call(s: UiServer, path: string, body: unknown, bodies: string[]) 
 }
 const noValue = (bodies: string[]) => bodies.forEach((b) => assert.ok(!b.includes(TOKEN), "no answer holds a value"));
 
-const TRACKER = { type: "http", url: "https://tracker.example.com/mcp", headers: { Authorization: HEADER_TOKEN } };
+const ISSUES = { type: "http", url: "https://issues.example.com/mcp", headers: { Authorization: HEADER_TOKEN } };
 
 test("GET /api/capture lists what this machine has with names and shapes, never a value", async () => {
   await withServer(async (s, w, bodies) => {
-    w.claude({ tracker: TRACKER, scraper: { type: "stdio", command: "npx", args: ["-y", "scraper-mcp"], env: { SCRAPER_API_KEY: TOKEN, REGION: "eu" } } });
+    w.claude({ issues: ISSUES, scraper: { type: "stdio", command: "npx", args: ["-y", "scraper-mcp"], env: { SCRAPER_API_KEY: TOKEN, REGION: "eu" } } });
     const { status, doc } = await get(s, "/api/capture", bodies);
     assert.equal(status, 200);
     assert.equal(doc.host, "laptop");
-    assert.deepEqual(doc.items.map((i: any) => [i.kind, i.name, i.state]), [["mcp", "tracker", "new"], ["mcp", "scraper", "new"]]);
+    assert.deepEqual(doc.items.map((i: any) => [i.kind, i.name, i.state]), [["mcp", "issues", "new"], ["mcp", "scraper", "new"]]);
     assert.deepEqual(doc.items[1].variants[0].keys.map((k: any) => [k.key, k.secret]), [["SCRAPER_API_KEY", true], ["REGION", false]]);
     assert.match(doc.items[1].variants[0].warning, /no version/, "the unpinned command is warned about, as on Add");
     noValue(bodies);
@@ -51,7 +51,7 @@ test("GET /api/capture lists what this machine has with names and shapes, never 
 
 test("an answer is built into held edits with the value encrypted, and writing it takes this machine over, so the push applies cleanly", async () => {
   await withServer(async (s, w, bodies) => {
-    w.claude({ tracker: TRACKER });
+    w.claude({ issues: ISSUES });
     const stream = await fetch(`${base(s)}/api/events?token=${s.token}`);
     const reader = stream.body!.getReader();
     let events = "";
@@ -65,12 +65,12 @@ test("an answer is built into held edits with the value encrypted, and writing i
       await reader.cancel();
     })();
 
-    const built = await call(s, "/api/capture/build", { ops: [], decision: { kind: "mcp", name: "tracker", action: "add", scope: "host", variant: 0, onlyHad: false, secrets: [{ where: "headers", key: "Authorization", name: "TRACKER_AUTHORIZATION" }] } }, bodies);
+    const built = await call(s, "/api/capture/build", { ops: [], decision: { kind: "mcp", name: "issues", action: "add", scope: "host", variant: 0, onlyHad: false, secrets: [{ where: "headers", key: "Authorization", name: "ISSUES_AUTHORIZATION" }] } }, bodies);
     assert.equal(built.status, 200, built.text);
     assert.equal(built.doc.takeover, true);
     assert.deepEqual(built.doc.ops.map((o: any) => o.op), ["addServer", "setSecret", "add"]);
-    assert.deepEqual(built.doc.ops[0].entry.headers, { Authorization: "secret:TRACKER_AUTHORIZATION" });
-    assert.match(built.doc.ops[1].content, /^TRACKER_AUTHORIZATION: ENC\[AES256_GCM,/);
+    assert.deepEqual(built.doc.ops[0].entry.headers, { Authorization: "secret:ISSUES_AUTHORIZATION" });
+    assert.match(built.doc.ops[1].content, /^ISSUES_AUTHORIZATION: ENC\[AES256_GCM,/);
     assert.equal(git(w.clone, "status", "--porcelain"), "", "nothing is written by building");
 
     // Each choice shows its YAML on To push, secrets as names only.
@@ -79,14 +79,14 @@ test("an answer is built into held edits with the value encrypted, and writing i
     assert.deepEqual(shown.doc.files.map((f: any) => f.path), ["catalog/mcp.yaml", "hosts/laptop.yaml", "secrets/laptop.enc.yaml"]);
     assert.ok(!JSON.stringify(shown.doc.files).includes("AES256_GCM"));
 
-    const written = await call(s, "/api/write", { ops: built.doc.ops, message: "Capture mcp tracker", captured: [{ kind: "mcp", name: "tracker" }] }, bodies);
+    const written = await call(s, "/api/write", { ops: built.doc.ops, message: "Capture mcp issues", captured: [{ kind: "mcp", name: "issues" }] }, bodies);
     assert.equal(written.status, 200, written.text);
-    assert.deepEqual(written.doc.captured.adopted, ["mcp:tracker"]);
+    assert.deepEqual(written.doc.captured.adopted, ["mcp:issues"]);
     // The apply of the push found the entry recorded as fleet's: it did not report it as a conflict.
     assert.equal(written.doc.push.conflicts?.length ?? 0, 0, written.text);
     assert.equal(written.doc.ok, true, written.text);
     await reading;
-    assert.equal(w.decrypt("laptop", "TRACKER_AUTHORIZATION")?.trim(), HEADER_TOKEN);
+    assert.equal(w.decrypt("laptop", "ISSUES_AUTHORIZATION")?.trim(), HEADER_TOKEN);
     noValue([...bodies, events]);
     assert.ok(!repoText(w.clone).includes(TOKEN));
     assert.ok(readFileSync(join(w.home, ".claude.json"), "utf8").includes(TOKEN), "nothing was taken off the machine");
@@ -95,14 +95,14 @@ test("an answer is built into held edits with the value encrypted, and writing i
 
 test("an answer about an item that is gone, a bad answer and a taken secret name are refused without echoing anything", async () => {
   await withServer(async (s, w, bodies) => {
-    w.claude({ tracker: TRACKER });
+    w.claude({ issues: ISSUES });
     const gone = await call(s, "/api/capture/build", { ops: [], decision: { kind: "mcp", name: "nothing", action: "add" } }, bodies);
     assert.equal(gone.status, 404);
-    const bad = await call(s, "/api/capture/build", { ops: [], decision: { kind: "mcp", name: "tracker", action: "delete" } }, bodies);
+    const bad = await call(s, "/api/capture/build", { ops: [], decision: { kind: "mcp", name: "issues", action: "delete" } }, bodies);
     assert.equal(bad.status, 400);
-    const badName = await call(s, "/api/capture/build", { ops: [], decision: { kind: "mcp", name: "tracker", action: "add", secrets: [{ where: "headers", key: "Authorization", name: "lower case" }] } }, bodies);
+    const badName = await call(s, "/api/capture/build", { ops: [], decision: { kind: "mcp", name: "issues", action: "add", secrets: [{ where: "headers", key: "Authorization", name: "lower case" }] } }, bodies);
     assert.equal(badName.status, 400);
-    const missing = await call(s, "/api/capture/build", { ops: [], decision: { kind: "mcp", name: "tracker", action: "add", secrets: [{ where: "headers", key: "Nope", name: "OTHER_NAME" }] } }, bodies);
+    const missing = await call(s, "/api/capture/build", { ops: [], decision: { kind: "mcp", name: "issues", action: "add", secrets: [{ where: "headers", key: "Nope", name: "OTHER_NAME" }] } }, bodies);
     assert.equal(missing.status, 422);
     noValue(bodies);
     assert.equal(git(w.clone, "status", "--porcelain"), "");

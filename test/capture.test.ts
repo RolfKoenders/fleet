@@ -19,7 +19,7 @@ const changes = (w: W) => {
 test("a server with a token in its env and in a header becomes secret:NAME; the value is in sops and in no output", async () => {
   const w = world();
   w.claude({
-    tracker: { type: "http", url: "https://tracker.example.com/mcp", headers: { Authorization: HEADER_TOKEN } },
+    issues: { type: "http", url: "https://issues.example.com/mcp", headers: { Authorization: HEADER_TOKEN } },
     scraper: { type: "stdio", command: "npx", args: ["-y", "scraper-mcp@1.2.0"], env: { SCRAPER_API_KEY: TOKEN, REGION: "eu" } },
   });
   const seen: string[] = [];
@@ -28,8 +28,8 @@ test("a server with a token in its env and in a header becomes secret:NAME; the 
   const found = await w.run([]);
   seen.push(everything(found));
   const items = (found.fields as any).items;
-  assert.deepEqual(items.map((i: any) => [i.kind, i.name, i.state]), [["mcp", "tracker", "new"], ["mcp", "scraper", "new"]]);
-  assert.deepEqual(items[0].variants[0].keys, [{ where: "headers", key: "Authorization", secret: true, name: "TRACKER_AUTHORIZATION" }]);
+  assert.deepEqual(items.map((i: any) => [i.kind, i.name, i.state]), [["mcp", "issues", "new"], ["mcp", "scraper", "new"]]);
+  assert.deepEqual(items[0].variants[0].keys, [{ where: "headers", key: "Authorization", secret: true, name: "ISSUES_AUTHORIZATION" }]);
   assert.deepEqual(items[1].variants[0].keys.map((k: any) => [k.key, k.secret, k.name]), [["SCRAPER_API_KEY", true, "SCRAPER_API_KEY"], ["REGION", false, "SCRAPER_REGION"]]);
   assert.equal(git(w.clone, "status", "--porcelain"), "", "reporting writes nothing");
 
@@ -38,20 +38,20 @@ test("a server with a token in its env and in a header becomes secret:NAME; the 
   const done = await w.run([], { terminal: t.io });
   seen.push(everything(done), t.out.join(""));
   assert.equal(done.code, "ok", JSON.stringify(done));
-  assert.deepEqual((done.fields as any).captured.map((c: any) => [c.kind, c.name, c.action]), [["mcp", "tracker", "add"], ["mcp", "scraper", "add"]]);
+  assert.deepEqual((done.fields as any).captured.map((c: any) => [c.kind, c.name, c.action]), [["mcp", "issues", "add"], ["mcp", "scraper", "add"]]);
 
   const catalog = w.read("catalog/mcp.yaml");
-  assert.match(catalog, /Authorization: secret:TRACKER_AUTHORIZATION/);
+  assert.match(catalog, /Authorization: secret:ISSUES_AUTHORIZATION/);
   assert.match(catalog, /SCRAPER_API_KEY: secret:SCRAPER_API_KEY/);
   assert.match(catalog, /REGION: eu/);
-  assert.equal(w.decrypt("laptop", "TRACKER_AUTHORIZATION")?.trim(), HEADER_TOKEN, "the value is in sops");
+  assert.equal(w.decrypt("laptop", "ISSUES_AUTHORIZATION")?.trim(), HEADER_TOKEN, "the value is in sops");
   assert.equal(w.decrypt("laptop", "SCRAPER_API_KEY")?.trim(), TOKEN);
   const text = repoText(w.clone);
   for (const value of [TOKEN, HEADER_TOKEN]) {
     assert.ok(!text.includes(value), "no value in the catalog, a host file or the history");
     for (const s of seen) assert.ok(!s.includes(value), "no value in any output");
   }
-  assert.match(w.read("hosts/laptop.yaml"), /include:[\s\S]*tracker/);
+  assert.match(w.read("hosts/laptop.yaml"), /include:[\s\S]*issues/);
   assert.equal(git(w.clone, "status", "--porcelain"), "", "committed");
   // Both agents get it from the one entry; fleet owns what is here, so apply has nothing to do.
   assert.ok(!/created|updated|removed/.test(changes(w).replace(/^.*nothing.*$/gim, "")), changes(w));
@@ -59,9 +59,9 @@ test("a server with a token in its env and in a header becomes secret:NAME; the 
 
 test("a secret value never reaches the status, an error or --json, even when capture fails", async () => {
   const w = world({ host: () => "admin: true\n" });
-  w.claude({ tracker: { type: "http", url: "https://tracker.example.com/mcp", headers: { Authorization: HEADER_TOKEN } } });
+  w.claude({ issues: { type: "http", url: "https://issues.example.com/mcp", headers: { Authorization: HEADER_TOKEN } } });
   // This host has no age recipient, so the value cannot be kept: capture refuses, and says so without the value.
-  const r = await w.run(["mcp", "tracker"], { host: true });
+  const r = await w.run(["mcp", "issues"], { host: true });
   assert.notEqual(r.code, "ok");
   assert.ok(!everything(r).includes(TOKEN));
   assert.equal(git(w.clone, "status", "--porcelain"), "", "nothing was written");
@@ -82,11 +82,11 @@ test("an env value that does not look like a secret becomes one when the person 
 
 test("every host: the secret goes to the shared secrets file and the pick to the defaults", async () => {
   const w = world();
-  w.claude({ tracker: { type: "http", url: "https://tracker.example.com/mcp", headers: { Authorization: HEADER_TOKEN } } });
-  const r = await w.run(["mcp", "tracker"], { all: true });
+  w.claude({ issues: { type: "http", url: "https://issues.example.com/mcp", headers: { Authorization: HEADER_TOKEN } } });
+  const r = await w.run(["mcp", "issues"], { all: true });
   assert.equal(r.code, "ok", JSON.stringify(r));
-  assert.equal(w.decrypt("shared", "TRACKER_AUTHORIZATION")?.trim(), HEADER_TOKEN);
-  assert.match(w.read("hosts/_defaults.yaml"), /tracker/);
+  assert.equal(w.decrypt("shared", "ISSUES_AUTHORIZATION")?.trim(), HEADER_TOKEN);
+  assert.match(w.read("hosts/_defaults.yaml"), /issues/);
   assert.ok(!/include/.test(w.read("hosts/laptop.yaml")));
 });
 
@@ -258,18 +258,18 @@ test("unmanaged hides an item, and the host file keeps the list", async () => {
 
 test("without a terminal capture only reports, and --yes applies the defaults", async () => {
   const w = world();
-  w.claude({ tracker: { type: "http", url: "https://tracker.example.com/mcp", headers: { Authorization: HEADER_TOKEN } }, plain: { type: "http", url: "https://plain.example.com/mcp" } });
+  w.claude({ issues: { type: "http", url: "https://issues.example.com/mcp", headers: { Authorization: HEADER_TOKEN } }, plain: { type: "http", url: "https://plain.example.com/mcp" } });
   const head = git(w.clone, "rev-parse", "HEAD");
   const only = await w.run([]);
   assert.equal(only.code, "ok");
-  assert.match(only.text ?? "", /mcp\s+tracker/);
+  assert.match(only.text ?? "", /mcp\s+issues/);
   assert.equal(git(w.clone, "rev-parse", "HEAD"), head);
   assert.ok(!everything(only).includes(TOKEN));
 
   const done = await w.run([], { yes: true });
   assert.equal(done.code, "ok", JSON.stringify(done));
-  assert.deepEqual((done.fields as any).captured.map((c: any) => c.name), ["tracker", "plain"]);
-  assert.equal(w.decrypt("laptop", "TRACKER_AUTHORIZATION")?.trim(), HEADER_TOKEN);
+  assert.deepEqual((done.fields as any).captured.map((c: any) => c.name), ["issues", "plain"]);
+  assert.equal(w.decrypt("laptop", "ISSUES_AUTHORIZATION")?.trim(), HEADER_TOKEN);
   assert.ok(!repoText(w.clone).includes(TOKEN));
   assert.ok(!everything(done).includes(TOKEN));
   assert.equal((done.fields as any).pushed, false);
@@ -314,14 +314,14 @@ test("the command line: flags need an item, one choice at a time, and --host her
 
 test("fleet capture --json reports on stdout, and a captured value is in no stream", () => {
   const w = world();
-  w.claude({ tracker: { type: "http", url: "https://tracker.example.com/mcp", headers: { Authorization: HEADER_TOKEN } } });
+  w.claude({ issues: { type: "http", url: "https://issues.example.com/mcp", headers: { Authorization: HEADER_TOKEN } } });
   const report = runFleet(w.clone, ["capture", "--json"], { home: w.home });
   assert.equal(report.code, 0, report.stderr);
   assert.ok(!(report.stdout + report.stderr).includes(TOKEN));
   const doc = JSON.parse(report.stdout);
-  assert.equal(doc.items[0].name, "tracker");
+  assert.equal(doc.items[0].name, "issues");
   assert.equal(git(w.clone, "status", "--porcelain"), "", "--json writes nothing");
-  const done = runFleet(w.clone, ["capture", "mcp", "tracker", "--host", "--no-push", "--json"], { home: w.home });
+  const done = runFleet(w.clone, ["capture", "mcp", "issues", "--host", "--no-push", "--json"], { home: w.home });
   assert.equal(done.code, 0, done.stderr);
   assert.ok(!(done.stdout + done.stderr).includes(TOKEN));
   assert.equal(JSON.parse(done.stdout).pushed, false);
