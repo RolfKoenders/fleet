@@ -102,6 +102,57 @@ test("esc closes the history, and the push keys do nothing while it is open", as
   assert.match(h.frame(), /Press h/);
 });
 
+test("u on the history list opens an undo confirmation, and y runs fleet undo for the selected commit", async () => {
+  const f = fakePusher();
+  withJournal(f);
+  const h = await pushBridge(f.pusher);
+  h.press("7");
+  await h.settle();
+  h.press("h");
+  await h.settle();
+  h.press("u");
+  await h.settle();
+  assert.match(h.frame(), /undo this push\?/);
+  assert.match(h.frame(), /abc1234/);
+  h.press("y");
+  f.end(ok([["laptop", 1]]));
+  await h.settle();
+  assert.equal(f.undos, 1);
+  assert.deepEqual(f.undoCommits, ["abc1234"]);
+});
+
+test("n or esc cancels the undo confirmation", async () => {
+  const f = fakePusher();
+  withJournal(f);
+  const h = await pushBridge(f.pusher);
+  h.press("7");
+  await h.settle();
+  h.press("h");
+  await h.settle();
+  h.press("u");
+  await h.settle();
+  h.press("n");
+  await h.settle();
+  assert.equal(f.undos, 0);
+  assert.doesNotMatch(h.frame(), /undo this push\?/);
+});
+
+test("esc closes the undo confirmation", async () => {
+  const f = fakePusher();
+  withJournal(f);
+  const h = await pushBridge(f.pusher);
+  h.press("7");
+  await h.settle();
+  h.press("h");
+  await h.settle();
+  h.press("u");
+  await h.settle();
+  h.press("escape");
+  await h.settle();
+  assert.equal(f.undos, 0);
+  assert.doesNotMatch(h.frame(), /undo this push\?/);
+});
+
 test("enter replays the push at real speed with its clock, through the reducer, and esc goes back to the list and then out", async () => {
   const { h, reads } = await history();
   h.press("enter");

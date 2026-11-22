@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { makeClone, makeHome, runFleet } from "./helpers.ts";
 import { EXIT } from "../src/exit.ts";
 
-const commands = ["status", "diff", "apply", "push", "adopt", "secrets", "skills", "init", "agent", "help"];
+const commands = ["status", "diff", "apply", "push", "undo", "adopt", "secrets", "skills", "init", "agent", "help"];
 
 function setup(host: string | undefined = "laptop") {
   const { clone } = makeClone();

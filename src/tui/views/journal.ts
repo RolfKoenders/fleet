@@ -20,7 +20,7 @@ export function drawHistory(c: Canvas, state: State): void {
   const j = state.journal;
   if (j.phase !== "list") return;
   c.text(2, 0, "Push history", s.bold);
-  c.text(2, 1, truncate("The last pushes this host ran, kept on this host only. enter replays one.", c.w - 4), s.muted);
+  c.text(2, 1, truncate("The last pushes this host ran, kept on this host only. enter replays one, u undoes one.", c.w - 4), s.muted);
   if (j.entries === null) return void c.text(2, 3, "reading the journal", s.sub);
   if (j.entries.length === 0) return void c.text(2, 3, truncate("No pushes recorded yet. Each push writes its journal here.", c.w - 4), s.muted);
   const room = Math.max(1, c.h - 3);

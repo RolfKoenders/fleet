@@ -15,7 +15,7 @@ import { drawHistory } from "./journal.ts";
 import { drawPush, pickedLane } from "./push.ts";
 import { drawSecrets } from "./secrets.ts";
 import { drawTimeline } from "./timeline.ts";
-import { drawDoctor, drawHelp, drawLeave, drawPalette } from "./overlays.ts";
+import { drawDoctor, drawHelp, drawLeave, drawPalette, drawUndo } from "./overlays.ts";
 import { s } from "./ui.ts";
 
 const COMMON: Hint[] = [["ctrl-k", "palette"], ["?", "help"], ["q", "quit"]];
@@ -33,11 +33,12 @@ function baseHints(state: State): Hint[] {
   if (state.overlay?.kind === "palette") return [["↑↓", "choose"], ["enter", "go"], ["esc", "close"]];
   if (state.overlay?.kind === "help") return [["esc", "close"]];
   if (state.overlay?.kind === "doctor") return state.overlay.off === null ? [["y", "run"], ["t", "this host only"], ["esc", "cancel"]] : [["esc", "close"]];
+  if (state.overlay?.kind === "undo") return [["y", "undo this push"], ["n", "cancel"], ["esc", "cancel"]];
   switch (state.screen) {
     case "home":
       return [[homeLayout(state.size).mode === "cards" ? "←↑↓→" : "↑↓", "select"], ["enter", "matrix"], ["r", "refresh"], ["d", "doctor"], ["P", "push"], ...COMMON];
     case "push":
-      if (state.journal.phase === "list") return [["↑↓", "select"], ["enter", "replay"], ["esc", "back"], ...COMMON];
+      if (state.journal.phase === "list") return [["↑↓", "select"], ["enter", "replay"], ["u", "undo"], ["esc", "back"], ...COMMON];
       if (state.journal.phase === "replay") return [["↑↓", "host"], ["esc", "back"], ...COMMON];
       return [...pushHints(state), ["h", "history"], ["P", state.push.phase === "running" ? "watch" : "review a push"], ["esc", "home"], ...COMMON];
     case "matrix":
@@ -93,4 +94,5 @@ export function drawApp(state: State, c: Canvas): void {
   if (state.overlay?.kind === "palette") drawPalette(c, state);
   if (state.overlay?.kind === "leave") drawLeave(c, state);
   if (state.overlay?.kind === "doctor") drawDoctor(c, state);
+  if (state.overlay?.kind === "undo") drawUndo(c, state);
 }

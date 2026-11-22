@@ -90,7 +90,7 @@ export type CatalogLive = { phase: "loading" | "done"; view: CatalogView | null;
 /** Doctor is only ever asked for through a confirmation. `scope` is what was asked: this host or every host. */
 export type DoctorLive = { phase: "idle" | "running" | "done"; gen: number; scope: "this" | "all"; result: DoctorResult | null };
 
-export type Overlay = null | { kind: "help" } | { kind: "leave" } | { kind: "doctor"; off: string | null } | { kind: "palette"; query: string; selected: number };
+export type Overlay = null | { kind: "help" } | { kind: "leave" } | { kind: "doctor"; off: string | null } | { kind: "palette"; query: string; selected: number } | { kind: "undo"; entry: JournalEntry };
 
 export type State = {
   size: Size;
@@ -210,6 +210,14 @@ export function createApp(options: Options): App<State, Msg> {
     send({ type: "versus", delta: versus(pusher?.journal?.list() ?? [], since) });
   };
 
+  // The one place an undo starts. It is the real `fleet undo`; the bridge already asked.
+  const startUndo = (commit: string, host: string | undefined): Cmd<Msg> => async ({ send }) => {
+    const since = Date.now();
+    const end = await pusher!.undo((event) => send({ type: "push", event }), commit, host);
+    send({ type: "pushEnd", end });
+    send({ type: "versus", delta: versus(pusher?.journal?.list() ?? [], since) });
+  };
+
   const askJournals: Cmd<Msg> = async ({ send }) => send({ type: "journals", entries: pusher?.journal?.list() ?? [] });
   const askReplay = (file: string): Cmd<Msg> => async ({ send }) => send({ type: "replay", file, stored: pusher?.journal?.read(file) ?? null });
 
@@ -227,6 +235,20 @@ export function createApp(options: Options): App<State, Msg> {
     if (scope === null) return [state, []];
     const gen = state.doctor.gen + 1;
     return [{ ...close, doctor: { phase: "running", gen, scope, result: null } }, [askDoctor(gen, scope === "all" && model.hosts.length > 1)]];
+  }
+
+  function onUndoOverlay(state: State, key: Key): [State, Cmd<Msg>[]] {
+    const close: State = { ...state, overlay: null };
+    if (key.name === "escape" || key.text === "n" || key.text === "q" || (key.ctrl && key.text === "c")) return [close, []];
+    if (state.overlay?.kind !== "undo") return [state, []];
+    if (key.text !== "y" && key.name !== "enter") return [state, []];
+    const entry = state.overlay.entry;
+    if (entry.header.commit === null) return [close, []];
+    const only = entry.header.only ?? undefined;
+    return [
+      { ...close, push: { phase: "running", run: startRun(only === undefined ? model.hosts : model.hosts.filter((h) => h.name === only), state.now), selected: null, notice: null }, versus: null },
+      [startUndo(entry.header.commit, only)],
+    ];
   }
 
   /** Opens the review, which reads and changes nothing. A push in flight is watched, not started again. */
@@ -309,6 +331,9 @@ export function createApp(options: Options): App<State, Msg> {
       if (d !== 0) return [{ ...state, journal: { ...j, selected: clamp(j.selected + d, 0, Math.max(0, j.entries.length - 1)) } }, []];
       const entry = j.entries[j.selected];
       if (key.name === "enter" && entry !== undefined) return [{ ...state, journal: { phase: "replay", entries: j.entries, selected: j.selected, replay: null, lane: null } }, [askReplay(entry.file)]];
+      if (ch === "u" && entry !== undefined && entry.header.commit !== null) {
+        return [{ ...state, overlay: { kind: "undo", entry } }, []];
+      }
     } else if (d !== 0 && j.replay !== null) {
       return [{ ...state, journal: { ...j, lane: clamp(pickedLane(replayOver(j.replay, j.lane)) + d, 0, Math.max(0, j.replay.run.lanes.length - 1)) } }, []];
     }
@@ -526,6 +551,7 @@ export function createApp(options: Options): App<State, Msg> {
       return [state, []];
     }
     if (state.overlay?.kind === "doctor") return onDoctorOverlay(state, key);
+    if (state.overlay?.kind === "undo") return onUndoOverlay(state, key);
     if (state.overlay === null && state.screen === "catalog" && state.catalog.typing) return [onFilter(state, key), []];
     if (state.overlay?.kind === "palette") return onPalette(state, key);
     if (state.overlay?.kind === "help") {

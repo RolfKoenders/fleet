@@ -321,7 +321,8 @@ async function pushJournaled(toolDir: string, configDir: string, message: string
   return problem === null ? result : { ...result, messages: [...(result.messages ?? []), problem] };
 }
 
-async function pushLocked(toolDir: string, configDir: string, message: string | undefined, color: boolean, home: string, progress: Progress | null, only: string | undefined, journal: Journal): Promise<Result> {
+/** The push work, assuming the caller already holds the push lock. */
+export async function pushLocked(toolDir: string, configDir: string, message: string | undefined, color: boolean, home: string, progress: Progress | null, only: string | undefined, journal: Journal): Promise<Result> {
   const events = eventsOn();
   // Each host's apply reports its steps when something reads them: the stream on stderr, or the live block.
   const steps = events || progress?.mode === "live";

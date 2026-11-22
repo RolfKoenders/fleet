@@ -24,6 +24,11 @@ export type Pusher = {
    * event as it arrives, and resolves when it has ended.
    */
   run(onEvent: (event: FleetEvent) => void, message?: string, host?: string): Promise<PushEnd>;
+  /**
+   * Runs `fleet undo <commit> --yes --json`, reporting each event as it arrives. The bridge already asked, so the
+   * command does not prompt.
+   */
+  undo(onEvent: (event: FleetEvent) => void, commit: string, host?: string): Promise<PushEnd>;
   /** The push journal of this host, where the bridge offers it: the pushes it recorded (newest first), and one of them in full. */
   journal?: { list(): JournalEntry[]; read(file: string): StoredJournal | null };
   /** What a push still in flight is doing, or null. After the screen is gone this is what is left to say. */
@@ -41,6 +46,9 @@ export const pushArguments = (message?: string, host?: string): string[] => [
   ...(message === undefined || message === "" ? [] : message.startsWith("-") ? [`--message=${message}`] : ["-m", message]),
   ...(host === undefined ? [] : host.startsWith("-") ? [`--host=${host}`] : ["--host", host]),
 ];
+
+/** The arguments of the child undo. The commit is passed as a positional argument. */
+export const undoArguments = (commit: string): string[] => ["undo", "--yes", "--json", commit];
 
 export class RealPusher implements Pusher {
   private readonly follow = new Tracker();
@@ -72,11 +80,11 @@ export class RealPusher implements Pusher {
     });
   }
 
-  run(onEvent: (event: FleetEvent) => void, message?: string, host?: string): Promise<PushEnd> {
+  private spawnFleet(onEvent: (event: FleetEvent) => void, args: string[], what: string, host?: string): Promise<PushEnd> {
     this.follow.start(host === undefined ? this.hosts : this.hosts.filter((h) => h.name === host));
     this.ended = new Promise((resolve) => {
-      // Its own session: a Ctrl-C or a closed terminal aimed at the bridge does not reach it half way through a push.
-      const child = spawn(join(this.toolDir, "bin/fleet"), pushArguments(message, host), {
+      // Its own session: a Ctrl-C or a closed terminal aimed at the bridge does not reach it half way through.
+      const child = spawn(join(this.toolDir, "bin/fleet"), args, {
         detached: true,
         stdio: ["ignore", "pipe", "pipe"],
         env: { ...process.env, FLEET_EVENTS: "1", FLEET_NODE: probedNode(), FLEET_CONFIG: this.configDir, HOME: this.home },
@@ -100,13 +108,21 @@ export class RealPusher implements Pusher {
         this.follow.finished(e);
         resolve(e);
       };
-      child.once("error", (error) => end({ ...readEnd(null, ""), messages: [`fleet: cannot run fleet push: ${error.message}`] }));
+      child.once("error", (error) => end({ ...readEnd(null, ""), messages: [`fleet: cannot run ${what}: ${error.message}`] }));
       child.once("close", (code) => {
         if (pending.trim() !== "") take(pending);
         end(readEnd(code, stdout));
       });
     });
     return this.ended;
+  }
+
+  run(onEvent: (event: FleetEvent) => void, message?: string, host?: string): Promise<PushEnd> {
+    return this.spawnFleet(onEvent, pushArguments(message, host), "fleet push", host);
+  }
+
+  undo(onEvent: (event: FleetEvent) => void, commit: string, host?: string): Promise<PushEnd> {
+    return this.spawnFleet(onEvent, undoArguments(commit), "fleet undo", host);
   }
 
   readonly journal = { list: (): JournalEntry[] => listJournals(this.home), read: (file: string): StoredJournal | null => readJournal(file, this.home) };

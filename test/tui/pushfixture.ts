@@ -19,12 +19,14 @@ export const PREVIEW: PreviewResult = { ok: true, preview: { code: "ok", plan, r
 /** The same, with a file that looks like a plaintext secret among the changes. */
 export const PREVIEW_SECRET: PreviewResult = { ok: true, preview: { code: "ok", plan, repos: repos([...CLEAN_FILES, { status: "??", path: ".env.local" }], [".env.local"]) } };
 
-/** A pusher the test drives: `emit` sends an event as the child would, `end` finishes the push. */
-export type FakePusher = { runs: number; messages: (string | undefined)[]; hosts: (string | undefined)[]; previews: number; emit: (e: FleetEvent) => void; end: (e: PushEnd) => void; pusher: Pusher };
+/** A pusher the test drives: `emit` sends an event as the child would, `end` finishes the push or undo. */
+export type FakePusher = { runs: number; undos: number; undoCommits: (string | undefined)[]; messages: (string | undefined)[]; hosts: (string | undefined)[]; previews: number; emit: (e: FleetEvent) => void; end: (e: PushEnd) => void; pusher: Pusher };
 
 export function fakePusher(preview: PreviewResult = PREVIEW): FakePusher {
   const f: FakePusher = {
     runs: 0,
+    undos: 0,
+    undoCommits: [],
     messages: [],
     hosts: [],
     previews: 0,
@@ -42,7 +44,13 @@ export function fakePusher(preview: PreviewResult = PREVIEW): FakePusher {
         f.emit = onEvent;
         return new Promise<PushEnd>((resolve) => (f.end = resolve));
       },
-      running: () => (f.runs > 0 ? "applying" : null),
+      undo(onEvent: (e: FleetEvent) => void, commit: string) {
+        f.undos++;
+        f.undoCommits.push(commit);
+        f.emit = onEvent;
+        return new Promise<PushEnd>((resolve) => (f.end = resolve));
+      },
+      running: () => (f.runs > 0 || f.undos > 0 ? "applying" : null),
       whenDone: () => null,
     } as Pusher,
   };
