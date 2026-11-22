@@ -291,7 +291,7 @@ test("the page's chrome: the logo is the website's mark, the menu has Review & p
   assert.equal(mark(logo), mark(site.match(/<a class="brand"[\s\S]*?<\/svg>/)![0]), "the favicon is the website's logo");
   assert.equal(mark(html.match(/<a class="logo"[\s\S]*?<\/svg>/)![0]), mark(logo), "the header shows the same mark");
   const nav = [...html.match(/<nav[\s\S]*<\/nav>/)![0].matchAll(/<a href="#\/(\w+)"|<hr>/g)].map((m) => m[1] ?? "hr");
-  assert.deepEqual(nav, ["matrix", "catalog", "hosts", "secrets", "hr", "review", "status"]);
+  assert.deepEqual(nav, ["matrix", "catalog", "hosts", "secrets", "card", "hr", "review", "status"]);
   assert.match(html, /id="tray"[^>]*><span>To push<\/span>/);
   assert.doesNotMatch(html, /Held/, "the page says To push, not Held");
 });

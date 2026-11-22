@@ -13,6 +13,7 @@ import { blockers, cellAction, DROPPED_BLOCKER, cellState, clickCell, opLabel, s
 import { confirmInit, elapsed, heldProblem, hostDraft, idleInit, initEnd, initLine, SETUP_DOC, startInit } from "./hosts.js";
 import { actionOf, afterSet, cellView, dialogTargets, heldNames, missingCount, retryText, valueProblem } from "./secrets.js";
 import { escapeAction, filterRows, hashWithQuery, hiddenWithChanges, nameMatches, queryOf, skillHits, slashFocuses } from "./filter.js";
+import { canCopyImage, CARD_SIZE, clipboardProblem, discussionUrl, embedFonts, FONT_FILES, fileName, STYLES as CARD_STYLES, unseenNote } from "./card.js";
 import { itemYaml, yamlPath, yamlTag } from "./yamlview.js";
 import { heldFiles, idlePush, plain, pushEnd, pushEvent, routeOf, statusView, tokenOf, writtenNotice } from "./state.js";
 
@@ -48,7 +49,8 @@ $("local").textContent = `${location.host} · only this machine`;
  *   skills: { name: string, source: string, bundle: string | null }[], stagedSkills: Record<string, string[]>,
  *   form: import("./adding.js").AddState | null, menu: boolean, init: import("./hosts.js").InitState, initError: string | null,
  *   yaml: Record<string, string>, yamlErrors: Record<string, string>, yamlOpen: Set<string>,
- *   rm: RemoveState | null, removal: import("./hosts.js").InitState, removalError: string | null
+ *   rm: RemoveState | null, removal: import("./hosts.js").InitState, removalError: string | null,
+ *   card: { style: string, names: boolean, doc: any, svg: string | null, url: string | null, error: string | null, message: { text: string, tone: string } | null, busy: boolean }
  * }}
  */
 const model = {
@@ -60,6 +62,7 @@ const model = {
   init: idleInit(), initError: null,
   yaml: {}, yamlErrors: {}, yamlOpen: new Set(),
   rm: null, removal: idleInit(), removalError: null,
+  card: { style: "machines", names: false, doc: null, svg: null, url: null, error: null, message: null, busy: false },
 };
 
 // The To push list is restored after a reload. See session.js: it holds edits only, never a plain secret value.
@@ -81,6 +84,7 @@ const SCREENS = {
   matrix: ["Matrix", "What each host gets: every skill bundle and MCP server against every host. Click a cell to give it to a host or take it away. Fleet writes the smallest change: an item the defaults give is taken away with exclude, not by editing the defaults."],
   catalog: ["Catalog", "The MCP servers, skill sources and skill bundles your hosts can pick from. Add one with the Add button: it gives it to no host yet, pick it in the Matrix. An addition is a change to push like any edit, and written when you push."],
   hosts: ["Hosts", "The hosts in this config, and how each is reached. Add a host and fleet sets it up over ssh: it writes its host file, then runs the real fleet init."],
+  card: ["Card", "An image of your fleet to share: its counts, each machine with its agents and OS, and a year of changes. It is made from what fleet last saw of each machine and asks none of them. Hosts are named host 1, host 2 unless you turn names on, and no server, skill, source or secret name is ever on it."],
   secrets: ["Secrets", "Names only. fleet ui never reads a value back, never shows one, and never writes one to disk unencrypted: a value you type goes straight to sops. Set a value and the encrypted file is a change to push like any edit, and written when you push."],
 };
 
@@ -163,6 +167,7 @@ function screen(route) {
   if (route === "matrix") return matrixScreen();
   if (route === "catalog") return catalogScreen();
   if (route === "hosts") return hostsScreen();
+  if (route === "card") return cardScreen();
   return secretsScreen();
 }
 
@@ -1539,6 +1544,150 @@ function hostsScreen() {
   );
 }
 
+// ---- Card: the server draws the SVG, this page only shows it and turns it into a PNG.
+
+/** @type {Promise<{ regular: string, bold: string }> | null} */
+let cardFontsLoaded = null;
+
+/** @param {string} path */
+async function base64Of(path) {
+  const res = await fetch(path);
+  if (!res.ok) throw new Error(`${path}: ${res.status}`);
+  const bytes = new Uint8Array(await res.arrayBuffer());
+  let binary = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(binary);
+}
+
+/** The bundled JetBrains Mono, read once from this server, so the picture and the PNG use the card's font and fetch nothing from elsewhere. */
+function cardFonts() {
+  cardFontsLoaded ??= Promise.all([base64Of("/" + FONT_FILES.regular), base64Of("/" + FONT_FILES.bold)]).then(([regular, bold]) => ({ regular, bold }));
+  cardFontsLoaded.catch(() => { cardFontsLoaded = null; });
+  return cardFontsLoaded;
+}
+
+async function loadCard() {
+  if (client === null) return;
+  const { style, names } = model.card;
+  try {
+    const doc = await client.card(style, names);
+    // A switch pressed meanwhile asked again: this answer is for the old one.
+    if (style !== model.card.style || names !== model.card.names) return;
+    const fonts = await cardFonts().catch(() => null);
+    const svg = fonts === null ? doc.svg : embedFonts(doc.svg, fonts);
+    if (model.card.url !== null) URL.revokeObjectURL(model.card.url);
+    model.card = { ...model.card, doc, svg, url: URL.createObjectURL(new Blob([svg], { type: "image/svg+xml" })), error: null };
+  } catch (e) {
+    model.card = { ...model.card, error: e instanceof ApiError ? e.messages.join("; ") || e.message : "the card could not be made" };
+  }
+  render();
+}
+
+/** The card as a PNG at twice its size, drawn from the SVG on a canvas. @returns {Promise<Blob>} */
+async function cardPng() {
+  if (model.card.url === null) throw new Error("no card");
+  const img = new Image();
+  img.src = model.card.url;
+  await img.decode();
+  const canvas = document.createElement("canvas");
+  canvas.width = CARD_SIZE.width * CARD_SIZE.scale;
+  canvas.height = CARD_SIZE.height * CARD_SIZE.scale;
+  const context = canvas.getContext("2d");
+  if (context === null) throw new Error("no canvas");
+  context.drawImage(img, 0, 0, canvas.width, canvas.height);
+  return new Promise((resolve, reject) => canvas.toBlob((blob) => (blob === null ? reject(new Error("no image")) : resolve(blob)), "image/png"));
+}
+
+/** @param {string} text @param {string} [tone] */
+function cardSays(text, tone = "ok") {
+  model.card = { ...model.card, message: { text, tone } };
+  render();
+}
+
+/** @param {Blob} blob @param {string} name */
+function download(blob, name) {
+  const url = URL.createObjectURL(blob);
+  const link = h("a", { href: url, download: name });
+  document.body.append(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10_000);
+}
+
+async function savePng() {
+  try {
+    const name = fileName(model.card.style, "png");
+    download(await cardPng(), name);
+    cardSays(`Saved ${name}. Attach it to your post.`);
+  } catch {
+    cardSays("The image could not be drawn in this browser. Save SVG instead.", "bad");
+  }
+}
+
+function saveSvg() {
+  if (model.card.doc === null) return;
+  download(new Blob([model.card.doc.svg], { type: "image/svg+xml" }), fileName(model.card.style, "svg"));
+  cardSays("Saved fleet-card.svg, the same file fleet card writes.");
+}
+
+async function copyImage() {
+  if (!canCopyImage(navigator, window.ClipboardItem)) return cardSays(clipboardProblem(null), "warn");
+  try {
+    // The blob is passed as a promise, so a browser that wants the click's permission has it before the image is drawn.
+    await navigator.clipboard.write([new ClipboardItem({ "image/png": cardPng() })]);
+    cardSays("Copied the image. Paste it into your post.");
+  } catch (e) {
+    cardSays(clipboardProblem(e), "warn");
+  }
+}
+
+/** @param {{ style?: string, names?: boolean }} change */
+function setCard(change) {
+  model.card = { ...model.card, ...change, message: null };
+  render();
+  loadCard();
+}
+
+function cardScreen() {
+  const [title, about] = SCREENS.card;
+  const c = model.card;
+  const ready = c.doc !== null && c.url !== null;
+  const share = ready ? discussionUrl(c.doc.share) : null;
+  const note = ready ? unseenNote(c.doc.unseen) : null;
+  const can = ready && usable();
+  return h(
+    "div",
+    {},
+    h("h1", {}, title),
+    h("p", { class: "sub" }, about),
+    c.error !== null ? h("div", { class: "notice bad" }, c.error) : null,
+    h(
+      "div",
+      { class: "row" },
+      h("div", { class: "seg", role: "group", "aria-label": "Style" }, ...CARD_STYLES.map(([id, label]) => h("button", { type: "button", id: `card-style-${id}`, class: id === c.style ? "on" : "", "aria-pressed": String(id === c.style), onclick: () => setCard({ style: id }) }, label))),
+      h("label", { class: "check", for: "card-names" }, h("input", { type: "checkbox", id: "card-names", checked: c.names, onchange: (e) => setCard({ names: /** @type {HTMLInputElement} */ (e.target).checked }) }), "Show hostnames"),
+    ),
+    c.names ? h("div", { class: "notice", id: "card-names-note" }, "The real hostnames are on the card. Only hostnames: never a server, skill, source or secret name.") : null,
+    ready
+      ? h("div", { class: "panel cardframe" }, h("img", { id: "card-image", class: "cardimg", src: /** @type {string} */ (c.url), width: String(CARD_SIZE.width), height: String(CARD_SIZE.height), alt: c.doc.text.split("\n")[0].trim() || "your fleet card" }))
+      : h("div", { class: "panel empty" }, "Drawing the card..."),
+    note === null ? null : h("div", { class: "notice", id: "card-unseen" }, note),
+    h(
+      "div",
+      { class: "row", style: "margin: 14px 0" },
+      h("button", { type: "button", id: "card-save-png", class: "btn primary", ...(can ? {} : { disabled: true }), onclick: savePng }, "Save PNG"),
+      h("button", { type: "button", id: "card-copy", class: "btn", ...(can ? {} : { disabled: true }), onclick: copyImage }, "Copy image"),
+      share === null
+        ? h("button", { type: "button", id: "card-post", class: "btn", disabled: true }, "Post to Show and tell")
+        : h("a", { id: "card-post", class: "btn", href: share, target: "_blank", rel: "noopener noreferrer", title: "Opens a new GitHub discussion with a short text. You attach the image." }, "Post to Show and tell"),
+      h("button", { type: "button", id: "card-save-svg", class: "btn ghost", ...(ready ? {} : { disabled: true }), onclick: saveSvg }, "Save SVG"),
+    ),
+    h("div", { id: "card-message", role: "status", class: c.message === null ? "" : `notice ${c.message.tone === "ok" ? "okmsg" : c.message.tone === "bad" ? "bad" : ""}` }, c.message === null ? "" : c.message.text),
+    ready ? h("h2", {}, "In the terminal") : null,
+    ready ? h("div", { class: "panel" }, h("pre", { class: "term", id: "card-text" }, c.doc.text)) : null,
+  );
+}
+
 /** The secrets table as it will be after the held edits (the server's answer for them), else as the files on disk say. */
 const shownSecrets = () => model.preview?.secrets ?? model.secrets?.table ?? null;
 
@@ -1920,6 +2069,7 @@ function opened() {
   model.menu = false;
   render();
   if (route === "secrets") loadSecrets();
+  if (route === "card") loadCard();
   if (route === "review") loadPlan();
   if (route === "matrix" || route === "catalog" || route === "hosts") loadMatrix();
 }

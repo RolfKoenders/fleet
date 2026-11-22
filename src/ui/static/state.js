@@ -1,8 +1,8 @@
 // The page's state and the rules that move it. Pure: nothing here touches the DOM, the network or the clock, so
 // `node --test` runs it. `app.js` draws it.
 
-/** The screens. Matrix is the first; Catalog, Hosts and Secrets are read-only lists for now. */
-export const ROUTES = ["matrix", "catalog", "hosts", "secrets", "status", "review"];
+/** The screens. Matrix is the first. */
+export const ROUTES = ["matrix", "catalog", "hosts", "secrets", "card", "status", "review"];
 
 /** The screen a location hash names (`#/hosts`), `matrix` for none or an unknown one. @param {string} hash */
 export function routeOf(hash) {

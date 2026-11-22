@@ -19,7 +19,7 @@ It stops on ctrl-c, or by itself after 10 minutes with no page open. A push or a
 
 ## What is on the page
 
-A header with this host, its checkout and whether the live connection is up (it reconnects by itself if the server drops it), and a menu: Matrix, Catalog, Hosts, Secrets, Review & push and Status. The page is plain files under `src/ui/static/` that fleet serves as they are: no build step, no framework and no dependency, and nothing is loaded from another origin, including its font (JetBrains Mono, bundled in `src/ui/static/fonts/` with its licence, a copy of the landing page's).
+A header with this host, its checkout and whether the live connection is up (it reconnects by itself if the server drops it), and a menu: Matrix, Catalog, Hosts, Secrets, Card, Review & push and Status. The page is plain files under `src/ui/static/` that fleet serves as they are: no build step, no framework and no dependency, and nothing is loaded from another origin, including its font (JetBrains Mono, bundled in `src/ui/static/fonts/` with its licence, a copy of the landing page's).
 
 ### Matrix
 
@@ -107,6 +107,38 @@ A table of every secret name against every host, by name only. A cell is **set**
 - A failure is one of a few fixed sentences. What sops said is never passed on, because it can quote what it was given.
 - This sets and replaces. It does not delete or rename a secret: use `fleet secrets` for that.
 
+### Card
+
+An image of your fleet to share: in a post, a GitHub discussion, or a README. It is an image because terminal text loses its colours the moment it leaves the terminal. The same card comes from `fleet card`, which writes `fleet-card.svg` (1200 x 630, the social preview size) in the current folder; the page shows what that command would write.
+
+- **Two styles**, switched at the top of the screen (`fleet card --style machines|map`, `machines` is the default). *Machines* has the four counts large (machines, agents, skills, MCP servers), a row per machine with its agents as badges and its OS, and a bottom line: `N changes in the last year · N pushes since March 2026`. *Map* puts the config in the middle and each machine as a card around it, with its agents, its OS and when it last applied (`linux · 4m ago`), and skills and MCP servers on the left of the bottom line, changes and pushes on the right. Above 6 machines the map shows 6 and a `+N more` card; machines shows 6 rows and `+N more`.
+- **The activity grid.** *Machines* shows a GitHub-style grid of the config repo's commits per day, five shades of green, but only when the repo had at least 20 commits in the last 12 months. Below that it is left out and only the bottom line stays, because an empty grid looks like a dead setup. The map has no grid.
+- **What is counted.** A change is a commit to the config repo, read from its git log. Pushes are the ones in this host's push journal, which keeps only the last 20, so a full journal reads `20+ pushes`. The month is the one of the config repo's first commit. Skills and MCP servers are the ones some host gets, each counted once, and agents are counted once across hosts.
+- **Privacy.** Hosts are `host 1`, `host 2` and so on, in name order, unless **Show hostnames** is on (`--names` in the CLI). The names of MCP servers, skills, skill sources and secrets are never on the card, with or without it, and neither is the startup context.
+- **Nothing asks a host.** Agents, OS and the last apply of each host are what the bridge last saw of it (the answers it keeps in `~/.local/state/fleet/bridge-hosts.json`), and this host is read live, so the card works offline and without ssh. A host the bridge never saw is drawn without agents and OS, and the page says how many (never which, unless names are on): run `fleet bridge` once to read them.
+- **Save PNG** draws the card on a canvas at twice its size (2400 x 1260) and downloads it. The server draws the SVG, with the same code as the CLI, and the page only turns it into a PNG. **Copy image** puts that PNG on the clipboard; a browser that refuses (it needs a secure page and its permission, which `127.0.0.1` counts as) gets a plain message and Save PNG is the way round. **Save SVG** downloads the file `fleet card` writes. **Post to Show and tell** opens a new discussion in the Show and tell category of the project with a short title and text filled in (counts only, no hostname), in a new tab: you attach the image yourself.
+- **Fonts.** The SVG file names JetBrains Mono and then the monospace faces every system has (Fira Code, SF Mono, Menlo, Consolas, DejaVu Sans Mono), and Geist for the big counts, falling back to the same monospace. It embeds no font and fetches nothing, so it reads anywhere. The picture on this page and the PNG carry the bundled JetBrains Mono inside them, so they look as designed whatever is installed.
+- **The README badge.** `fleet card --badge` writes `fleet-badge.svg`, a small badge (`fleet · 3 machines · 3 agents`) in the same colours, for a config repo's README: `![fleet](fleet-badge.svg)`. It holds no hostname.
+
+Before it writes the file, `fleet card` prints what is on it, so you see what you are about to publish:
+
+```
+$ fleet card
+  ● fleet   3 machines · 3 agents · 38 skills · 9 MCP servers
+
+  host 1  claude opencode   linux
+  host 2  claude            linux
+  host 3  claude agy        macos
+
+  activity, 12 months  ▁▂▁▃▅▂▁▁▂▆▇▃▂▁▃▂▁▅▃▂▂▁▁▃▇█▅▂▁▂▃▂▁▁▂▃▅▃▂▁▂▆▃▂▁▃▂▅▇▃▂▃
+
+  412 changes this year · 128 pushes since March 2026 · hostnames hidden
+
+wrote fleet-card.svg (1200 x 630)
+```
+
+The activity line follows the same 20-commit rule. The page shows this text under the picture.
+
 ### Review & push
 
 - The real diff of every file the changes to push change.
@@ -135,6 +167,7 @@ Every route is JSON under `/api/` and sits behind the checks below. Request bodi
 | `POST /api/catalog/discard` | `{id}`: deletes that temp clone |
 | `POST /api/catalog/probe` | `{name, entry, confirm: true}`: doctor's probe on one entry that is not on disk, on this machine; refused unless `confirm` is true. Answers `result`, `tools`, `tokens` and `unset` (secret names with no value here), never a value |
 | `POST /api/preview` | `{ops, show?, staged?}`: the files the edits change (before and after), dropped edits, the matrix after, a check per host. A host also fails its check when it gets a bundle that names a skill no source provides, as `fleet push` would find; that check uses the skills of the clones on this machine and of `staged` (the skills of sources just added, by source name), and says nothing while a source's skills are not known |
+| `POST /api/card` | `{style?, names?}` with style `machines` or `map`: the card, drawn by the same code as `fleet card` from what fleet last saw of each host (nothing is asked over ssh): `svg`, `badge`, `text` (the terminal preview), `unseen` (how many hosts the bridge never saw) and `share` (`title`, `body`, `url` of a new Show and tell discussion). Hostnames only with `names: true`; 400 for another style |
 | `POST /api/yaml` | `{kind, name}` with kind `server`, `source`, `bundle` or `host`: the file that item is written in, as on disk, as `{path, text}` (the catalog file, or `hosts/<name>.yaml`). It takes a kind and a name, never a path; a bad name is 400, a host that is not there 404. Secrets files are not reachable, and the files hold only `secret:NAME`, never a value |
 | `POST /api/entry` | `{ops, kind, name}` with kind `server`, `source`, `bundle` or `host`: what an Edit dialog starts from, the item as the files would have it after the held `ops`. Answers `found`, `value` (the entry as written: a bundle's skills, a host's `{ssh}`, a secret as `secret:NAME`), `path`, `editable`, `reason` when it cannot be edited in place, and `text`, the file it is in |
 | `POST /api/plan` | `{ops}`: this host's plan from `fleet diff` on the edited config |
@@ -153,7 +186,7 @@ The page can change your config and push, so nothing but you may reach it.
 - It listens on `127.0.0.1` only. There is no option to listen elsewhere.
 - The URL is `http://127.0.0.1:<port>/#t=<token>`: a random port and a random token. The page reads the token from the part after `#` (which a browser never sends to the server), keeps it in memory (and in `sessionStorage` of that tab, so a reload works) and sends it as a header on every call. There is no cookie. Opening the URL without the token shows a page that cannot do anything.
 - A request whose `Host` is not `127.0.0.1:<port>` is refused, so a web page on another site cannot reach the server by pointing its own name at your machine (DNS rebinding). A write whose `Origin` is not the page itself is refused too.
-- The server sends no CORS header, so no other page can read an answer.
+- The server sends no CORS header, so no other page can read an answer. Its pages may show images from the page itself and from `blob:` (the card, drawn into a canvas), and nothing from another origin.
 - The one call that cannot carry a header is the stream of live updates (a browser's `EventSource` cannot), so that call takes the token in its query instead. Nothing logs a URL.
 - A secret's value is never sent to the browser. Nothing the page sends is logged, and the one route that takes a value (`/api/secrets/set`) answers with the encrypted file and fixed messages only.
 

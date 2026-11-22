@@ -5,6 +5,7 @@ import { parseArgs } from "node:util";
 import { adopt } from "./adopt.ts";
 import { agent } from "./agent.ts";
 import { apply, diff, failure } from "./apply.ts";
+import { card } from "./card/command.ts";
 import { contextAll } from "./contextall.ts";
 import { context } from "./contextcmd.ts";
 import { bridge } from "./tui/bridge.ts";
@@ -53,7 +54,7 @@ type Command = {
   /** False for a command `fleet agent` does not teach: an agent has no use for it. */
   agent?: false;
   args: number;
-  run?: (ctx: { color: boolean; json: boolean; args: string[]; message: string | undefined; all: boolean; conflicts: boolean; shell: boolean; review: boolean; yes: boolean; noPush: boolean; timeout: number | undefined; view: string | undefined; host: string | undefined; port: number | undefined; open: boolean; found: FoundConfig }) => Result | Relayed | Promise<Result | Relayed>;
+  run?: (ctx: { color: boolean; json: boolean; args: string[]; message: string | undefined; all: boolean; conflicts: boolean; shell: boolean; review: boolean; yes: boolean; noPush: boolean; timeout: number | undefined; view: string | undefined; host: string | undefined; port: number | undefined; open: boolean; style: string | undefined; names: boolean; badge: boolean; found: FoundConfig }) => Result | Relayed | Promise<Result | Relayed>;
 };
 
 const commands: Command[] = [
@@ -63,6 +64,7 @@ const commands: Command[] = [
   { name: "diff", usage: "diff", summary: "Show what apply would change, without changing anything", effect: "read", args: 0, run: ({ color, found }) => diff(configOf(found), color) },
   { name: "bridge", usage: "bridge [--view <screen>] [--host <name>]", summary: "Open the full-screen view of every host, the matrix of what each gets, conflicts, timeline, secrets and catalog (--view opens on a screen, --host selects a host on it). It reads until you ask for more: P pushes after you type push, d runs doctor after you confirm (it starts real MCP servers). Needs a terminal", effect: "change", args: 0, run: ({ json, view, host, found }) => bridge(toolDir, () => configOf(found), json, process.env, undefined, { view, host }) },
   { name: "ui", usage: "ui [--port <n>] [--no-open]", summary: "Open a page in your browser that shows this host and can push, served from this process on 127.0.0.1 and guarded by a random token in the URL it prints. It stops on ctrl-c, or after 10 minutes with no page open. Not for agents; no --json", effect: "change", agent: false, args: 0, run: ({ json, port, open, found }) => ui({ toolDir, configDir: () => configOf(found), home: homedir(), json, port, open, signal: interrupted() }) },
+  { name: "card", usage: "card [--style machines|map] [--names] [--badge]", summary: "Write fleet-card.svg (1200 x 630) here: an image of your fleet to share, with its counts, each host with its agents and OS, and a year of changes. Hosts are named host 1, host 2 unless --names; no server, skill, source or secret name is ever on it. --style picks machines (the default) or map; --badge writes a small fleet-badge.svg for a README instead. It reads what fleet last saw of each host and asks none", effect: "change", agent: false, args: 0, run: ({ color, style, names, badge, found }) => card(configOf(found), { dir: process.cwd(), style, names, badge, color, home: homedir() }) },
   { name: "apply", usage: "apply", summary: "Make this host match its config", effect: "change", args: 0, run: ({ color, json, found }) => apply(toolDir, configOf(found), color, undefined, json ? ["apply", "--json"] : ["apply"]) },
   { name: "push", usage: "push [-m <message>] [--host <name>]", summary: "Publish changes to GitHub, then apply on every host (-m sets the commit message; --host applies only on that host: this one or one with an ssh destination, after publishing as usual)", effect: "change", args: 0, run: ({ color, message, host, found }) => push(toolDir, configOf(found), message, color, undefined, progressFor(process.env, process.stderr), host) },
   { name: "undo", usage: "undo [--no-push] [--yes] [<commit>]", summary: "Revert the last recorded push, or a named one, and push the revert to the same scope (--no-push stops after the revert commit; --yes skips the prompt)", effect: "change", args: 1, run: ({ color, json, args, yes, noPush, found }) => undo(toolDir, configOf(found), args, { noPush, yes, color, json, terminal: !json && process.stdin.isTTY === true && process.stdout.isTTY === true ? { stdin: process.stdin, stdout: process.stdout } : null }) },
@@ -104,6 +106,9 @@ Options:
   --host <name>  With 'bridge': select this host on that screen. With 'push': apply only on this host
   --port <n>     With 'ui': listen on this port (default: a free one)
   --no-open      With 'ui': print the URL and do not open a browser
+  --style <name> With 'card': machines (default) or map
+  --names        With 'card': show the real hostnames, not host 1, host 2
+  --badge        With 'card': write fleet-badge.svg, a small badge for a README
 `;
 }
 
@@ -125,7 +130,7 @@ function dispatch(argv: string[]): { result: Promise<Result | Relayed> | Result 
   try {
     parsed = parseArgs({
       args: argv,
-      options: { json: { type: "boolean" }, help: { type: "boolean" }, all: { type: "boolean" }, conflicts: { type: "boolean" }, shell: { type: "boolean" }, review: { type: "boolean" }, yes: { type: "boolean" }, "no-push": { type: "boolean" }, timeout: { type: "string" }, view: { type: "string" }, host: { type: "string" }, port: { type: "string" }, "no-open": { type: "boolean" }, message: { type: "string", short: "m" } },
+      options: { json: { type: "boolean" }, help: { type: "boolean" }, all: { type: "boolean" }, conflicts: { type: "boolean" }, shell: { type: "boolean" }, review: { type: "boolean" }, yes: { type: "boolean" }, "no-push": { type: "boolean" }, timeout: { type: "string" }, view: { type: "string" }, host: { type: "string" }, port: { type: "string" }, "no-open": { type: "boolean" }, style: { type: "string" }, names: { type: "boolean" }, badge: { type: "boolean" }, message: { type: "string", short: "m" } },
       allowPositionals: true,
       strict: true,
     });
@@ -152,6 +157,7 @@ function dispatch(argv: string[]): { result: Promise<Result | Relayed> | Result 
   if (parsed.values.view !== undefined && command.name !== "bridge") return { result: invalid(`--view is only for 'bridge'`), json };
   if (parsed.values.host !== undefined && command.name !== "bridge" && command.name !== "push") return { result: invalid(`--host is only for 'bridge' and 'push'`), json };
   if ((parsed.values.port !== undefined || parsed.values["no-open"]) && command.name !== "ui") return { result: invalid(`--port and --no-open are only for 'ui'`), json };
+  if ((parsed.values.style !== undefined || parsed.values.names || parsed.values.badge) && command.name !== "card") return { result: invalid(`--style, --names and --badge are only for 'card'`), json };
   const port = parsed.values.port === undefined ? undefined : Number(parsed.values.port);
   if (port !== undefined && !(/^\d+$/.test(parsed.values.port!) && port >= 1 && port <= 65535)) return { result: invalid("--port must be a number from 1 to 65535"), json };
   const timeout = parsed.values.timeout === undefined ? undefined : Number(parsed.values.timeout);
@@ -159,7 +165,7 @@ function dispatch(argv: string[]): { result: Promise<Result | Relayed> | Result 
   if (parsed.values.message === "") return { result: invalid("the commit message after -m cannot be empty"), json };
   if (command.name === "help") return { result: helpResult(), json };
   if (!command.run) return { result: { code: "error", messages: [`fleet: '${name}' is not implemented yet`] }, json };
-  return { result: command.run({ color: !json && useColor(process.env, process.stdout.isTTY === true), json, args: rest, message: parsed.values.message, all: parsed.values.all === true, conflicts: parsed.values.conflicts === true, shell: parsed.values.shell === true, review: parsed.values.review === true, yes: parsed.values.yes === true, noPush: parsed.values["no-push"] === true, timeout, view: parsed.values.view, host: parsed.values.host, port, open: parsed.values["no-open"] !== true, found: findConfigDir() }), json };
+  return { result: command.run({ color: !json && useColor(process.env, process.stdout.isTTY === true), json, args: rest, message: parsed.values.message, all: parsed.values.all === true, conflicts: parsed.values.conflicts === true, shell: parsed.values.shell === true, review: parsed.values.review === true, yes: parsed.values.yes === true, noPush: parsed.values["no-push"] === true, timeout, view: parsed.values.view, host: parsed.values.host, port, open: parsed.values["no-open"] !== true, style: parsed.values.style, names: parsed.values.names === true, badge: parsed.values.badge === true, found: findConfigDir() }), json };
 }
 
 export async function main(argv: string[], sink: Sink): Promise<number> {

@@ -11,6 +11,11 @@ import type { StagedSkills } from "./edits.ts";
 import { secretsTable } from "./secretsview.ts";
 import { setRequest, setSecret } from "./secretset.ts";
 import { status } from "../status.ts";
+import { readCard } from "../card/data.ts";
+import { previewText } from "../card/preview.ts";
+import { shareText, SHOW_AND_TELL } from "../card/share.ts";
+import { renderBadge, renderCard } from "../card/svg.ts";
+import { isStyle, STYLES } from "../card/words.ts";
 import { BadRequest } from "./request.ts";
 import { opsOf } from "./opsof.ts";
 import { CloneStore } from "./clones.ts";
@@ -59,6 +64,10 @@ import type { Job } from "./jobs.ts";
  *                      `pushend` (the end document). EventSource cannot send headers, so this one route also takes the
  *                      token as `?token=`.
  *
+ *   POST /api/card     Body `{"style": "machines" | "map", "names": false}` (both optional). The card of this fleet, drawn by the same code as `fleet card`,
+ *                      from what fleet last saw of each host (nothing is asked over ssh): `svg`, `badge` (the README badge), `text` (what the terminal preview
+ *                      prints), `unseen` (how many hosts the bridge never saw) and `share` (`title`, `body` and `url` of a new Show and tell discussion).
+ *                      Hostnames are in it only with `names: true`. Never a server, skill, source or secret name.
  *   GET  /api/skills   The skills found in the source clones fleet already has: name, source, and the bundle that holds it (or null).
  *   POST /api/catalog/clone    Body `{"repo": "...", "path": ".", "branch": "main"}` (path and branch optional). Shallow-clones the repo to a
  *                      temp directory and answers `id`, `commit` (the head, full sha), `branch`, `skills` and `problem`. The repo is
@@ -167,6 +176,22 @@ export function routes(deps: ApiDeps): Route[] {
         const view = readSecrets(deps.configDir, deps.home);
         const table = secretsTable(deps.configDir, loadModel(deps.configDir, readHostName(deps.home)), readFiles(deps.configDir));
         return { status: 200, body: { ok: true, hosts: view.hosts, problems: view.problems, entries: view.entries.map((e) => ({ name: e.name, file: e.file, readers: e.readers, servers: e.servers })), table } };
+      },
+    },
+    {
+      method: "POST",
+      path: "/api/card",
+      handle: async (req) => {
+        const body = await req.json();
+        const doc = typeof body === "object" && body !== null && !Array.isArray(body) ? (body as Record<string, unknown>) : {};
+        const style = doc.style ?? "machines";
+        if (!isStyle(style)) throw new BadRequest(`style must be ${STYLES.join(" or ")}`);
+        if (doc.names !== undefined && typeof doc.names !== "boolean") throw new BadRequest("names must be true or false");
+        const names = doc.names === true;
+        const data = readCard(deps.configDir, deps.home);
+        const share = shareText(data);
+        const url = `${SHOW_AND_TELL}&title=${encodeURIComponent(share.title)}&body=${encodeURIComponent(share.body)}`;
+        return { status: 200, body: { ok: true, style, names, svg: renderCard(data, style, names), badge: renderBadge(data), text: previewText(data, names, false), unseen: data.hosts.filter((h) => !h.seen).length, hosts: data.hosts.length, share: { ...share, url } } };
       },
     },
     {
