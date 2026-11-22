@@ -1,4 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
 import { join } from "node:path";
 import { InvalidConfigError } from "./config.ts";
 import { secretsFile } from "./recipients.ts";
@@ -50,4 +51,33 @@ export function renderKeys(keys: DesiredKey[], secrets: Map<string, string>): De
     const { value, display } = fillSecrets(key.value, secrets);
     return display === null ? key : { ...key, value, display };
   });
+}
+
+/** Which secrets file a name lives in. */
+export type SecretFile = "host" | "shared";
+
+/** The secret names held in each secrets file for `host`. */
+export function secretFiles(configDir: string, host: string): Map<SecretFile, Set<string>> {
+  return new Map<SecretFile, Set<string>>([
+    ["host", namesIn(configDir, host)],
+    ["shared", namesIn(configDir, "shared")],
+  ]);
+}
+
+/** The file that holds `name`, or null when it is in neither file. */
+export function secretFileFor(files: Map<SecretFile, Set<string>>, name: string): SecretFile | null {
+  for (const [file, names] of files) if (names.has(name)) return file;
+  return null;
+}
+
+/**
+ * The ISO timestamp of the last commit that changed `name`'s ciphertext in `file`, from git history.
+ * sops encrypts each value on its own, so a change to one key's ciphertext shows in the patch. A rotation
+ * that re-encrypts every value updates every key at once, so the date is then the rotation's date.
+ */
+export function lastSetForSecret(configDir: string, file: SecretFile, name: string): string | null {
+  const r = spawnSync("git", ["-C", configDir, "log", "-1", "--format=%cI", "-G", `^[+-]?${name}: ENC\\[`, "--", secretsFile(file)], { encoding: "utf8" });
+  if (r.error || r.status !== 0) return null;
+  const line = r.stdout.trim();
+  return line === "" ? null : line;
 }

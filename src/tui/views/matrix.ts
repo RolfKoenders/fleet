@@ -151,6 +151,9 @@ export function drawMatrix(c: Canvas, state: State): void {
         const [g, gs] = HEALTH[hl.health];
         const said = hl.why === null ? (hl.note ?? "") : `${hl.why.words}${hl.why.protocol ? `, protocol ${hl.why.protocol}` : ""}${hl.why.detail ? ` (${hl.why.detail})` : ""}`;
         body.push([[`${g} `, gs], [hl.health === "neutral" ? "needs a login: " : hl.health === "unknown" ? "unknown: " : "doctor: ", s.sub], [said, s.sub]]);
+        if (hl.why !== null && hl.why.secrets.length > 0) {
+          body.push([["set a new value with `fleet secrets` or in the Secrets screen of `fleet ui`", s.sub]]);
+        }
       }
     }
     body.slice(0, whyH - 2).forEach((segs, i) => segments(c, 3, y + 1 + i, segs, c.w - 6));

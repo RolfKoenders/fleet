@@ -102,7 +102,7 @@ test("a bundle is made of the skills the sources have, those of a held source, a
 });
 
 test("the check's answer reads as the result, the tools and their size, and any secret left out", () => {
-  const ok = { result: "ok", tools: 23, tokens: 6100, latencyMs: 480, protocol: "2025-11-25", detail: null, unset: [], agent: "claude" };
+  const ok = { result: "ok", tools: 23, tokens: 6100, latencyMs: 480, protocol: "2025-11-25", detail: null, unset: [], secrets: [], agent: "claude" };
   assert.deepEqual(checkLines(ok), { tone: "ok", lines: ["It started and answered: 23 tools, ~6.1k tokens of definitions in 480 ms."] });
   const missing = checkLines({ ...ok, tools: 1, tokens: 80, unset: ["API_KEY"] });
   assert.equal(missing.lines[0], "It started and answered: 1 tool, ~80 tokens of definitions in 480 ms.");

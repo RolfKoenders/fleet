@@ -19,7 +19,7 @@ A name that is not one is refused with exit 2 before the screen is taken over, a
 - `?` lists the keys, `ctrl-k` opens a palette, and `r` asks the hosts again.
 - `P` reviews a push. Nothing runs until you type `push` and press enter. `tab` moves to an optional commit message (the same as `fleet push -m`); a message never starts a push. A push goes on by itself if you quit or the terminal closes, and the bridge waits for it when it can.
 - `h` on the push screen opens the push history; `enter` replays the selected push and `esc` goes back (see "The push journal").
-- `d` runs `fleet doctor --json` (`--all` across hosts) after you confirm. It starts real MCP servers with real credentials, so opening the bridge never does it. The result fills a health mark beside each server in the matrix; a server that only needs a login is shown as neutral, and any result the bridge does not know is shown as unknown.
+- `d` runs `fleet doctor --json` (`--all` across hosts) after you confirm. It starts real MCP servers with real credentials, so opening the bridge never does it. The result fills a health mark beside each server in the matrix; a server that only needs a login is shown as neutral, a server that rejected a configured secret is shown as failing, and any result the bridge does not know is shown as unknown.
 
 ## Startup context
 

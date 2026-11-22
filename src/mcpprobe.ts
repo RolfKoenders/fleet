@@ -19,7 +19,7 @@ const VERSION = /^\d{4}-\d{2}-\d{2}$/;
 const MODERN_ERRORS = [-32020, -32021, -32022];
 const UNSUPPORTED_VERSION = -32022;
 
-export type ProbeResult = "ok" | "auth-needed" | "unreachable" | "missing-binary" | "bad-response" | "exited" | "timeout";
+export type ProbeResult = "ok" | "auth-needed" | "bad-auth" | "unreachable" | "missing-binary" | "bad-response" | "exited" | "timeout";
 
 /** What to start or call. `transport` is `remote` when the config does not say http or sse (opencode). */
 export type ProbeTarget =
@@ -383,12 +383,10 @@ function fetchFailure(error: unknown, signal: AbortSignal): ProbeError {
 
 function checkStatus(response: Response, hasCredentials: boolean): void {
   if (response.status === 401 || response.status === 403) {
-    throw new ProbeError(
-      "auth-needed",
-      hasCredentials
-        ? `the server rejected the configured credentials (HTTP ${response.status})`
-        : `the server wants a login (HTTP ${response.status}); fleet cannot tell whether one was done`,
-    );
+    if (hasCredentials) {
+      throw new ProbeError("bad-auth", `the server rejected the configured credentials (HTTP ${response.status})`);
+    }
+    throw new ProbeError("auth-needed", `the server wants a login (HTTP ${response.status}); fleet cannot tell whether one was done`);
   }
   if (!response.ok) throw new ProbeError("bad-response", `HTTP ${response.status}`);
 }

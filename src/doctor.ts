@@ -14,7 +14,8 @@ import type { ProbeResult, ProbeTarget } from "./mcpprobe.ts";
 import { paint } from "./output.ts";
 import type { Result } from "./output.ts";
 import { expandTarget } from "./plan.ts";
-import { renderKeys, resolveSecrets } from "./secrets.ts";
+import { renderKeys, resolveSecrets, secretFileFor, secretFiles, lastSetForSecret } from "./secrets.ts";
+import type { SecretFile } from "./secrets.ts";
 import { saveDoctorResult } from "./doctorresult.ts";
 import { hashValue } from "./keys.ts";
 import { ageKeyPath } from "./sops.ts";
@@ -35,12 +36,16 @@ export const DEFAULT_TIMEOUT_SECONDS = 30;
 export type Check = { name: string; result: "ok" | "problem" | "unknown"; detail: string | null };
 
 type ServerResult = ProbeResult;
-const SERVER_RESULTS: ServerResult[] = ["ok", "auth-needed", "unreachable", "missing-binary", "bad-response", "exited", "timeout"];
+const SERVER_RESULTS: ServerResult[] = ["ok", "auth-needed", "bad-auth", "unreachable", "missing-binary", "bad-response", "exited", "timeout"];
+
+/** A secret the server uses, with the file that holds it and when that value was last set in git. */
+export type SecretRef = { name: string; file: SecretFile; lastSet: string | null };
 
 /**
  * One server as one tool has it rendered. `protocol` is the MCP revision it answered in (null when it did
  * not answer). `size` is the characters of its tool definitions and `tokens` the estimate of that (both null
- * when it did not answer). `fails` is false for a result that is expected until a person logs in.
+ * when it did not answer). `fails` is false for a result that is expected until a person logs in. `secrets`
+ * is set when the server rejected configured credentials, naming the secrets to check.
  */
 export type ServerCheck = {
   server: string;
@@ -54,6 +59,7 @@ export type ServerCheck = {
   protocol: string | null;
   detail: string | null;
   fails: boolean;
+  secrets: SecretRef[];
 };
 
 export type DoctorFields = { checks: Check[]; servers: ServerCheck[] };
@@ -140,6 +146,13 @@ export function clean(text: string, secrets: string[]): string {
 const isNpx = (target: ProbeTarget): boolean => target.kind === "stdio" && basename(target.command[0]!) === "npx";
 const NPX_HINT = "npx may still be downloading the package; retry with a higher --timeout";
 
+function secretRefs(files: Map<SecretFile, Set<string>>, configDir: string, host: string, names: string[]): SecretRef[] {
+  return names.map((name) => {
+    const file = secretFileFor(files, name) ?? "shared";
+    return { name, file, lastSet: lastSetForSecret(configDir, file, name) };
+  });
+}
+
 async function checkServers(config: Config, configDir: string, host: string, home: string, timeoutMs: number): Promise<Checked[]> {
   const keys = config.keys.filter((k) => mcpEntryOf(k) !== null);
   // Only the secrets the servers use are decrypted.
@@ -147,6 +160,7 @@ async function checkServers(config: Config, configDir: string, host: string, hom
   const secrets = resolveSecrets(configDir, host, home, names);
   const secretValues = [...secrets.values()];
   const extraDirs = probeExtraDirs(home);
+  const secretFilesMap = secretFiles(configDir, host);
 
   const planned = renderKeys(keys, secrets).map((k) => {
     const { agent, name } = mcpEntryOf(k)!;
@@ -157,10 +171,11 @@ async function checkServers(config: Config, configDir: string, host: string, hom
       // `renderKeys` keeps the order, so keys[i] is the entry before its secrets were filled in: the hash never sees a value.
       const definition = hashValue(keys[i]!.value);
       const base = { server: p.server, tool: p.tool, transport: p.transport };
-      if (p.target === null) return { definition, check: { ...base, result: "bad-response", tools: null, size: null, tokens: null, latencyMs: null, protocol: null, detail: "the rendered entry has an unexpected shape", fails: true } };
+      if (p.target === null) return { definition, check: { ...base, result: "bad-response", tools: null, size: null, tokens: null, latencyMs: null, protocol: null, detail: "the rendered entry has an unexpected shape", fails: true, secrets: [] } };
       const r = await probe(p.target, timeoutMs, extraDirs);
       const fails = r.result !== "ok" && !(r.result === "auth-needed" && !p.credentials);
       const detail = r.detail === null ? null : clean(r.detail, secretValues);
+      const usedSecrets = secretNames(keys[i]!.value);
       return {
         definition,
         check: {
@@ -173,6 +188,7 @@ async function checkServers(config: Config, configDir: string, host: string, hom
           protocol: r.protocol,
           detail: r.result === "timeout" && isNpx(p.target) ? `${detail ?? "no answer in time"}; ${NPX_HINT}` : detail,
           fails,
+          secrets: r.result === "bad-auth" ? secretRefs(secretFilesMap, configDir, host, usedSecrets) : [],
         },
       };
     }),
@@ -189,21 +205,31 @@ const warn = (color: boolean, text: string) => paint(color, "yellow", text);
 const isLogin = (s: ServerCheck): boolean => s.result === "auth-needed" && !s.fails;
 const shownResult = (s: ServerCheck): string => (isLogin(s) ? "login" : s.result);
 const LOGIN_NOTE = "login: the server wants a login, and doctor cannot see login state";
+const BAD_AUTH_NOTE = "bad-auth: the server rejected a configured secret; set a new value with `fleet secrets` or in the Secrets screen of `fleet ui`";
 
-function serverLine(s: ServerCheck, color: boolean): string {
+function secretFileLabel(file: SecretFile, host: string): string {
+  return file === "host" ? `secrets/${host}.enc.yaml` : "secrets/shared.enc.yaml";
+}
+
+function serverLine(s: ServerCheck, host: string, color: boolean): string {
   const facts = [s.tools === null ? null : `${s.tools} tool${s.tools === 1 ? "" : "s"}`, s.tokens === null ? null : `${formatTokens(s.tokens)} tokens`, s.latencyMs === null ? null : `${s.latencyMs} ms`, s.protocol === null ? null : `MCP ${s.protocol}`].filter((f) => f !== null);
   const result = s.result === "ok" ? good(color, "ok") : isLogin(s) ? shownResult(s) : warn(color, s.result);
-  const detail = isLogin(s) ? null : s.detail;
+  let detail = isLogin(s) ? null : s.detail;
+  if (s.result === "bad-auth" && s.secrets.length > 0) {
+    const refs = s.secrets.map((sec) => `${sec.name} in ${secretFileLabel(sec.file, host)}${sec.lastSet === null ? "" : `, set ${sec.lastSet.slice(0, 10)}`}`).join("; ");
+    detail = detail === null ? refs : `${detail}; ${refs}`;
+  }
   return `  ${s.server} (${s.tool}, ${s.transport}): ${result}${facts.length > 0 ? `, ${facts.join(", ")}` : ""}${detail === null ? "" : ` (${detail})`}`;
 }
 
-function lines(fields: DoctorFields, color: boolean): string[] {
+function lines(fields: DoctorFields, host: string, color: boolean): string[] {
   return [
     "checks:",
     ...fields.checks.map((c) => `  ${c.name}: ${c.result === "ok" ? good(color, "ok") : c.result === "unknown" ? "unknown" : warn(color, "problem")}${c.detail === null ? "" : ` (${c.detail})`}`),
     fields.servers.length === 0 ? "mcp servers: none picked" : "mcp servers:",
-    ...fields.servers.map((s) => serverLine(s, color)),
+    ...fields.servers.map((s) => serverLine(s, host, color)),
     ...(fields.servers.some(isLogin) ? [LOGIN_NOTE] : []),
+    ...(fields.servers.some((s) => s.result === "bad-auth") ? [BAD_AUTH_NOTE] : []),
   ];
 }
 
@@ -228,7 +254,7 @@ export async function doctor(configDir: string, color: boolean, timeoutSeconds: 
   // Whether secrets are used is read from the config, without decrypting anything.
   const fields: DoctorFields = { checks: localChecks(home, config === null ? null : config.secrets.length > 0), servers: [] };
   // The local checks still stand when the servers could not even be listed.
-  const stopped = (result: Result): Result => ({ ...result, text: [`host: ${host}`, ...lines(fields, color)].join("\n"), fields: { ...fields } });
+  const stopped = (result: Result): Result => ({ ...result, text: [`host: ${host}`, ...lines(fields, host, color)].join("\n"), fields: { ...fields } });
   if (failed !== null) return stopped(failed);
   let checked: Checked[];
   try {
@@ -249,7 +275,7 @@ export async function doctor(configDir: string, color: boolean, timeoutSeconds: 
   }
   return {
     code: problems === 0 ? "ok" : "unhealthy",
-    text: [`host: ${host}`, ...lines(fields, color)].join("\n"),
+    text: [`host: ${host}`, ...lines(fields, host, color)].join("\n"),
     messages,
     fields: { ...fields },
   };
@@ -268,13 +294,21 @@ type HostDoctor = {
 const asServerResult = (v: unknown): ServerResult => SERVER_RESULTS.find((r) => r === v) ?? "bad-response";
 const checkOf = (v: unknown): Check | null =>
   isObject(v) && printable(v.name) !== null ? { name: printable(v.name)!, result: v.result === "ok" || v.result === "unknown" ? v.result : "problem", detail: printable(v.detail) } : null;
+const secretRefOf = (v: unknown): SecretRef | null => {
+  if (!isObject(v) || printable(v.name) === null) return null;
+  const file = v.file === "host" || v.file === "shared" ? v.file : null;
+  if (file === null) return null;
+  return { name: printable(v.name)!, file, lastSet: printable(v.lastSet) };
+};
+
 const serverOf = (v: unknown): ServerCheck | null => {
   if (!isObject(v) || printable(v.server) === null) return null;
   const tool = isAgentId(v.tool) ? v.tool : null;
   const transport = (["stdio", "http", "sse", "remote"] as const).find((t) => t === v.transport) ?? null;
   if (tool === null || transport === null) return null;
   const result = asServerResult(v.result);
-  return { server: printable(v.server)!, tool, transport, result, tools: count(v.tools), size: count(v.size), tokens: count(v.tokens), latencyMs: count(v.latencyMs), protocol: printable(v.protocol), detail: printable(v.detail), fails: v.fails === true || (v.fails !== false && result !== "ok") };
+  const secrets = Array.isArray(v.secrets) ? v.secrets.map(secretRefOf).filter((s): s is SecretRef => s !== null) : [];
+  return { server: printable(v.server)!, tool, transport, result, tools: count(v.tools), size: count(v.size), tokens: count(v.tokens), latencyMs: count(v.latencyMs), protocol: printable(v.protocol), detail: printable(v.detail), fails: v.fails === true || (v.fails !== false && result !== "ok"), secrets };
 };
 
 /** A remote host's answer cut down to the fields fleet knows and to printable text, because a host can be wrong. */
