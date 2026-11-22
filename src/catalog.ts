@@ -1,5 +1,6 @@
 import { REPO_CREDENTIALS, urlHoldsCredentials } from "./redact.ts";
 import { join } from "node:path";
+import { SKILLS_CATALOG_KEYS, SOURCE_KEYS } from "./configkeys.ts";
 import { isObject, isStringList, parseFile } from "./yamlfile.ts";
 import type { Overlay } from "./yamlfile.ts";
 import type { Obj } from "./yamlfile.ts";
@@ -28,7 +29,6 @@ export type Catalog = {
 /** Names `fleet` itself owns or leaves alone in `~/.claude/skills`. */
 export const RESERVED_SKILLS = ["fleet", "synced", ".trash"];
 
-const SOURCE_KEYS = ["repo", "path", "commit", "track", "branch", "review"];
 const SOURCE_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 const COMMIT = /^[0-9a-f]{40}$/;
 
@@ -94,7 +94,7 @@ export function parseCatalog(configDir: string, problems: string[], overlay?: Ov
   if (doc === null) return empty;
 
   for (const key of Object.keys(doc)) {
-    if (key !== "sources" && key !== "bundles") problems.push(`${path}: unknown key '${key}'`);
+    if (!SKILLS_CATALOG_KEYS.includes(key)) problems.push(`${path}: unknown key '${key}'`);
   }
 
   const sources: Source[] = [];

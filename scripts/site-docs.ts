@@ -35,7 +35,16 @@ export const NAV: Section[] = [
       page("adding-an-agent.md", "Adding an agent", "What it takes for fleet to support another coding agent."),
     ],
   },
-  { name: "Reference", pages: [page("commands.md", "Commands", "Every fleet command and option, what it changes and its --json form.")] },
+  {
+    name: "Reference",
+    pages: [
+      page("commands.md", "Commands", "Every fleet command and option, what it changes and its --json form."),
+      page("reference-fleet-yaml.md", "fleet.yaml", "The pinned tool version every machine runs, and what follows it."),
+      page("reference-hosts.md", "Host files and defaults", "Every key of hosts/_defaults.yaml and hosts/<name>.yaml, and how a host file layers on the defaults."),
+      page("reference-catalog-mcp.md", "catalog/mcp.yaml", "Every key of an MCP server: command or url, env, headers, secrets and only."),
+      page("reference-catalog-skills.md", "catalog/skills.yaml", "Every key of a skill source and a bundle: commit, track, branch and review."),
+    ],
+  },
   { name: "FAQ", pages: [page("faq.md", "FAQ", "Where secrets end up, what the install script does, updating and more.")] },
 ];
 

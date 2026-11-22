@@ -1,4 +1,5 @@
 import { join } from "node:path";
+import { FLEET_KEYS, TOOL_KEYS } from "./configkeys.ts";
 import { isObject, parseFile } from "./yamlfile.ts";
 import type { Overlay } from "./yamlfile.ts";
 
@@ -23,7 +24,7 @@ export function readPin(configDir: string, problems: string[], overlay?: Overlay
 
   const before = problems.length;
   for (const key of Object.keys(doc)) {
-    if (key !== "tool") problems.push(`${path}: unknown key '${key}'`);
+    if (!FLEET_KEYS.includes(key)) problems.push(`${path}: unknown key '${key}'`);
   }
   const { tool } = doc;
   if (!isObject(tool)) {
@@ -31,7 +32,7 @@ export function readPin(configDir: string, problems: string[], overlay?: Overlay
     return null;
   }
   for (const key of Object.keys(tool)) {
-    if (!["repo", "commit", "track"].includes(key)) problems.push(`${path}: unknown key 'tool.${key}'`);
+    if (!TOOL_KEYS.includes(key)) problems.push(`${path}: unknown key 'tool.${key}'`);
   }
   const { repo, commit, track } = tool;
   if (typeof repo !== "string" || repo === "" || repo.startsWith("-")) problems.push(`${path}: 'tool.repo' must be a URL`);

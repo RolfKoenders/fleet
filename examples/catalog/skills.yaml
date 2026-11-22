@@ -1,3 +1,5 @@
+# Every key in this file is explained at https://rolflab.nl/fleet/docs/reference-catalog-skills/
+#
 # Where skills come from, and how they are grouped.
 #
 # A skill is a directory named after the skill with a SKILL.md in it. A source is a git repo

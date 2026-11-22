@@ -7,6 +7,7 @@ Every user-facing change adds a line under `## Unreleased` as it lands, so the s
 ## Cutting a release
 
 1. In `CHANGELOG.md`, rename `## Unreleased` to `## X.Y.Z - YYYY-MM-DD` and add a new empty `## Unreleased` above it.
+   Then replace `not yet released` in `docs/reference-*.md` with `X.Y.Z` (`grep -n "not yet released" docs/reference-*.md` finds them) and run `npm run site:docs`.
 2. Run `npm run site:changelog`. It writes the landing page's release pill, its What's new section and the changelog page from `CHANGELOG.md`; a test fails when you forget.
 3. Commit that to `main` and push it.
 4. Tag the commit and push the tag:

@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>fleet · Docs · Host files and defaults</title>
+  <meta name="description" content="Every key of hosts/_defaults.yaml and hosts/&lt;name&gt;.yaml, and how a host file layers on the defaults.">
+  <meta property="og:title" content="fleet · Docs · Host files and defaults">
+  <meta property="og:description" content="Every key of hosts/_defaults.yaml and hosts/&lt;name&gt;.yaml, and how a host file layers on the defaults.">
+  <meta property="og:image" content="https://rolflab.nl/fleet/social-preview.png">
+  <link rel="canonical" href="https://rolflab.nl/fleet/docs/reference-hosts/">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="theme-color" content="#0b0f14">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 120 84'%3E%3Cpath d='M8 20h22l10 10v32H8Z' fill='none' stroke='%233fb950' stroke-width='5'/%3E%3Cpath d='M40 42C62 42 62 16 84 16M40 42H84M40 42C62 42 62 68 84 68' fill='none' stroke='%237d8590' stroke-width='4'/%3E%3Crect x='84' y='9' width='32' height='14' rx='2' fill='none' stroke='%23e6edf3' stroke-width='4'/%3E%3Crect x='84' y='35' width='32' height='14' rx='2' fill='none' stroke='%23e6edf3' stroke-width='4'/%3E%3Crect x='84' y='61' width='32' height='14' rx='2' fill='none' stroke='%23e6edf3' stroke-width='4'/%3E%3C/svg%3E">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <!-- The terminal font is served from here: Google's subsets leave out the box drawing the TUI is made of. -->
+  <link rel="preload" href="../../fonts/JetBrainsMono-Regular.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="../../fonts/JetBrainsMono-Bold.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="../../style.css">
+  <script defer src="https://analytics.keeply.tools/script.js" data-website-id="ebccdcbe-ca21-4327-b7a4-57136d74c578" data-domains="rolflab.nl"></script>
+
+</head>
+<body data-base="../">
+  <div class="backdrop" aria-hidden="true"></div>
+
+  <header class="nav">
+    <a class="brand" href="../../" aria-label="fleet home">
+      <svg viewBox="0 0 120 84" aria-hidden="true"><path d="M8 20h22l10 10v32H8Z" fill="none" stroke="#3fb950" stroke-width="5"/><path d="M15 38h18M15 46h18M15 54h11" stroke="#3fb950" stroke-width="4"/><path d="M40 42C62 42 62 16 84 16M40 42H84M40 42C62 42 62 68 84 68" fill="none" stroke="#7d8590" stroke-width="4"/><g fill="none" stroke="#e6edf3" stroke-width="4"><rect x="84" y="9" width="32" height="14" rx="2"/><rect x="84" y="35" width="32" height="14" rx="2"/><rect x="84" y="61" width="32" height="14" rx="2"/></g></svg>
+      <span>fleet</span>
+    </a>
+    <nav>
+      <a href="../../#how">How it works</a>
+      <a href="../../#watch">Watch it land</a>
+      <a href="../../#bridge">The bridge</a>
+      <a href="../../#ui">In your browser</a>
+      <a href="../../#compare">Compare</a>
+      <a href="../../#whats-new">What's new</a>
+      <a href="../../#start">Get started</a>
+      <a href="../../docs/" data-umami-event="fleet-docs-click" aria-current="page" style="color:var(--text)">Docs</a>
+      <a class="gh" href="https://github.com/RolfKoenders/fleet" data-umami-event="fleet-github-click" data-umami-event-where="nav">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+        GitHub
+      </a>
+    </nav>
+  </header>
+
+  <main class="docpage">
+    <div class="doc-head">
+      <h1>Host files and defaults</h1>
+      <button type="button" class="doc-menu-btn" aria-expanded="false" aria-controls="doc-side">Menu</button>
+    </div>
+    <aside class="doc-side" id="doc-side">
+      <div class="doc-search" role="search">
+          <input type="search" id="doc-search" placeholder="Search the docs ( / )" autocomplete="off" aria-label="Search the docs">
+          <div class="doc-results" id="doc-results" hidden></div>
+        </div>
+        <nav class="doc-nav" aria-label="Docs">
+        <section><h3>Start</h3><a href="../getting-started/">Getting started</a><a href="../setting-up-machines/">Setting up machines</a></section>
+        <section><h3>Guides</h3><a href="../bridge/">The bridge</a><a href="../ui/">The page</a><a href="../mcp-logins/">MCP logins</a><a href="../adding-an-agent/">Adding an agent</a></section>
+        <section><h3>Reference</h3><a href="../commands/">Commands</a><a href="../reference-fleet-yaml/">fleet.yaml</a><a class="on" aria-current="page" href="../reference-hosts/">Host files and defaults</a><a href="../reference-catalog-mcp/">catalog/mcp.yaml</a><a href="../reference-catalog-skills/">catalog/skills.yaml</a></section>
+        <section><h3>FAQ</h3><a href="../faq/">FAQ</a></section>
+        </nav>
+        <nav class="doc-toc" aria-label="On this page"><h3>On this page</h3><a href="#how-a-host-file-layers-on-the-defaults">How a host file layers on the defaults</a><a href="#example">Example</a><a href="#keys-in-both-files">Keys in both files</a><a href="#keys-only-in-a-host-file">Keys only in a host file</a><a href="#see-also">See also</a></nav>
+    </aside>
+    <article class="doc-body">
+<p>Every machine has a host file, <code>hosts/&lt;name&gt;.yaml</code>, and the name of the file is the name of the host. <code>hosts/_defaults.yaml</code> holds what every host gets. A host file is required for each machine; the defaults file is optional. Both are maps, and a file that holds only comments is an empty map.</p>
+<p>Fleet reads the two files for the host it is on and merges them. A key in the defaults is a default for every host, and the host file adds to it, takes from it or replaces it.</p>
+<h2 id="how-a-host-file-layers-on-the-defaults">How a host file layers on the defaults</h2>
+<p>How the two files combine depends on the key:</p>
+<div class="doc-table"><table><thead><tr><th>Key</th><th>What the host file does</th></tr></thead><tbody><tr><td><code>bundles</code>, <code>mcp.include</code></td><td>Its list is added to the defaults' list.</td></tr><tr><td><code>exclude</code>, <code>mcp.exclude</code></td><td>Its names are taken off after both lists are added. Names in the defaults' <code>exclude</code> are taken off too.</td></tr><tr><td><code>agents</code>, <code>timer</code></td><td>Its value replaces the defaults' value.</td></tr><tr><td><code>vars</code></td><td>Merged name by name. The host's value wins at the same name.</td></tr><tr><td><code>settings</code></td><td>Merged key by key, down to the leaves. The host's value wins at the same key.</td></tr><tr><td><code>files</code></td><td>Merged by <code>target</code>. A host record replaces the default record with the same target and keeps its place.</td></tr></tbody></table></div>
+<p><code>ssh</code>, <code>age</code> and <code>admin</code> are for one machine, so only a host file may set them. Fleet refuses them in the defaults.</p>
+<p>An unknown key is an error in either file, and the message names the file and the key. This is why every host has to run a fleet version that knows a key before a file uses it.</p>
+<h2 id="example">Example</h2>
+<p><code>hosts/_defaults.yaml</code>:</p>
+<pre class="doc-code"><code>timer: 30m
+vars:
+  DOCS_URL: https://docs.example.com
+bundles: [core]
+mcp:
+  include: [docs]
+settings:
+  claude:
+    attribution:
+      commit: ""
+files:
+  - { source: config/AGENTS.md, target: ~/.claude/CLAUDE.md }</code></pre>
+<p><code>hosts/server.yaml</code>:</p>
+<pre class="doc-code"><code>ssh: me@server
+age: ""
+vars:
+  DOCS_URL: https://docs.internal.example.com
+agents: [claude]
+exclude: [core]
+files:
+  - { source: config/rules/host/server.md, target: ~/.claude/rules/host.md }</code></pre>
+<p>The server gets no <code>core</code> bundle, the docs server with the internal URL, Claude Code only, and both linked files.</p>
+<h2 id="keys-in-both-files">Keys in both files</h2>
+<h3 id="vars"><code>vars</code></h3>
+<p>Type: map of name to string. Default: empty. Added in: 1.0.0.</p>
+<p>Values for <code>{{ vars.NAME }}</code> in <code>catalog/mcp.yaml</code> and in <code>settings</code> values. A name that is used is letters, digits and <code>_</code>, and does not start with a digit. <code>HOME</code> is built in, holds the machine's home directory and cannot be set. A value cannot hold a <code>secret:NAME</code>, because variables are plain text in the repo; put secrets in <code>env</code>, <code>headers</code> or <code>url</code> of a catalog server instead. A name that is used and not defined in any file is an error.</p>
+<pre class="doc-code"><code>vars:
+  DOCS_URL: https://docs.example.com</code></pre>
+<h3 id="bundles"><code>bundles</code></h3>
+<p>Type: list of strings. Default: empty. Added in: 1.0.0.</p>
+<p>Skill bundles this host gets, by the names in <code>catalog/skills.yaml</code>. A name that is not there is an error. Fleet links each skill of a picked bundle into the skills directory of every agent that reads one.</p>
+<pre class="doc-code"><code>bundles: [core, extra]</code></pre>
+<h3 id="exclude"><code>exclude</code></h3>
+<p>Type: list of strings. Default: empty. Added in: 1.0.0.</p>
+<p>Bundles to take away, even when the defaults or another list adds them. Use it in a host file to opt a machine out of a bundle the defaults give everyone. Names must be bundles in <code>catalog/skills.yaml</code>.</p>
+<pre class="doc-code"><code>exclude: [core]</code></pre>
+<h3 id="mcp-include"><code>mcp.include</code></h3>
+<p>Type: list of strings. Default: empty. Added in: 1.0.0.</p>
+<p>MCP servers this host gets, by the names under <code>servers</code> in <code>catalog/mcp.yaml</code>. A name that is not there is an error. Fleet writes each server into the file of every agent the host gets and the server's <code>only</code> allows.</p>
+<pre class="doc-code"><code>mcp:
+  include: [docs, tracker]</code></pre>
+<h3 id="mcp-exclude"><code>mcp.exclude</code></h3>
+<p>Type: list of strings. Default: empty. Added in: 1.0.0.</p>
+<p>MCP servers to take away, even when the defaults or another list include them.</p>
+<pre class="doc-code"><code>mcp:
+  exclude: [docs]</code></pre>
+<h3 id="settings-agent"><code>settings.&lt;agent&gt;</code></h3>
+<p>Type: map. Default: none. Added in: 1.0.0. <code>settings.antigravity</code> is new in 2.6.0.</p>
+<p>Settings fleet owns inside the settings file an agent also writes. <code>&lt;agent&gt;</code> is <code>claude</code> (<code>~/.claude/settings.json</code>), <code>opencode</code> (<code>~/.config/opencode/opencode.jsonc</code>) or <code>antigravity</code> (<code>~/.gemini/antigravity-cli/settings.json</code>). Fleet sets every key you list at each apply, so a change made by hand is a conflict. It never reads or touches a key you do not list.</p>
+<p>Nested maps are followed down to the leaves, and each leaf is one owned key. A list is a leaf, so a list replaces the whole list. A value must be something JSON can hold. A key may not be empty, hold a <code>.</code> or be <code>__proto__</code>. Declaring a map and one of its members in the same file is an error: declare the whole value or its members, not both.</p>
+<p>Each agent has keys fleet refuses, such as the keys the agent writes itself (a chosen model, a theme) and the place its MCP servers live. The error names the key and says why. A <code>secret:NAME</code> in a value is replaced from the encrypted secrets at apply, and shown as <code>***</code> in diffs.</p>
+<pre class="doc-code"><code>settings:
+  claude:
+    attribution:
+      commit: ""
+      pr: ""
+  opencode:
+    autoupdate: false</code></pre>
+<h3 id="files"><code>files</code></h3>
+<p>Type: list of records. Default: empty. Added in: 1.0.0.</p>
+<p>Files linked into place on the host. Each record is a map with a <code>source</code> and a <code>target</code>, described below. The target becomes a symlink to the file in your repo, so the repo holds the only copy. A directory works the same way. A real file already at the target is a conflict: fleet writes nothing and tells you how to clear it.</p>
+<p>Fleet skips a record whose target belongs to an agent the host does not get, so one list can name the files of every agent. The target of the fleet skill (<code>~/.claude/skills/fleet</code> and its twins) is reserved, and so is any skill's directory that a bundle links.</p>
+<pre class="doc-code"><code>files:
+  - { source: config/AGENTS.md, target: ~/.claude/CLAUDE.md }
+  - { source: config/AGENTS.md, target: ~/.gemini/GEMINI.md }</code></pre>
+<h3 id="files-source"><code>files[].source</code></h3>
+<p>Type: string, a path. Default: none, required. Added in: 1.0.0.</p>
+<p>Where the file is, relative to the root of your config repo. It must exist, must not start with <code>/</code> and must not contain <code>..</code>.</p>
+<pre class="doc-code"><code>files:
+  - { source: config/rules/claude.md, target: ~/.claude/rules/claude.md }</code></pre>
+<h3 id="files-target"><code>files[].target</code></h3>
+<p>Type: string, a path. Default: none, required. Added in: 1.0.0.</p>
+<p>Where the link goes. It starts with <code>~/</code> and has no <code>.</code>, <code>..</code> or empty segments. It cannot name the same target twice in one file. Neither <code>source</code> nor <code>target</code> can hold a <code>secret:NAME</code>.</p>
+<pre class="doc-code"><code>files:
+  - { source: config/AGENTS.md, target: ~/.claude/CLAUDE.md }</code></pre>
+<h3 id="agents"><code>agents</code></h3>
+<p>Type: list of strings. Default: none, which means the agents installed on the host. Added in: 2.6.0.</p>
+<p>Names the agents this host gets, instead of detecting them. The values are <code>claude</code>, <code>opencode</code> and <code>antigravity</code>; an unknown id or an empty list is an error. A named agent is set up whether or not it is installed. Without the key, a host gets the agents it has, and config for an agent that is not installed is not applied. See <a href="../setting-up-machines/#which-agents-a-machine-gets">which agents a machine gets</a>.</p>
+<pre class="doc-code"><code>agents: [claude, opencode]</code></pre>
+<h3 id="timer"><code>timer</code></h3>
+<p>Type: string. Default: <code>30m</code>. Added in: not yet released.</p>
+<p>How often the timer runs <code>fleet apply</code> on a machine: <code>5m</code>, <code>10m</code>, <code>15m</code>, <code>20m</code>, <code>30m</code>, a whole number of hours <code>1h</code> to <code>24h</code>, or <code>off</code>, which removes the timer so the host applies only on <code>fleet push</code> or by hand. Any other value is an error that lists these. See <a href="../setting-up-machines/#the-timers-schedule">the timer's schedule</a>.</p>
+<pre class="doc-code"><code>timer: 1h</code></pre>
+<h2 id="keys-only-in-a-host-file">Keys only in a host file</h2>
+<h3 id="ssh"><code>ssh</code></h3>
+<p>Type: string. Default: none. Added in: 1.0.0.</p>
+<p>How to reach the host: any destination <code>ssh</code> accepts, for the user the config is for. <code>fleet push</code> applies on a host with an <code>ssh</code> line right away, and the admin host sets the machine up over it with <code>fleet init</code>. Without it, the host applies only on its own timer.</p>
+<pre class="doc-code"><code>ssh: me@server</code></pre>
+<h3 id="age"><code>age</code></h3>
+<p>Type: string. Default: none. Added in: 1.0.0.</p>
+<p>The host's age public key, which the secrets files are encrypted to. Leave it empty: <code>fleet init &lt;host&gt;</code> makes the key on the machine, writes the public half here and encrypts the secrets files again. A host whose <code>age</code> is empty cannot read any secret.</p>
+<pre class="doc-code"><code>age: ""</code></pre>
+<h3 id="admin"><code>admin</code></h3>
+<p>Type: boolean. Default: <code>false</code>. Added in: 1.0.0.</p>
+<p>Marks the machine you work from. Exactly one host file has <code>admin: true</code>. Its key can read every secrets file, and it is the host that runs <code>fleet init</code> for the others. The admin host also needs an <code>age</code> key.</p>
+<pre class="doc-code"><code>admin: true</code></pre>
+<h2 id="see-also">See also</h2>
+<ul><li><a href="../reference-catalog-mcp/"><code>catalog/mcp.yaml</code></a> for the servers <code>mcp.include</code> picks from.</li><li><a href="../reference-catalog-skills/"><code>catalog/skills.yaml</code></a> for the bundles <code>bundles</code> picks from.</li><li><a href="../setting-up-machines/">Setting up machines</a> for ssh, agents and the timer.</li></ul>
+    </article>
+  </main>
+
+  <script src="../docs.js" defer></script>
+</body>
+</html>

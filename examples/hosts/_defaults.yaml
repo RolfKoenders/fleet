@@ -1,3 +1,5 @@
+# Every key in this file is explained at https://rolflab.nl/fleet/docs/reference-hosts/
+#
 # What every host gets. A host file (hosts/<name>.yaml) adds to this or takes from it.
 #
 # How the two combine:

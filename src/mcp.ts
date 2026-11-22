@@ -1,6 +1,7 @@
 import { dirname, join } from "node:path";
 import { AGENTS, having } from "./agents/index.ts";
 import type { Agent, AgentId, Has } from "./agents/index.ts";
+import { MCP_CATALOG_KEYS, SERVER_KEYS } from "./configkeys.ts";
 import { MCP_URL_CREDENTIALS, URL_SPACE, urlHoldsCredentials } from "./redact.ts";
 import type { DesiredKey } from "./settings.ts";
 import { fillVars, hasSecretRef } from "./template.ts";
@@ -21,7 +22,6 @@ export type Server = {
   only: AgentId[];
 };
 
-const SERVER_KEYS = ["command", "env", "transport", "url", "headers", "only"];
 const SERVER_NAME = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
 
 const isStringMap = (v: unknown): v is Record<string, string> => isObject(v) && Object.values(v).every((x) => typeof x === "string");
@@ -101,7 +101,7 @@ export function parseMcpCatalog(configDir: string, problems: string[], overlay?:
   const doc = parseFile(path, true, problems, overlay);
   if (doc === null) return servers;
   for (const key of Object.keys(doc)) {
-    if (key !== "servers") problems.push(`${path}: unknown key '${key}'`);
+    if (!MCP_CATALOG_KEYS.includes(key)) problems.push(`${path}: unknown key '${key}'`);
   }
   if (doc.servers === undefined) return servers;
   if (!isObject(doc.servers)) {

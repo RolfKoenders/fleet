@@ -1,3 +1,5 @@
+# Every key in this file is explained at https://rolflab.nl/fleet/docs/reference-hosts/
+#
 # A host the laptop reaches over ssh. `fleet push` applies on it right away, and
 # `fleet init server` sets it up from the admin host.
 

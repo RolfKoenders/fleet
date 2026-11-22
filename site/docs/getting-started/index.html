@@ -59,7 +59,7 @@
         <nav class="doc-nav" aria-label="Docs">
         <section><h3>Start</h3><a class="on" aria-current="page" href="../getting-started/">Getting started</a><a href="../setting-up-machines/">Setting up machines</a></section>
         <section><h3>Guides</h3><a href="../bridge/">The bridge</a><a href="../ui/">The page</a><a href="../mcp-logins/">MCP logins</a><a href="../adding-an-agent/">Adding an agent</a></section>
-        <section><h3>Reference</h3><a href="../commands/">Commands</a></section>
+        <section><h3>Reference</h3><a href="../commands/">Commands</a><a href="../reference-fleet-yaml/">fleet.yaml</a><a href="../reference-hosts/">Host files and defaults</a><a href="../reference-catalog-mcp/">catalog/mcp.yaml</a><a href="../reference-catalog-skills/">catalog/skills.yaml</a></section>
         <section><h3>FAQ</h3><a href="../faq/">FAQ</a></section>
         </nav>
         <nav class="doc-toc" aria-label="On this page"><h3>On this page</h3><a href="#working-with-fleet">Working with fleet</a></nav>
@@ -68,7 +68,7 @@
 <p>Install fleet and create your config:</p>
 <pre class="doc-code"><code>curl -fsSL https://raw.githubusercontent.com/RolfKoenders/fleet/main/install.sh | sh
 fleet new ~/fleet-config</code></pre>
-<p>The new repo is a commented example with placeholder skills and MCP servers. Ask your agent to run <code>fleet agent</code> and follow the onboarding recipe, or edit <code>hosts/</code> and <code>catalog/</code> yourself. <code>fleet init</code> fails until the placeholders are gone.</p>
+<p>The new repo is a commented example with placeholder skills and MCP servers. Ask your agent to run <code>fleet agent</code> and follow the onboarding recipe, or edit <code>hosts/</code> and <code>catalog/</code> yourself. Every key you can write is listed in the reference: <a href="../reference-fleet-yaml/"><code>fleet.yaml</code></a>, <a href="../reference-hosts/">host files and defaults</a>, <a href="../reference-catalog-mcp/"><code>catalog/mcp.yaml</code></a> and <a href="../reference-catalog-skills/"><code>catalog/skills.yaml</code></a>. <code>fleet init</code> fails until the placeholders are gone.</p>
 <p>Publish it as a private repo:</p>
 <pre class="doc-code"><code>cd ~/fleet-config
 git add -A &amp;&amp; git commit -m "Start my fleet config"
