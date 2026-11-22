@@ -429,7 +429,9 @@ test("a changed schedule applied by the LaunchAgent's own run reloads the agent 
   assert.deepEqual(sawAtBootout(w.home), ["gone"], "the agent was booted out only once the apply had exited");
   const verbs = lines(w.home, "launchctl").map((c) => c[0]);
   assert.deepEqual(verbs.slice(-2), ["bootout", "bootstrap"], "booted out, then loaded again");
-  assert.match(readFileSync(join(w.home, "Library/Logs/fleet.log"), "utf8"), /reloaded the timer/);
+  // The helper writes its log line after it has loaded the agent again, so wait for the line too.
+  const log = join(w.home, "Library/Logs/fleet.log");
+  await until("the reload to be logged", () => existsSync(log) && /reloaded the timer/.test(readFileSync(log, "utf8")));
 });
 
 test("timer: off applied by the LaunchAgent's own run removes the agent after that run has exited", async () => {
