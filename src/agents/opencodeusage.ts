@@ -106,7 +106,8 @@ function readDatabase(db: Db, request: HistoryRequest): HistoryRead {
   names(db.prepare(`SELECT session_id, data FROM ${schema.tools} WHERE time_created >= ? AND data LIKE '%tool%'`).all(from), (data, session) => {
     for (const { name, input } of toolsIn(data, schema.shape)) {
       if (name === "skill") {
-        const given = input?.name;
+        // The legacy schema names the skill in `input.name`, the current one in `state.input.id`.
+        const given = input?.name ?? input?.id;
         if (typeof given === "string") tally.call("skills", given, session);
       } else {
         const server = serverOfTool(name, request.servers, "_");

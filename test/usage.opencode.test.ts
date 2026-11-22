@@ -7,7 +7,7 @@ import type { HistoryRead, HistoryRequest } from "../src/agents/history.ts";
 import { withoutSqliteWarning } from "../src/agents/history.ts";
 import { readOpencodeHistory } from "../src/agents/opencodeusage.ts";
 import { makeHome } from "./helpers.ts";
-import { addRow, addSession, currentSchema, legacySchema, NOW, openOpencode, SECRETS, toolMessage, toolPart, userMessage } from "./usagefixture.ts";
+import { addRow, addSession, currentSchema, legacySchema, NOW, openOpencode, SECRETS, toolMessage, toolMessageAsWritten, toolPart, userMessage } from "./usagefixture.ts";
 
 const request = (home: string, over: Partial<HistoryRequest> = {}): HistoryRequest => ({ home, env: {}, now: NOW, windowDays: 30, servers: ["tracker", "notes"], skills: ["review", "debug"], ...over });
 const read = async (home: string, over: Partial<HistoryRequest> = {}): Promise<Extract<HistoryRead, { ok: true }>> => {
@@ -35,6 +35,17 @@ test("opencode: the current schema: tool calls in a message's content, counted p
   assert.deepEqual(callsOf(r, "skills", "debug"), { name: "debug", calls: 1, sessions: 1 }, "a skill the user invoked counts");
   assert.equal(r.skills.length, 2);
   assert.equal(r.sessions, 2);
+});
+
+test("opencode: the current schema names a skill the model ran in state.input.id, as opencode writes it", async () => {
+  const home = makeHome();
+  const db = openOpencode(home);
+  currentSchema(db);
+  addSession(db, "session_v2", "s1");
+  addRow(db, "session_message", "s1", 2, toolMessageAsWritten("skill", { id: "review" }));
+  db.close();
+  const r = await read(home);
+  assert.deepEqual(callsOf(r, "skills", "review"), { name: "review", calls: 1, sessions: 1 });
 });
 
 test("opencode: the legacy schema: tool calls in parts, and invoked skills on messages", async () => {

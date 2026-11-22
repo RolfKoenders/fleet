@@ -88,6 +88,11 @@ export const toolMessage = (...names: [name: string, input?: Rec][]): Rec => ({
   content: [{ type: "text", text: SECRET_PROMPT }, ...names.map(([name, input]) => ({ type: "tool", name, input: input ?? { query: SECRET_INPUT }, output: SECRET_RESULT }))],
 });
 
+/** A tool call the way opencode writes it in the current schema: its input under `state`, with its output beside it. */
+export const toolMessageAsWritten = (name: string, input: Rec): Rec => ({
+  content: [{ type: "tool", id: "call-1", name, executed: true, state: { status: "completed", input, content: [{ type: "text", text: SECRET_RESULT }], metadata: { name: "Review", directory: "/x" } } }],
+});
+
 /** A legacy part for one tool call. */
 export const toolPart = (tool: string, input: Rec = { query: SECRET_INPUT }): Rec => ({ type: "tool", tool, state: { status: "completed", input, output: SECRET_RESULT } });
 
