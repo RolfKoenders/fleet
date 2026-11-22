@@ -14,6 +14,7 @@ import { findSkills, placeSource } from "./sources.ts";
 import type { SourceMode } from "./sources.ts";
 import { managedToolDir } from "./dirs.ts";
 import { readPin } from "./pin.ts";
+import { checkNotify } from "./notifyconfig.ts";
 import { DEFAULT_SCHEDULE, parseSchedule, SCHEDULE_VALUES } from "./scheduler.ts";
 import type { Schedule } from "./scheduler.ts";
 import { probedNode } from "./tools.ts";
@@ -85,7 +86,8 @@ function checkFile(path: string, doc: Obj, hostFile: boolean, problems: string[]
     if (!allowed.includes(key)) problems.push(`${path}: unknown key '${key}'`);
   }
 
-  const { vars, bundles, exclude, mcp, settings, files, agents, ssh, age, admin, unmanaged, timer: timerValue } = doc;
+  const { vars, bundles, exclude, mcp, settings, files, agents, ssh, age, admin, unmanaged, timer: timerValue, notify } = doc;
+  checkNotify(path, notify, problems);
   const ownVars: Record<string, string> = {};
   if (vars !== undefined) {
     if (!isObject(vars) || !Object.values(vars).every((v) => typeof v === "string")) {

@@ -77,6 +77,51 @@ Apply keeps the installed timer in step: when `timer:` changes, the next apply r
 
 On a Mac, a change that the LaunchAgent's own run applies (the run every 30 minutes, for a Mac with no `ssh:`) is loaded once that run has finished: apply writes the new plist at once and a process of its own boots the agent out and in again afterwards, with its messages in `~/Library/Logs/fleet.log`. Booting a running agent out from inside its own run would end that run and leave nothing loaded.
 
+## Alerts
+
+A machine that applies on its own timer tells nobody when it stops. Alerts fix that: after a timer run, a machine sends a message when its state changed. Without `notify:` in a host file or the defaults, a machine sends nothing.
+
+```yaml
+# hosts/_defaults.yaml
+notify:
+  desktop: true
+  ntfy: secret:NTFY_URL
+  webhook: secret:FLEET_WEBHOOK
+# hosts/server.yaml
+notify:
+  desktop: false     # overrides one field
+# hosts/scratch.yaml
+notify: off          # no alerts for this machine
+```
+
+A host file overrides the defaults one field at a time, and `notify: off` turns every alert off for that machine. `desktop` is off unless a file turns it on. `ntfy`, `ntfy_token` and `webhook` can be `secret:NAME`, replaced from the machine's secrets when the alert is sent, and a secret is what to use for each: an ntfy topic can be read by anyone who knows it, and a webhook URL often is the credential. Set them with `fleet secrets set <host> NAME`. See [the reference](reference-hosts.md#notify) for each field.
+
+**What alerts.** Each machine alerts about itself, only after a run its own timer started. `fleet push`, a manual `fleet apply` and `fleet init` show their result on screen and send nothing. The events are:
+
+- a new conflict, naming the first one's kind and path;
+- an apply that stops with an error, such as an invalid config or a missing secret;
+- back to ok, after either.
+
+A warning (such as an agent that is not installed), another apply already running, and a config repo that cannot be reached are not alerts: laptops go offline every day. Doctor never runs on the timer, so there are no alerts about MCP logins.
+
+**Only on a change.** A machine remembers its last state in `~/.local/state/fleet/notify.json`. A conflict that is still there on the next run is not sent again, and there are no reminders. The first run after you turn alerts on sends one alert if the machine is already in a conflict or failing, and nothing if it is fine. Turning alerts off makes the machine forget.
+
+**What a message says.** The machine's name, what happened, the first conflict's kind and path, and the command to run, `fleet status --conflicts`. Never a secret value or the content of a file. The webhook gets the same as JSON fields.
+
+**Channels.**
+
+- *Desktop* uses `notify-send` on Linux and `osascript` on a Mac. A machine with no desktop session, such as a server, skips it without an error.
+- *ntfy* posts to the topic URL, at high priority with a warning tag for a problem and at default priority for back to ok.
+- *Webhook* posts the JSON body `{ "v": 1, "host", "event", "message", "conflict", "time", "fleet" }`. Slack and Discord formats are not built in.
+
+**When delivery fails.** A failed delivery never fails the apply. It is a line in the apply log, `fleet status` shows it (`alerts: desktop, ntfy · last sent 2h ago (conflict) · ntfy failed: HTTP 403`, and `alerts` in `status --json`), and the bridge's card for the machine shows a mark. The next change of state tries again; there is no retry loop. The reason is never the URL or the token.
+
+Try it with `fleet notify --test`. It sends a test alert through every channel the machine has and says for each whether it was sent, skipped or failed, and why.
+
+A machine that is down cannot say so. An unreachable machine is for the bridge and the Fleet screen of `fleet ui` to show.
+
+Every machine must run a fleet version that knows `notify:` before a host file uses it, because an older fleet rejects the key as unknown.
+
 ## macOS
 
 Use macOS 12.3 or newer: the scripts use `readlink -f`. `fleet init` reads the version with `sw_vers -productVersion` and stops with a missing prerequisite on an older one.

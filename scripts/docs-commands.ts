@@ -21,6 +21,7 @@ export const GUIDES: Record<string, { text: string; target: string }> = {
   update: { text: "FAQ: how do I update fleet?", target: "faq.md#how-do-i-update-fleet" },
   new: { text: "Getting started", target: "getting-started.md" },
   init: { text: "Setting up machines", target: "setting-up-machines.md" },
+  notify: { text: "Setting up machines: alerts", target: "setting-up-machines.md#alerts" },
   demo: { text: "The bridge: trying it on made-up hosts", target: "bridge.md#trying-it-on-made-up-hosts" },
 };
 

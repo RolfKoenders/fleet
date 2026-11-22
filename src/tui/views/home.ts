@@ -132,7 +132,9 @@ function drawCard(c: Canvas, x: number, y: number, w: number, host: HostInfo, li
   const gap = iw >= 36 ? "  " : " ";
   const tool = (name: string, v: string | null): Seg[] => [[`${name} `, s.faint], [v ?? "–", v === null ? s.faint : s.sub], [gap, s.faint]];
   line(0, [["last change ", s.muted], [lastChange(live!, now), status.applied.at === null ? s.warn : s.text]]);
-  sides(line, 1, iw, [["timer ", s.muted], [status.timer ?? "unknown", timerStyle]], contextSegs(state.contexts[host.name]));
+  // A host whose last alert did not go out says so: the alert was the way it would have told anyone.
+  const alertFailed: Seg[] = !stale && status.alerts !== null && status.alerts.failures.length > 0 ? [["  ⚠ alert not sent", s.warn]] : [];
+  sides(line, 1, iw, [["timer ", s.muted], [status.timer ?? "unknown", timerStyle], ...alertFailed], contextSegs(state.contexts[host.name]));
   const loose: Seg[] = status.unmanaged ? [["   ", s.faint], [`${status.unmanaged} not from config`, s.warn]] : [];
   line(2, [["pending ", s.muted], num(status.pending, s.warn), ["   conflicts ", s.muted], num(status.conflicts, s.bad), ...loose]);
   line(3, [["clone ", s.muted], [`${fleet.branch ?? "detached"}@${fleet.sha.slice(0, 7)}`, s.sub], [fleet.clean ? " clean" : " dirty", fleet.clean ? s.ok : s.warn], [sync, s.warn]]);
