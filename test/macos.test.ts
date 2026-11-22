@@ -122,7 +122,8 @@ test("timer: off installs no LaunchAgent, and the done message says the host has
   assert.match(r.stdout, /'fleet push' still reaches server over ssh/);
 });
 
-test("a rerun on a loaded agent only asks launchd, and a changed file boots it out and in again", () => {  const s = mac();
+test("a rerun on a loaded agent only asks launchd, and a changed file boots it out and in again", () => {
+  const s = mac();
   assert.equal(s.run().code, EXIT.ok);
   rmSync(join(s.lab, "launchctl-calls.log"));
   assert.equal(s.run().code, EXIT.ok);

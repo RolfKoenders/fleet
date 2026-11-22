@@ -104,8 +104,13 @@ const UNSAFE_HOME = 44;
 
 /** The unit bodies, without the newline the install script's `printf` adds. */
 export const SYSTEMD_SERVICE = "[Service]\nType=oneshot\nExecStart=%h/.local/bin/fleet apply";
+/**
+ * The interval as systemd's `OnUnitActiveSec` takes it: `30min`, `6h`. `30min` is what `fleet init` has
+ * always written, so the default schedule leaves an installed timer byte for byte as it is.
+ */
+export const systemdInterval = (schedule: ActiveSchedule): string => (schedule.endsWith("m") ? `${schedule.slice(0, -1)}min` : schedule);
 export const SYSTEMD_TIMER = (schedule: ActiveSchedule): string =>
-  `[Timer]\nOnBootSec=2min\nOnUnitActiveSec=${schedule}\nPersistent=true\n[Install]\nWantedBy=timers.target`;
+  `[Timer]\nOnBootSec=2min\nOnUnitActiveSec=${systemdInterval(schedule)}\nPersistent=true\n[Install]\nWantedBy=timers.target`;
 
 const SYSTEMD_INSTALL = (q: (text: string) => string, schedule: ActiveSchedule): string => `
 d="$HOME/.config/systemd/user"
@@ -128,6 +133,11 @@ systemctl --user is-active --quiet fleet.timer || exit 42
 echo enabled
 `;
 
+/**
+ * Nothing here stops `fleet.service`, so it is safe when `fleet apply` runs from that very service: stopping
+ * the timer does not stop the unit it triggers, and deleting the unit file and reloading leaves a running
+ * unit loaded until its process exits. The install script likewise only restarts `fleet.timer`.
+ */
 const SYSTEMD_REMOVE = `
 d="$HOME/.config/systemd/user"
 if [ -f "$d/fleet.timer" ] || [ -f "$d/fleet.service" ]; then
@@ -202,11 +212,57 @@ export function plistFor(schedule: ActiveSchedule, home: string): string {
 }
 
 /**
+ * Runs after the `fleet apply` it was started by has exited, outside the job: `launchctl bootout` of a running
+ * job terminates the job's whole process group, `sh` and `fleet apply` included, so a reload done inline by
+ * an apply the agent itself started would kill the apply before `bootstrap` ran and leave the Mac with no
+ * agent. Arguments: the apply's pid, the service, the domain, the plist, and what to do once it is gone
+ * (`reload` or `remove`). A bootstrap that fails is retried; an apply that never exits is not waited on
+ * forever, and the agent is then left loaded as it was.
+ */
+const DEFERRED_RELOAD = `
+pid="$1"; svc="$2"; dom="$3"; p="$4"; what="$5"
+n=0
+while kill -0 "$pid" 2>/dev/null; do
+  n=$((n+1)); [ "$n" -gt 600 ] && { echo "fleet: the apply did not exit; the timer was left as it was"; exit 1; }
+  sleep 1
+done
+if [ "$what" = remove ]; then
+  launchctl bootout "$svc" && rm -f "$p" && echo "fleet: removed the timer" && exit 0
+  echo "fleet: could not boot the timer out; ${LAUNCHD_PLIST} is left for the next apply"; exit 1
+fi
+launchctl bootout "$svc"
+n=0
+until launchctl bootstrap "$dom" "$p"; do
+  n=$((n+1)); [ "$n" -ge 5 ] && { echo "fleet: could not load the timer again; log in again or run fleet apply to load it"; exit 1; }
+  sleep 1
+done
+echo "fleet: reloaded the timer"
+`;
+
+/**
+ * Starts the reload as a process of its own, in a session (`setsid`) or at least a process group (`set -m`,
+ * for a Mac, which has no `setsid`) that launchd's termination of the job does not reach, with no pipe of
+ * the caller held open. `what` is `reload` or `remove`; the caller's `$svc`, `$dom` and `$p` are used.
+ */
+const detachedReload = (afterPid: number, what: "reload" | "remove"): string => `
+log="$HOME/${LAUNCHD_LOG}"
+if command -v setsid >/dev/null 2>&1; then
+  setsid nohup sh -c '${DEFERRED_RELOAD}' sh ${afterPid} "$svc" "$dom" "$p" ${what} </dev/null >>"$log" 2>&1 &
+else
+  set -m 2>/dev/null
+  nohup sh -c '${DEFERRED_RELOAD}' sh ${afterPid} "$svc" "$dom" "$p" ${what} </dev/null >>"$log" 2>&1 &
+fi
+echo "reload scheduled after this apply exits"
+`;
+
+/**
  * Written with `bootstrap`, not the deprecated `load`, into the `gui/<uid>` domain, which exists only while
  * the user is logged in at the desktop. Over a plain ssh login with no desktop session it does not, and the
- * script says so (exit 43) instead of falling back to a domain it has not proven.
+ * script says so (exit 43) instead of falling back to a domain it has not proven. With `afterPid`, an apply
+ * that the agent itself started is asking: a loaded agent is then reloaded by `detachedReload` once that
+ * process has exited, never from inside the job.
  */
-const LAUNCHD_INSTALL = (schedule: ActiveSchedule): string => `
+const LAUNCHD_INSTALL = (schedule: ActiveSchedule, afterPid: number | null): string => `
 case "$HOME" in *[\\&\\<\\>\\"]*) echo "HOME contains a character that cannot go in a property list" >&2; exit ${UNSAFE_HOME};; esac
 d="$HOME/Library/LaunchAgents"; p="$HOME/${LAUNCHD_PLIST}"
 mkdir -p "$d" "$HOME/Library/Logs"
@@ -221,20 +277,34 @@ launchctl print "$dom" >/dev/null 2>&1 || { echo "there is no $dom login session
 was=0
 launchctl print "$svc" >/dev/null 2>&1 && was=1
 if [ "$was" = 1 ] && [ "$wrote" = 0 ]; then exit 0; fi
-if [ "$was" = 1 ]; then launchctl bootout "$svc" || exit 41; fi
+${
+  afterPid === null
+    ? `if [ "$was" = 1 ]; then launchctl bootout "$svc" || exit 41; fi`
+    : `if [ "$was" = 1 ]; then${detachedReload(afterPid, "reload")}exit 0; fi`
+}
 launchctl bootstrap "$dom" "$p" || exit 41
 launchctl print "$svc" >/dev/null 2>&1 || exit 42
 echo enabled
 `;
 
-/** Boots the agent out and deletes its plist; with no session to ask, there is nothing loaded, so only the file goes. */
-const LAUNCHD_REMOVE = `
+/**
+ * Boots the agent out and deletes its plist; with no session to ask, there is nothing loaded, so only the file
+ * goes. From an apply the agent itself started (`afterPid`), a loaded agent is booted out after that process
+ * has exited, and the plist goes with it, so a reload that fails leaves the file for the next apply to retry.
+ */
+const LAUNCHD_REMOVE = (afterPid: number | null): string => `
 p="$HOME/${LAUNCHD_PLIST}"
 if [ -f "$p" ]; then
   command -v launchctl >/dev/null 2>&1 || { echo "launchctl is not installed" >&2; exit 40; }
   dom="gui/$(id -u)"; svc="$dom/${LAUNCHD_LABEL}"
   if launchctl print "$dom" >/dev/null 2>&1; then
-    if launchctl print "$svc" >/dev/null 2>&1; then launchctl bootout "$svc" || exit 41; fi
+    if launchctl print "$svc" >/dev/null 2>&1; then
+${
+  afterPid === null
+    ? `      launchctl bootout "$svc" || exit 41`
+    : `${detachedReload(afterPid, "remove")}      exit 0`
+}
+    fi
   fi
   rm -f "$p"
   echo removed
@@ -243,10 +313,13 @@ fi
 
 export type Scheduler = {
   name: SchedulerName;
-  /** The body of the `timer` init step and of apply's timer change, for `sh`. Prints `enabled` or `wrote ...` when it changed something. */
-  install: (q: (text: string) => string, schedule: ActiveSchedule) => string;
+  /**
+   * The body of the `timer` init step and of apply's timer change, for `sh`. Prints `enabled` or `wrote ...` when it changed something.
+   * `afterPid` is the pid of an apply that the timer itself started, which a reload must wait out instead of stopping.
+   */
+  install: (q: (text: string) => string, schedule: ActiveSchedule, afterPid?: number | null) => string;
   /** The body that stops the timer and deletes its files, for `sh`. Prints `removed` when there was something to take off. */
-  remove: () => string;
+  remove: (afterPid?: number | null) => string;
   /** The sentence for a failed script, from its exit status and first stderr line. Null when it is not one of its codes. */
   explain: (host: string, status: number | null, stderr: string) => string | null;
   /** What `init` tells the user when it is done. */
@@ -274,8 +347,8 @@ const systemd: Scheduler = {
 
 const launchd: Scheduler = {
   name: "launchd",
-  install: (_q, schedule) => LAUNCHD_INSTALL(schedule),
-  remove: () => LAUNCHD_REMOVE,
+  install: (_q, schedule, afterPid = null) => LAUNCHD_INSTALL(schedule, afterPid),
+  remove: (afterPid = null) => LAUNCHD_REMOVE(afterPid),
   explain: (host, status, stderr) => {
     if (status === NO_MANAGER) return `fleet: ${host}: launchctl is not installed, so the timer could not be installed`;
     if (status === MANAGER_FAILED) return `fleet: ${host}: launchctl failed (${stderr || "no message"}); the agent is ~/${LAUNCHD_PLIST}. Then run 'fleet init ${host}' again`;

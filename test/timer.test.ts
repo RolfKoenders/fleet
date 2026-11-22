@@ -1,8 +1,10 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { spawn } from "node:child_process";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { installFakeTool, makeClone, makeHome, publish, runFleet, toolCalls, writeExecutable } from "./helpers.ts";
+import { gitEnv, installFakeTool, makeClone, makeHome, NODE, publish, runFleet, toolCalls, writeExecutable } from "./helpers.ts";
+import { binDirs } from "../src/agents/index.ts";
 import { EXIT } from "../src/exit.ts";
 import {
   ACTIVE_SCHEDULES,
@@ -16,6 +18,7 @@ import {
   scheduleWord,
   SYSTEMD_SERVICE,
   SYSTEMD_TIMER,
+  systemdInterval,
 } from "../src/scheduler.ts";
 import type { ActiveSchedule } from "../src/scheduler.ts";
 import { planTimer, timerText } from "../src/timerplan.ts";
@@ -67,7 +70,8 @@ test("a schedule reads as a person reads it", () => {
 });
 
 test("systemd gets the schedule as its OnUnitActiveSec, with the boot delay and persistence as they were", () => {
-  assert.equal(SYSTEMD_TIMER("10m"), `[Timer]\nOnBootSec=2min\nOnUnitActiveSec=10m\nPersistent=true\n[Install]\nWantedBy=timers.target`);
+  assert.equal(SYSTEMD_TIMER("10m"), `[Timer]\nOnBootSec=2min\nOnUnitActiveSec=10min\nPersistent=true\n[Install]\nWantedBy=timers.target`);
+  assert.equal(systemdInterval("30m"), "30min");
   assert.equal(SYSTEMD_TIMER("6h"), `[Timer]\nOnBootSec=2min\nOnUnitActiveSec=6h\nPersistent=true\n[Install]\nWantedBy=timers.target`);
   assert.equal(SYSTEMD_SERVICE, "[Service]\nType=oneshot\nExecStart=%h/.local/bin/fleet apply");
 });
@@ -263,4 +267,210 @@ test("status shows the schedule next to the timer's state, in text and in --json
 test("the label the LaunchAgent uses is the one it has always had", () => {
   assert.equal(LAUNCHD_LABEL, "io.github.rolfkoenders.fleet.apply");
   assert.equal(LAUNCHD_PLIST, `Library/LaunchAgents/${LAUNCHD_LABEL}.plist`);
+});
+
+// ---- a host that was set up before schedules were configurable ----
+
+/** What `fleet init` wrote on a Linux host before the schedule was configurable, byte for byte. */
+const OLD_SERVICE = "[Service]\nType=oneshot\nExecStart=%h/.local/bin/fleet apply\n";
+const OLD_TIMER = "[Timer]\nOnBootSec=2min\nOnUnitActiveSec=30min\nPersistent=true\n[Install]\nWantedBy=timers.target\n";
+
+/** What it wrote on a Mac: every 30 minutes as the minutes 0 and 30 of every hour. */
+function oldPlist(home: string): string {
+  const path = ["$HOME/.local/bin", ...binDirs().map((dir) => `$HOME/${dir}`), "/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(":");
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>${LAUNCHD_LABEL}</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>$HOME/.local/bin/fleet</string>
+    <string>apply</string>
+  </array>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>StartCalendarInterval</key>
+  <array>
+    <dict><key>Minute</key><integer>0</integer></dict>
+    <dict><key>Minute</key><integer>30</integer></dict>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>${path}</string>
+  </dict>
+  <key>StandardOutPath</key>
+  <string>$HOME/Library/Logs/fleet.log</string>
+  <key>StandardErrorPath</key>
+  <string>$HOME/Library/Logs/fleet.log</string>
+</dict>
+</plist>
+`.replaceAll("$HOME", home);
+}
+
+test("the default schedule writes the bytes fleet init has always written", () => {
+  assert.equal(`${SYSTEMD_SERVICE}\n`, OLD_SERVICE);
+  assert.equal(`${SYSTEMD_TIMER(DEFAULT_SCHEDULE)}\n`, OLD_TIMER);
+  assert.equal(plistFor(DEFAULT_SCHEDULE, "/Users/alice"), oldPlist("/Users/alice"));
+});
+
+test("units written by fleet init before this change, and an apply with no timer: key, change nothing and ask no scheduler", () => {
+  const w = world();
+  mkdirSync(units(w.home), { recursive: true });
+  writeFileSync(join(units(w.home), "fleet.service"), OLD_SERVICE);
+  writeFileSync(join(units(w.home), "fleet.timer"), OLD_TIMER);
+  assert.equal(JSON.parse(w.run("diff", "--json").stdout).timer, null);
+  const r = w.run("apply");
+  assert.equal(r.code, EXIT.ok, r.stderr);
+  assert.doesNotMatch(r.stdout, /timer/);
+  assert.equal(readFileSync(join(units(w.home), "fleet.timer"), "utf8"), OLD_TIMER);
+  assert.deepEqual(lines(w.home, "systemctl"), [], "systemctl is not called");
+  assert.deepEqual(lines(w.home, "launchctl"), [], "launchctl is not called");
+});
+
+test("the LaunchAgent fleet init wrote before this change, and an apply with no timer: key, change nothing and ask no scheduler", () => {
+  const w = world();
+  makeMac(w.home);
+  mkdirSync(dirname(plistPath(w.home)), { recursive: true });
+  writeFileSync(plistPath(w.home), oldPlist(w.home));
+  assert.equal(JSON.parse(w.run("diff", "--json").stdout).timer, null);
+  const r = w.run("apply");
+  assert.equal(r.code, EXIT.ok, r.stderr);
+  assert.doesNotMatch(r.stdout, /timer/);
+  assert.equal(readFileSync(plistPath(w.home), "utf8"), oldPlist(w.home));
+  assert.deepEqual(lines(w.home, "launchctl"), [], "launchctl is not called");
+  assert.deepEqual(lines(w.home, "systemctl"), [], "systemctl is not called");
+});
+
+test("an installed timer is read in systemd's own spelling and in fleet's: 30min, 30m, 6h", () => {
+  const home = makeHome("laptop");
+  mkdirSync(units(home), { recursive: true });
+  writeFileSync(join(units(home), "fleet.service"), OLD_SERVICE);
+  for (const [text, schedule] of [["30min", "30m"], ["30m", "30m"], ["10min", "10m"], ["6h", "6h"], ["1h", "1h"]] as const) {
+    writeFileSync(join(units(home), "fleet.timer"), OLD_TIMER.replace("30min", text));
+    assert.deepEqual(planTimer(home, "off"), { change: "remove", schedule: "off", from: schedule }, text);
+  }
+});
+
+// ---- an apply that the timer itself started ----
+
+/**
+ * A launchctl that behaves as launchd does when a running job is booted out: the job's processes are ended.
+ * `job-pid` names the apply that counts as the job; `bootout-saw` records whether it was still running.
+ */
+function launchdKillsTheJob(home: string): void {
+  writeExecutable(
+    join(home, ".local/bin/launchctl"),
+    `#!/bin/sh
+if [ "$1" = bootout ] && [ -f "$HOME/job-pid" ]; then
+  pid=$(cat "$HOME/job-pid")
+  if kill -0 "$pid" 2>/dev/null; then echo alive >> "$HOME/bootout-saw"; kill -9 "$PPID" "$pid"; else echo gone >> "$HOME/bootout-saw"; fi
+fi
+exec ${NODE} "$HOME/.fake-launchctl.js" "$@"
+`,
+  );
+}
+
+/** Runs `fleet apply` as the job: marked the way launchd marks it, and its pid written down for the fake launchd. */
+function applyAsJob(w: ReturnType<typeof world>, marked: boolean): Promise<{ code: number | null; stdout: string }> {
+  return new Promise((resolve) => {
+    const child = spawn(join(w.clone, "bin/fleet"), ["apply"], {
+      env: { PATH: "/usr/bin:/bin", HOME: w.home, FLEET_NODE: NODE, ...gitEnv, FLEET_CONFIG: w.clone, ...(marked ? { XPC_SERVICE_NAME: LAUNCHD_LABEL } : {}) },
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    writeFileSync(join(w.home, "job-pid"), String(child.pid));
+    let stdout = "";
+    child.stdout.on("data", (d: Buffer) => (stdout += d));
+    child.on("close", (code) => resolve({ code, stdout }));
+  });
+}
+
+async function until(what: string, done: () => boolean): Promise<void> {
+  for (let i = 0; i < 200; i++) {
+    if (done()) return;
+    await new Promise((r) => setTimeout(r, 50));
+  }
+  assert.fail(`timed out waiting for ${what}`);
+}
+
+const loadedPlist = (home: string): string | null => (existsSync(join(home, ".fake-agent-loaded")) ? readFileSync(join(home, ".fake-agent-loaded"), "utf8") : null);
+const sawAtBootout = (home: string): string[] => (existsSync(join(home, "bootout-saw")) ? readFileSync(join(home, "bootout-saw"), "utf8").trim().split("\n") : []);
+
+async function loadedMac(schedule: string) {
+  const w = world({ host: `timer: ${schedule}\n` });
+  makeMac(w.home);
+  assert.equal(w.run("apply").code, EXIT.ok);
+  assert.ok(loadedPlist(w.home), "the agent is loaded");
+  launchdKillsTheJob(w.home);
+  return w;
+}
+
+test("the harness: an apply that boots its own agent out is ended by launchd and leaves no agent", async () => {
+  const w = await loadedMac("30m");
+  w.write("hosts/laptop.yaml", "timer: 10m\n");
+  const job = await applyAsJob(w, false);
+  assert.notEqual(job.code, 0, "the apply was killed under itself");
+  await until("the agent to be booted out", () => loadedPlist(w.home) === null);
+  await new Promise((r) => setTimeout(r, 500));
+  assert.equal(loadedPlist(w.home), null, "and nothing loaded the agent again");
+  assert.deepEqual(sawAtBootout(w.home), ["alive"]);
+});
+
+test("a changed schedule applied by the LaunchAgent's own run reloads the agent after that run has exited, and ends with it loaded", async () => {
+  const w = await loadedMac("30m");
+  w.write("hosts/laptop.yaml", "timer: 10m\n");
+  const job = await applyAsJob(w, true);
+  assert.equal(job.code, 0);
+  assert.match(job.stdout, /^updated timer: every 30 minutes -> every 10 minutes$/m);
+  assert.equal(readFileSync(plistPath(w.home), "utf8"), plistFor("10m", w.home), "the new plist is written at once");
+  await until("the agent to be loaded again", () => loadedPlist(w.home) === plistFor("10m", w.home));
+  assert.deepEqual(sawAtBootout(w.home), ["gone"], "the agent was booted out only once the apply had exited");
+  const verbs = lines(w.home, "launchctl").map((c) => c[0]);
+  assert.deepEqual(verbs.slice(-2), ["bootout", "bootstrap"], "booted out, then loaded again");
+  assert.match(readFileSync(join(w.home, "Library/Logs/fleet.log"), "utf8"), /reloaded the timer/);
+});
+
+test("timer: off applied by the LaunchAgent's own run removes the agent after that run has exited", async () => {
+  const w = await loadedMac("30m");
+  w.write("hosts/laptop.yaml", "timer: off\n");
+  const job = await applyAsJob(w, true);
+  assert.equal(job.code, 0);
+  assert.match(job.stdout, /^removed timer$/m);
+  await until("the agent to be removed", () => !existsSync(plistPath(w.home)) && loadedPlist(w.home) === null);
+  assert.deepEqual(sawAtBootout(w.home), ["gone"]);
+});
+
+test("a reload that cannot load the agent again is retried and logged, and the plist stays for the next login", async () => {
+  const w = await loadedMac("30m");
+  w.write("hosts/laptop.yaml", "timer: 10m\n");
+  writeFileSync(join(w.home, "fake-launchctl-fail"), "");
+  const job = await applyAsJob(w, true);
+  assert.equal(job.code, 0, "the apply itself is not failed by the reload");
+  await until("the retries to run out", () => lines(w.home, "launchctl").filter((c) => c[0] === "bootstrap").length >= 5);
+  assert.equal(readFileSync(plistPath(w.home), "utf8"), plistFor("10m", w.home));
+  rmSync(join(w.home, "fake-launchctl-fail"));
+});
+
+test("an apply from the LaunchAgent with nothing to change asks launchd nothing", async () => {
+  const w = await loadedMac("30m");
+  rmSync(join(w.home, "launchctl-calls.log"), { force: true });
+  const job = await applyAsJob(w, true);
+  assert.equal(job.code, 0);
+  assert.deepEqual(lines(w.home, "launchctl"), []);
+});
+
+test("on Linux an apply run by fleet.service changes the timer without touching the running service", () => {
+  const w = world({ host: "timer: 30m\n" });
+  assert.equal(w.run("apply").code, EXIT.ok);
+  w.write("hosts/laptop.yaml", "timer: 10m\n");
+  rmSync(join(w.home, "systemctl-calls.log"));
+  const r = runFleet(w.clone, ["apply"], { home: w.home, env: { INVOCATION_ID: "0123456789abcdef", JOURNAL_STREAM: "8:12345" } });
+  assert.equal(r.code, EXIT.ok, r.stderr);
+  const calls = lines(w.home, "systemctl").map((c) => c.join(" "));
+  assert.ok(calls.every((c) => !c.includes("fleet.service")), `fleet.service is never named: ${calls.join("; ")}`);
+  assert.ok(calls.every((c) => !/\b(stop|kill|disable)\b/.test(c)), `nothing is stopped: ${calls.join("; ")}`);
+  assert.ok(existsSync(join(w.home, ".fake-timer-on")), "the timer is on when the apply ends");
+  assert.equal(readFileSync(join(units(w.home), "fleet.timer"), "utf8"), `${SYSTEMD_TIMER("10m")}\n`);
 });

@@ -558,7 +558,7 @@ test("init installs the schedule the host file asks for, and off installs no tim
   const s = setup({ lab: "timer: 10m\n" });
   const r = s.run();
   assert.equal(r.code, EXIT.ok, r.stderr);
-  assert.match(readFileSync(join(s.units, "fleet.timer"), "utf8"), /^OnUnitActiveSec=10m$/m);
+  assert.match(readFileSync(join(s.units, "fleet.timer"), "utf8"), /^OnUnitActiveSec=10min$/m);
   assert.match(r.stdout, /runs 'fleet apply' every 10 minutes/);
 
   const off = setup({ lab: "timer: off\n" });

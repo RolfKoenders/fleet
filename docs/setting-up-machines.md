@@ -75,6 +75,8 @@ Valid values are `5m`, `10m`, `15m`, `20m`, `30m`, a whole hour `1h` to `24h`, a
 
 Apply keeps the installed timer in step: when `timer:` changes, the next apply rewrites the unit or the plist and restarts it, and `fleet diff` lists the change like any other. `fleet init` installs the timer with the schedule the machine's config asks for.
 
+On a Mac, a change that the LaunchAgent's own run applies (the run every 30 minutes, for a Mac with no `ssh:`) is loaded once that run has finished: apply writes the new plist at once and a process of its own boots the agent out and in again afterwards, with its messages in `~/Library/Logs/fleet.log`. Booting a running agent out from inside its own run would end that run and leave nothing loaded.
+
 ## macOS
 
 Use macOS 12.3 or newer: the scripts use `readlink -f`. `fleet init` reads the version with `sw_vers -productVersion` and stops with a missing prerequisite on an older one.

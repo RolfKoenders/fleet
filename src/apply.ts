@@ -126,7 +126,8 @@ function report(plan: Plan, verbs: Verbs, color: boolean): Result {
   if (plan.timer !== null) {
     const verb = plan.timer.change === "create" ? verbs.create : plan.timer.change === "update" ? verbs.update : verbs.remove;
     lines.push(`${green(verb)} ${timerText(plan.timer)}`);
-  }  for (const c of conflicts) lines.push(`${paint(color, "yellow", "conflict")} ${c.path}: ${c.detail}`, `  fix: ${c.fix}`);
+  }
+  for (const c of conflicts) lines.push(`${paint(color, "yellow", "conflict")} ${c.path}: ${c.detail}`, `  fix: ${c.fix}`);
   if (lines.length === 0) lines.push("nothing to do");
   for (const warning of plan.warnings) lines.push(`${paint(color, "yellow", "warning")} ${warning}`);
 

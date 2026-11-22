@@ -6,6 +6,7 @@ import {
   ACTIVE_SCHEDULES,
   calendarEntries,
   hostOs,
+  LAUNCHD_LABEL,
   LAUNCHD_PLIST,
   parseSchedule,
   plistFor,
@@ -14,7 +15,7 @@ import {
   SYSTEMD_SERVICE,
   SYSTEMD_TIMER,
 } from "./scheduler.ts";
-import type { ActiveSchedule, Schedule } from "./scheduler.ts";
+import type { ActiveSchedule, Os, Schedule } from "./scheduler.ts";
 import { SHELL_PROBE_PATH } from "./tools.ts";
 
 /**
@@ -65,10 +66,11 @@ function calendarSchedule(text: string): Schedule | null {
   return null;
 }
 
-/** The schedule an installed `fleet.timer` asks for, from its `OnUnitActiveSec`. */
+/** The schedule an installed `fleet.timer` asks for, from its `OnUnitActiveSec`: `30min` as `fleet init` wrote it, or `30m` and `6h`. */
 function timerSchedule(text: string): Schedule | null {
   const interval = /^OnUnitActiveSec=(\S+)$/m.exec(text)?.[1] ?? null;
-  return interval === null ? null : parseSchedule(interval);
+  if (interval === null) return null;
+  return parseSchedule(interval.replace(/^(\d+)min$/, "$1m"));
 }
 
 /** The timer's difference from `schedule`, or null when the installed timer is already in step. Reads, writes nothing. */
@@ -100,14 +102,25 @@ export function timerText(change: TimerChange): string {
 }
 
 /**
+ * Whether this `fleet apply` was started by the timer itself. launchd gives a job its label as
+ * `XPC_SERVICE_NAME`, which the agent's plist does not have to set, so the plist stays as it has always been.
+ * systemd needs no such check: its script never stops `fleet.service`.
+ */
+export const startedByTimer = (os: Os, env: NodeJS.ProcessEnv): boolean => os === "darwin" && env.XPC_SERVICE_NAME === LAUNCHD_LABEL;
+
+/**
  * Runs the change's script on this host, the way `init` runs it: `sh`, the home's own bin first on `PATH`.
  * Null when it worked; the sentence for the host when it did not, which apply reports as a warning.
+ * An apply that the timer started must not stop the timer under itself: launchd would end this process
+ * with the job, so the script hands the reload to a process that waits for this one to exit first.
  */
-export function runTimer(change: TimerChange, host: string, home: string = homedir()): string | null {
-  const scheduler = schedulerFor(hostOs(home));
-  const body = change.change === "remove" ? scheduler.remove() : scheduler.install(q, change.schedule);
+export function runTimer(change: TimerChange, host: string, home: string = homedir(), env: NodeJS.ProcessEnv = process.env): string | null {
+  const os = hostOs(home);
+  const scheduler = schedulerFor(os);
+  const afterPid = startedByTimer(os, env) ? process.pid : null;
+  const body = change.change === "remove" ? scheduler.remove(afterPid) : scheduler.install(q, change.schedule, afterPid);
   const script = `PATH="${SHELL_PROBE_PATH}:$PATH"; export PATH\n${body}`;
-  const r = spawnSync("sh", ["-c", script], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, HOME: home } });
+  const r = spawnSync("sh", ["-c", script], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], env: { ...env, HOME: home } });
   if (r.status === 0) return null;
   const first = (r.stderr ?? "").trim().split("\n")[0] ?? "";
   return (
