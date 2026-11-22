@@ -11,6 +11,7 @@ import { sourceDir } from "../../src/sources.ts";
 import { agentContext } from "../../src/context.ts";
 import type { ContextItem, ContextKind, ContextReport } from "../../src/context.ts";
 import type { HostContext } from "../../src/contextall.ts";
+import type { UsageReport } from "../../src/usage.ts";
 import type { AgentId } from "../../src/agents/index.ts";
 import type { StatusFields } from "../../src/status.ts";
 import { makeHome, repoRoot, tempDir } from "../helpers.ts";
@@ -64,7 +65,7 @@ export const CONTEXTS: Record<string, ContextReport | Exclude<HostContext["resul
   edge: "timer",
 };
 
-export type Canned = { contexts?: Record<string, ContextReport | Exclude<HostContext["result"], "ok"> | "never">; remote?: Record<string, RemoteConflicts>; doctor?: Probe["doctor"]; hosts?: Record<string, HostResult | "never">; conflicts?: ConflictsResult; reads?: Pick<Probe, "history" | "commitDiff" | "secrets" | "catalog"> };
+export type Canned = { /** Usage that a host sends when asked to count its history, and a list of the questions: `host` or `host+usage`. */ usage?: Record<string, UsageReport>; asked?: string[]; contexts?: Record<string, ContextReport | Exclude<HostContext["result"], "ok"> | "never">; remote?: Record<string, RemoteConflicts>; doctor?: Probe["doctor"]; hosts?: Record<string, HostResult | "never">; conflicts?: ConflictsResult; reads?: Pick<Probe, "history" | "commitDiff" | "secrets" | "catalog"> };
 
 /** Reads that find nothing, for tests of other screens. */
 export const noReads: NonNullable<Canned["reads"]> = {
@@ -88,11 +89,12 @@ export function cannedProbe(canned: Canned = {}): Probe {
     },
     ...(canned.contexts
       ? {
-          async context(host: { name: string }, signal: AbortSignal): Promise<HostContext> {
+          async context(host: { name: string }, signal: AbortSignal, usage?: boolean): Promise<HostContext> {
+            canned.asked?.push(usage ? `${host.name}+usage` : host.name);
             const c = canned.contexts![host.name];
             if (c === "never") return new Promise<HostContext>((_, reject) => signal.addEventListener("abort", () => reject(new Error("aborted"))));
             if (c === undefined || typeof c === "string") return { host: host.name, result: c ?? "old", context: null, ...(c === "unreachable" ? { detail: "ssh: connect to host box port 22: Connection timed out" } : {}) };
-            return { host: host.name, result: "ok", context: c };
+            return { host: host.name, result: "ok", context: usage && canned.usage?.[host.name] ? { ...c, usage: canned.usage[host.name]! } : c };
           },
         }
       : {}),

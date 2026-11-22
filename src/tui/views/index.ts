@@ -50,7 +50,7 @@ function baseHints(state: State): Hint[] {
     case "secrets":
       return [["↑↓", "select"], ["v", "by name/host"], ["r", "refresh"], ...COMMON];
     case "context":
-      return [["↑↓", "host"], ["r", "refresh"], ["d", "doctor"], ...COMMON];
+      return [["↑↓", "host"], ["u", state.contextUsage ? "hide usage" : "usage"], ["r", "refresh"], ["d", "doctor"], ...COMMON];
     case "catalog":
       return state.catalog.typing ? [["type", "filter"], ["enter", "keep"], ["esc", "clear"]] : [["↑↓", "select"], ["f", "filter"], ["pgup/dn", "scroll"], ["r", "refresh"], ...COMMON];
   }

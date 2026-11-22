@@ -3,6 +3,7 @@ import type { AgentId } from "./agents/index.ts";
 import { agentContext } from "./context.ts";
 import type { AgentContext, ContextItem, ContextKind, ContextReport, Measurement } from "./context.ts";
 import { count, printable } from "./status.ts";
+import { readUsage } from "./usage.ts";
 import { isObject } from "./yamlfile.ts";
 import type { Obj } from "./yamlfile.ts";
 
@@ -72,5 +73,6 @@ export function readContextReport(stdout: string): ContextRead {
     return isObject(found) ? [agent(id, found)] : [];
   });
   if (agents.length === 0) return { ok: false, reason: "its context named no agent fleet knows" };
-  return { ok: true, report: { agents, notes: notes(doc.notes) } };
+  const usage = readUsage(doc.usage);
+  return { ok: true, report: { agents, notes: notes(doc.notes), ...(usage === null ? {} : { usage }) } };
 }

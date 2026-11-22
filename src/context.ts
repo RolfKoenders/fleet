@@ -12,6 +12,7 @@ import { expandTarget } from "./plan.ts";
 import { readState } from "./state.ts";
 import type { AppliedState } from "./state.ts";
 import { estimateTokens } from "./tokens.ts";
+import type { UsageReport } from "./usage.ts";
 import { isObject } from "./yamlfile.ts";
 import type { Obj } from "./yamlfile.ts";
 
@@ -84,6 +85,8 @@ export type ContextReport = {
   agents: AgentContext[];
   /** Things about this host that limit the report, such as an applied state that cannot be read. */
   notes: string[];
+  /** How often each server and skill was used, when `--usage` asked for it. Counts only; see `usage.ts`. */
+  usage?: UsageReport;
 };
 
 export type MeasureOptions = {

@@ -1,3 +1,4 @@
+import { readClaudeHistory } from "./claudeusage.ts";
 import { stringMap, strings, withoutEmpty } from "./shape.ts";
 import type { Agent } from "./types.ts";
 
@@ -53,5 +54,8 @@ export const claude: Agent<"claude"> = {
     dirs: ["~/.claude/rules"],
     setting: null,
   },
+
+  // Transcripts under `~/.claude/projects`; see `claudeusage.ts` for the format and its sources.
+  usage: { read: readClaudeHistory },
 };
 

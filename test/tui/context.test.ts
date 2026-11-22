@@ -8,7 +8,7 @@ import { Headless } from "../../src/tui/headless.ts";
 import { loadModel } from "../../src/tui/model.ts";
 import { paintDiff } from "../../src/tui/buffer.ts";
 import { PARTS } from "../../src/contextview.ts";
-import { fromMemory, shown } from "../../src/tui/contextshown.ts";
+import { fromMemory, shown, toMemory } from "../../src/tui/contextshown.ts";
 import { realProbe } from "../../src/tui/probe.ts";
 import type { Probe } from "../../src/tui/probe.ts";
 import { theme } from "../../src/tui/theme.ts";
@@ -341,4 +341,57 @@ test("the bridge's memory drops an agent fleet does not know before it caps the 
   const report = fromMemory({ agents: [entry("codex"), entry("someday"), entry("claude"), entry("opencode")] });
   assert.deepEqual(report?.agents.map((a) => a.agent), ["claude", "opencode"]);
   assert.equal(fromMemory({ agents: [entry("codex")] }), null, "nothing known is nothing to show");
+});
+
+// ---- usage ----
+
+const USAGE = {
+  laptop: { windowDays: 30, note: "read locally, names and counts only", agents: [{ agent: "claude" as const, status: "ok" as const, reason: null, days: 30, sessions: 8, servers: [{ name: "tracker", calls: 12, sessions: 4 }, { name: "docs", calls: 0, sessions: 0 }], skills: [{ name: "review", calls: 1, sessions: 1 }] }, { agent: "opencode" as const, status: "unavailable" as const, reason: "its database cannot be opened", days: 0, sessions: 0, servers: [], skills: [] }] },
+};
+
+test("context: u asks every host to count its history, shows calls and the share of sessions for the selected host, and u again goes back", async () => {
+  const asked: string[] = [];
+  const b = await bridgeFor(makeConfig(), { hosts, contexts: CONTEXTS, usage: USAGE, asked }, { size: SIZE });
+  b.press("8");
+  assert.match(b.frame(), /u usage/);
+  assert.doesNotMatch(b.frame(), /calls/);
+  asked.length = 0;
+  b.press("u");
+  await b.settle();
+  assert.equal(b.state.contextUsage, true);
+  assert.deepEqual(asked.sort(), ["box+usage", "laptop+usage", "server+usage"], "hosts with an ssh destination, and this one, are asked to count; a timer host is not");
+  const f = b.frame();
+  assert.match(f, /last 30 days \(Claude Code: 30 days\)/);
+  assert.match(f, /claude\s+8 sessions/);
+  assert.match(f, /~14\.2k\s+tracker\s+mcp\s+12 calls\s+in 50% of sessions/);
+  assert.match(f, /~4\.0k\s+docs\s+mcp\s+0 calls\s+in 0% of sessions/);
+  assert.match(f, /docs: never called in 30 days, 4.0k tokens per session: consider exclude/);
+  assert.match(f, /usage unavailable for opencode: its database cannot be opened/);
+  assert.match(f, /read locally, names and counts only/);
+  assert.match(f, /u hide usage/);
+  b.press("u");
+  assert.equal(b.state.contextUsage, false);
+  assert.doesNotMatch(b.frame(), /calls/);
+});
+
+test("context: a host that sent no usage says so, and a refresh while usage is on asks to count again", async () => {
+  const asked: string[] = [];
+  const b = await bridgeFor(makeConfig(), { hosts, contexts: CONTEXTS, usage: USAGE, asked }, { size: SIZE });
+  b.press("8", "u", "down", "down", "down");
+  await b.settle();
+  assert.match(b.frame(), /no usage from this host/);
+  asked.length = 0;
+  b.press("r");
+  await b.settle();
+  assert.ok(asked.length > 0 && asked.every((a) => a.endsWith("+usage")), asked.join());
+});
+
+test("context: the bridge's memory never holds usage", async () => {
+  const kept: unknown[] = [];
+  const b = await bridgeFor(makeConfig(), { hosts, contexts: { ...CONTEXTS, server: CONTEXTS.server! }, usage: { ...USAGE, server: USAGE.laptop } }, { size: SIZE, app: { rememberContext: (host, report) => void kept.push([host, JSON.stringify(toMemory(report))]) } });
+  b.press("8", "u");
+  await b.settle();
+  assert.ok(kept.length > 0);
+  assert.ok(!JSON.stringify(kept).includes("calls"));
+  assert.ok(!JSON.stringify(kept).includes("tracker\",\"calls"));
 });

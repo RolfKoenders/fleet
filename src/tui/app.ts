@@ -107,6 +107,8 @@ export type State = {
   contexts: Record<string, ContextLive>;
   /** The host whose largest items the context screen lists. */
   contextHost: number;
+  /** True while the context screen shows how often each server and skill was used (key `u`); the hosts are then asked to count their history. */
+  contextUsage: boolean;
   /** True where colour is off, so the context bars tell their parts apart by character. */
   plain: boolean;
   conflicts: ConflictsLive;
@@ -183,9 +185,9 @@ export function createApp(options: Options): App<State, Msg> {
     const result = await probe.host(host, signal);
     send({ type: "host", host: name, gen, result });
   };
-  const askContext = (name: string, gen: number): Cmd<Msg> => async ({ send, signal }) => {
+  const askContext = (name: string, gen: number, usage: boolean): Cmd<Msg> => async ({ send, signal }) => {
     const host = model.hosts.find((h) => h.name === name)!;
-    const result = probe.context ? await probe.context(host, signal) : ({ host: name, result: "error", context: null, detail: "this view cannot ask for it" } as const);
+    const result = probe.context ? await probe.context(host, signal, usage) : ({ host: name, result: "error", context: null, detail: "this view cannot ask for it" } as const);
     send({ type: "context", host: name, gen, result });
   };
   const askConflicts: Cmd<Msg> = async ({ send, signal }) => {
@@ -366,7 +368,7 @@ export function createApp(options: Options): App<State, Msg> {
         continue;
       }
       contexts[name] = { phase: "loading", gen, report: before?.report ?? null, seen: before?.seen ?? null, failure: before?.failure ?? null };
-      cmds.push(askContext(name, gen));
+      cmds.push(askContext(name, gen, state.contextUsage));
     }
     return [contexts, cmds];
   }
@@ -590,7 +592,16 @@ export function createApp(options: Options): App<State, Msg> {
     if (state.screen === "matrix") return [moveMatrix(state, key), []];
     if (state.screen === "push") return [state, []];
     if (state.screen === "timeline") return moveTimeline(state, key);
-    if (state.screen === "context") return [moveContext(state, key), []];
+    if (state.screen === "context") {
+      // Counting history takes longer than reading config, so it is asked for only while the key is on.
+      if (ch === "u") {
+        const on = { ...state, contextUsage: !state.contextUsage };
+        if (!on.contextUsage) return [on, []];
+        const [contexts, cmds] = askContexts(on, model.hosts.map((h) => h.name));
+        return [{ ...on, contexts }, cmds];
+      }
+      return [moveContext(state, key), []];
+    }
     if (state.screen === "secrets") return [moveSecrets(state, key), []];
     if (state.screen === "catalog") {
       if (ch === "f") return [{ ...state, catalog: { ...state.catalog, typing: true } }, []];
@@ -627,6 +638,7 @@ export function createApp(options: Options): App<State, Msg> {
         live,
         contexts,
         contextHost: selected,
+        contextUsage: false,
         plain: options.plain === true,
         conflicts: { phase: "loading", items: [], detail: null, selected: 0, remote: {}, first: asked >= 0 ? options.host! : null },
         push: { phase: "idle" },

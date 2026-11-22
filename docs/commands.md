@@ -51,17 +51,18 @@ fleet doctor [--all] [--timeout <seconds>]
 
 **Reads only.** It changes nothing.
 
-Show how much each agent on this host loads before the first prompt (instructions, skill descriptions, MCP tool definitions), as bars and an estimate in tokens, with the largest items (--all asks every host over ssh and draws all bars on one scale). MCP sizes are the ones the last doctor run saved; it starts no server and reads no secret.
+Show how much each agent on this host loads before the first prompt (instructions, skill descriptions, MCP tool definitions), as bars and an estimate in tokens, with the largest items (--all asks every host over ssh and draws all bars on one scale; --usage adds how often each MCP server and skill was used in the last 30 days, counted from each agent's history on the host). MCP sizes are the ones the last doctor run saved; it starts no server and reads no secret. --usage reads only tool names, skill names, session ids and times, and prints names and counts.
 
 ```text
-fleet context [--all]
+fleet context [--all] [--usage]
 ```
 
 **Options**
 
 - `--all`: Ask every host over ssh.
+- `--usage`: Count each MCP server's and skill's calls in the agents' history of the last 30 days, and show them next to its size.
 
-**JSON.** Adds `agents` and `notes`. With `--all`, also `hosts`: one record for each host.
+**JSON.** Adds `agents` and `notes`. With `--usage`, also `usage`: for each agent, its `status`, `days` of history, `sessions` and the `calls` and `sessions` of each server and skill. With `--all`, also `hosts`: one record for each host, and with `--usage` the `usageAll` of every host added up.
 
 **Guide.** [The bridge: startup context](bridge.md#startup-context)
 

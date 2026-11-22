@@ -1,4 +1,5 @@
 import { isObject } from "../yamlfile.ts";
+import { readOpencodeHistory } from "./opencodeusage.ts";
 import { stringMap, strings, withoutEmpty } from "./shape.ts";
 import type { Agent } from "./types.ts";
 
@@ -60,4 +61,7 @@ export const opencode: Agent<"opencode"> = {
     dirs: [],
     setting: SETTINGS,
   },
+
+  // One SQLite database under `~/.local/share/opencode`; see `opencodeusage.ts` for the schemas and its sources.
+  usage: { read: readOpencodeHistory },
 };

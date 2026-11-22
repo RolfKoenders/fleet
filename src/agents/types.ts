@@ -1,4 +1,5 @@
 import type { ProbeTarget } from "../mcpprobe.ts";
+import type { HistoryRead, HistoryRequest } from "./history.ts";
 import type { Obj } from "../yamlfile.ts";
 
 /** A catalog server as an agent renders it: the command already run through `launch`, so `npx` is the one beside Node. */
@@ -84,5 +85,10 @@ export type Agent<Id extends string = string> = {
     dirs: string[];
     /** The settings file whose `instructions` list names more instruction files, or null. */
     setting: string | null;
+  };
+
+  /** Counts, in the agent's history, how often each MCP server and skill was used (`fleet context --usage`). */
+  usage?: {
+    read(request: HistoryRequest): Promise<HistoryRead>;
   };
 };
