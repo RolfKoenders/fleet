@@ -47,9 +47,10 @@ test("apply with events on writes only JSON lines to stderr: stages, then a step
   const events = lines(r.stderr);
   assert.ok(events.every((e) => e.v === 1 && typeof e.event === "string"));
   assert.deepEqual(events.filter((e) => e.event === "stage").map((e) => e.stage), ["sync", "plan", "write"]);
-  assert.equal(events.find((e) => e.stage === "write")!.of, 3);
+  // The first apply also installs the timer, the last write.
+  assert.equal(events.find((e) => e.stage === "write")!.of, 4);
   const steps = events.filter((e) => e.event === "step");
-  assert.deepEqual(steps.map((e) => [e.step, e.n, e.of]), [0, 1, 2].map((i) => ["write-link", i + 1, 3]));
+  assert.deepEqual(steps.map((e) => [e.step, e.n, e.of]), [...[0, 1, 2].map((i) => ["write-link", i + 1, 4]), ["timer", 4, 4]]);
   assert.ok(steps.every((e) => e.host === "laptop"));
   assert.ok(steps.some((e) => e.target === "~/.claude/f1.md"));
   assert.equal(JSON.parse(r.stdout).code, "ok", "stdout is still the one document");

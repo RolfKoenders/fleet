@@ -72,7 +72,7 @@ export type View = { run: PushRun; records: Map<string, HostRecord>; times: Map<
 const SPINNER = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏";
 const BAR = 12;
 const STAGES: Record<string, string> = { sync: "syncing repos", plan: "planning", write: "writing" };
-const STEPS: Record<string, string> = { "write-link": "link", "write-keys": "keys", "add-server": "add server", "remove-server": "remove server", "remove-link": "remove link" };
+const STEPS: Record<string, string> = { "write-link": "link", "write-keys": "keys", "add-server": "add server", "remove-server": "remove server", "remove-link": "remove link", timer: "timer" };
 
 const secs = (ms: number) => `${(ms / 1000).toFixed(1)}s`;
 const length = (segs: Seg[]) => segs.reduce((n, [t]) => n + [...t].length, 0);

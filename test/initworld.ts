@@ -2,7 +2,8 @@ import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import assert from "node:assert/strict";
-import { git, installFakeClaude, makeClone, makeHome, pinToHead, publish, runFleet, tempDir, writeExecutable } from "./helpers.ts";
+import { FAKE_LAUNCHCTL, git, installFakeClaude, makeClone, makeHome, pinToHead, publish, runFleet, tempDir, writeExecutable } from "./helpers.ts";
+import { DEFAULT_SCHEDULE, SYSTEMD_SERVICE, SYSTEMD_TIMER } from "../src/scheduler.ts";
 import { EXIT } from "../src/exit.ts";
 import { findTool } from "../src/tools.ts";
 
@@ -11,8 +12,8 @@ const AGE_KEYGEN = findTool("age-keygen");
 if (SOPS === null || AGE_KEYGEN === null) throw new Error("these tests need sops and age-keygen on the probe path");
 
 /** The two-machine world the `init` tests run in: an admin, a host, a fake `ssh`, and fakes for the tools that could reach the real machine. */
-export const SERVICE = "[Service]\nType=oneshot\nExecStart=%h/.local/bin/fleet apply\n";
-export const TIMER = "[Timer]\nOnBootSec=2min\nOnUnitActiveSec=30min\nPersistent=true\n[Install]\nWantedBy=timers.target\n";
+export const SERVICE = `${SYSTEMD_SERVICE}\n`;
+export const TIMER = `${SYSTEMD_TIMER(DEFAULT_SCHEDULE)}\n`;
 
 /**
  * The fake `ssh` answers for one destination by running the command for real in a second
@@ -43,32 +44,9 @@ if (plan.stderr) process.stderr.write(plan.stderr + "\\n");
 process.exit(plan.exit === undefined ? 0 : plan.exit);
 `;
 
-/** Refuses the legacy verbs and any domain but `gui/<uid>`, and fails `bootstrap` of a loaded agent the way launchd does. */
-export const FAKE_LAUNCHCTL = `
-const fs = require("node:fs");
-const home = process.env.HOME;
-const args = process.argv.slice(2);
-fs.appendFileSync(home + "/launchctl-calls.log", JSON.stringify(args) + "\\n");
-const loaded = home + "/.fake-agent-loaded";
-const [verb, target, plist] = args;
-if (!["print", "bootstrap", "bootout"].includes(verb)) { process.stderr.write("fake launchctl: refusing " + verb + "\\n"); process.exit(2); }
-if (!/^gui\\/\\d+(\\/|$)/.test(target)) { process.stderr.write("fake launchctl: refusing domain " + target + "\\n"); process.exit(2); }
-const inDomain = target.split("/").length === 2;
-if (verb === "print") {
-  if (fs.existsSync(home + "/fake-no-session")) { process.stderr.write("Could not find domain for " + target + "\\n"); process.exit(113); }
-  process.exit(inDomain || fs.existsSync(loaded) ? 0 : 113);
-}
-if (verb === "bootstrap") {
-  if (fs.existsSync(home + "/fake-launchctl-fail")) { process.stderr.write("Bootstrap failed: 5: Input/output error\\n"); process.exit(5); }
-  if (fs.existsSync(loaded)) { process.stderr.write("Bootstrap failed: 5: Input/output error\\n"); process.exit(5); }
-  if (!fs.existsSync(plist)) { process.stderr.write("no such plist\\n"); process.exit(2); }
-  fs.writeFileSync(loaded, fs.readFileSync(plist));
-  process.exit(0);
-}
-if (verb === "bootout") { fs.rmSync(loaded, { force: true }); process.exit(0); }
-`;
+/** The fake `launchctl` is the helpers' `FAKE_LAUNCHCTL`: it is the same agent-loaded model in every world. */
 
-/** Logs each call, refuses anything that is not --user, and keeps "is the timer on" in a file. */
+/** Logs each call, refuses anything that is not --user, and keeps "is the timer on" in a file, which `enable --now` sets and `disable` clears. */
 export const FAKE_SYSTEMCTL = `
 const fs = require("node:fs");
 const home = process.env.HOME;
@@ -78,8 +56,9 @@ if (args[0] !== "--user") { process.stderr.write("fake systemctl: refusing a cal
 if (fs.existsSync(home + "/fake-systemctl-fail")) { process.stderr.write("Failed to connect to bus: No medium found\\n"); process.exit(1); }
 const on = home + "/.fake-timer-on";
 const [, verb, ...rest] = args;
-if (verb === "daemon-reload") process.exit(0);
+if (verb === "daemon-reload" || verb === "restart") process.exit(0);
 if (verb === "enable") { if (rest.includes("--now")) fs.writeFileSync(on, "1"); process.exit(0); }
+if (verb === "disable") { fs.rmSync(on, { force: true }); process.exit(0); }
 if (verb === "is-active") process.exit(fs.existsSync(on) ? 0 : 3);
 process.exit(2);
 `;

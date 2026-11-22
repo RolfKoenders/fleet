@@ -14,6 +14,7 @@ create ~/.claude/rules -> <CONFIG>/config/rules
 create ~/.claude/skills/review -> <HOME>/.local/share/fleet/sources/mine/skills/review
 create ~/.claude/skills/debug -> <HOME>/.local/share/fleet/sources/mine/skills/debug
 create ~/.claude/skills/notes -> <HOME>/.local/share/fleet/sources/mine/skills/notes
+create timer: every 30 minutes
 conflict ~/.config/opencode/opencode.json: ~/.config/opencode/opencode.json exists, and opencode loads both it and ~/.config/opencode/opencode.jsonc
   fix: Move its settings into the host file and delete it (rm ~/.config/opencode/opencode.json), then run 'fleet apply'.
 conflict ~/.config/opencode/opencode.jsonc autoupdate: autoupdate already has a value in ~/.config/opencode/opencode.jsonc that fleet did not write
@@ -135,7 +136,12 @@ exit 3
       "detail": "~/.claude/CLAUDE.md is a file, not a link to <CONFIG>/config/AGENTS.md",
       "fix": "Move or delete it (rm ~/.claude/CLAUDE.md), then run 'fleet apply'. To keep its content, copy it to <CONFIG>/config/AGENTS.md first."
     }
-  ]
+  ],
+  "timer": {
+    "change": "create",
+    "schedule": "30m",
+    "from": null
+  }
 }
 --- stderr
 fleet: 6 conflicts; nothing was written
@@ -156,6 +162,7 @@ created ~/.claude/rules -> <CONFIG>/config/rules
 created ~/.claude/skills/review -> <HOME>/.local/share/fleet/sources/mine/skills/review
 created ~/.claude/skills/debug -> <HOME>/.local/share/fleet/sources/mine/skills/debug
 created ~/.claude/skills/notes -> <HOME>/.local/share/fleet/sources/mine/skills/notes
+created timer: every 30 minutes
 conflict ~/.config/opencode/opencode.json: ~/.config/opencode/opencode.json exists, and opencode loads both it and ~/.config/opencode/opencode.jsonc
   fix: Move its settings into the host file and delete it (rm ~/.config/opencode/opencode.json), then run 'fleet apply'.
 conflict ~/.config/opencode/opencode.jsonc autoupdate: autoupdate already has a value in ~/.config/opencode/opencode.jsonc that fleet did not write

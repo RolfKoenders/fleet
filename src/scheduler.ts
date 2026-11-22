@@ -1,12 +1,16 @@
+import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { binDirs } from "./agents/index.ts";
+import { findTool } from "./tools.ts";
 
 /**
- * What runs `fleet apply` every 30 minutes on a host. Linux uses a systemd user timer, macOS a launchd
- * LaunchAgent. The scheduler is picked by the OS of the host being set up: `init` reads it from that
- * host (`uname -s` over ssh), never from the admin's own `process.platform`.
+ * What runs `fleet apply` on a host, on the schedule its config asks for (`timer:` in a host file or the
+ * defaults, 30 minutes when nothing says otherwise). Linux uses a systemd user timer, macOS a launchd
+ * LaunchAgent. The scheduler is picked by the OS of the host being set up: `init` reads it from that host
+ * (`uname -s` over ssh), and apply and diff read it from the host they run on, never from the admin's own
+ * `process.platform`.
  */
 
 export type Os = "linux" | "darwin";
@@ -24,6 +28,47 @@ export function parseOs(uname: string): Os | null {
     default:
       return null;
   }
+}
+
+// ---- the schedule ----
+
+/**
+ * The schedules a `timer:` key accepts: the ones systemd's `OnUnitActiveSec` and launchd's
+ * `StartCalendarInterval` can both express. Whole hours divide the day, so a run missed while a Mac slept
+ * happens on wake; a schedule such as 45m does not divide it and is refused.
+ */
+export type Schedule = "off" | "5m" | "10m" | "15m" | "20m" | "30m" | `${number}h`;
+/** A schedule with the timer on: everything but `off`. */
+export type ActiveSchedule = Exclude<Schedule, "off">;
+
+const MINUTE_SCHEDULES = ["5m", "10m", "15m", "20m", "30m"] as const;
+const HOUR_SCHEDULE = /^(?:[1-9]|1\d|2[0-4])h$/;
+
+/** What a host gets when no file says otherwise: today's schedule. */
+export const DEFAULT_SCHEDULE: ActiveSchedule = "30m";
+
+/** The valid values, as the error message and the docs list them. */
+export const SCHEDULE_VALUES = "5m, 10m, 15m, 20m, 30m, a whole hour 1h to 24h, or off";
+
+/** Every schedule a host can ask for with the timer on, shortest first. */
+export const ACTIVE_SCHEDULES: readonly ActiveSchedule[] = [
+  ...(MINUTE_SCHEDULES as readonly ActiveSchedule[]),
+  ...Array.from({ length: 24 }, (_, i) => `${i + 1}h` as ActiveSchedule),
+];
+
+/** Parses a `timer:` value; null when it is not a schedule fleet can express. */
+export function parseSchedule(value: unknown): Schedule | null {
+  if (typeof value !== "string") return null;
+  if (value === "off" || (MINUTE_SCHEDULES as readonly string[]).includes(value)) return value as Schedule;
+  return HOUR_SCHEDULE.test(value) ? (value as Schedule) : null;
+}
+
+/** The schedule as a person reads it: `every 30 minutes`, `every hour`, `every 6 hours`, `off`. */
+export function scheduleWord(schedule: Schedule): string {
+  if (schedule === "off") return "off";
+  const n = Number(schedule.slice(0, -1));
+  if (schedule.endsWith("m")) return `every ${n} minutes`;
+  return n === 1 ? "every hour" : `every ${n} hours`;
 }
 
 export const LAUNCHD_LABEL = "io.github.rolfkoenders.fleet.apply";
@@ -48,7 +93,7 @@ export function macosVersionProblem(raw: string): string | null {
   return `this host runs macOS ${raw.trim()}, and fleet needs ${want} or newer`;
 }
 
-/** The exit codes an install script uses; `explain` maps them to a sentence. */
+/** The exit codes an install or removal script uses; `explain` maps them to a sentence. */
 const NO_MANAGER = 40;
 const MANAGER_FAILED = 41;
 const NOT_ACTIVE = 42;
@@ -57,10 +102,17 @@ const UNSAFE_HOME = 44;
 
 // systemd
 
-const SERVICE = "[Service]\nType=oneshot\nExecStart=%h/.local/bin/fleet apply";
-const TIMER = "[Timer]\nOnBootSec=2min\nOnUnitActiveSec=30min\nPersistent=true\n[Install]\nWantedBy=timers.target";
+/** The unit bodies, without the newline the install script's `printf` adds. */
+export const SYSTEMD_SERVICE = "[Service]\nType=oneshot\nExecStart=%h/.local/bin/fleet apply";
+/**
+ * The interval as systemd's `OnUnitActiveSec` takes it: `30min`, `6h`. `30min` is what `fleet init` has
+ * always written, so the default schedule leaves an installed timer byte for byte as it is.
+ */
+export const systemdInterval = (schedule: ActiveSchedule): string => (schedule.endsWith("m") ? `${schedule.slice(0, -1)}min` : schedule);
+export const SYSTEMD_TIMER = (schedule: ActiveSchedule): string =>
+  `[Timer]\nOnBootSec=2min\nOnUnitActiveSec=${systemdInterval(schedule)}\nPersistent=true\n[Install]\nWantedBy=timers.target`;
 
-const SYSTEMD_INSTALL = (q: (text: string) => string): string => `
+const SYSTEMD_INSTALL = (q: (text: string) => string, schedule: ActiveSchedule): string => `
 d="$HOME/.config/systemd/user"
 mkdir -p "$d"
 wrote=0
@@ -68,8 +120,8 @@ put() {
   if [ -f "$d/$1" ] && [ "$(cat "$d/$1")" = "$2" ]; then return 0; fi
   printf '%s\\n' "$2" > "$d/$1.tmp" && mv "$d/$1.tmp" "$d/$1" && wrote=1 && echo "wrote $1"
 }
-put fleet.service ${q(SERVICE)} || exit 41
-put fleet.timer ${q(TIMER)} || exit 41
+put fleet.service ${q(SYSTEMD_SERVICE)} || exit 41
+put fleet.timer ${q(SYSTEMD_TIMER(schedule))} || exit 41
 command -v systemctl >/dev/null 2>&1 || { echo "systemctl is not installed" >&2; exit 40; }
 was=0
 systemctl --user is-active --quiet fleet.timer && was=1
@@ -79,6 +131,22 @@ systemctl --user enable --now fleet.timer || exit 41
 if [ "$was" = 1 ]; then systemctl --user restart fleet.timer || exit 41; fi
 systemctl --user is-active --quiet fleet.timer || exit 42
 echo enabled
+`;
+
+/**
+ * Nothing here stops `fleet.service`, so it is safe when `fleet apply` runs from that very service: stopping
+ * the timer does not stop the unit it triggers, and deleting the unit file and reloading leaves a running
+ * unit loaded until its process exits. The install script likewise only restarts `fleet.timer`.
+ */
+const SYSTEMD_REMOVE = `
+d="$HOME/.config/systemd/user"
+if [ -f "$d/fleet.timer" ] || [ -f "$d/fleet.service" ]; then
+  command -v systemctl >/dev/null 2>&1 || { echo "systemctl is not installed" >&2; exit 40; }
+  if systemctl --user is-active --quiet fleet.timer; then systemctl --user disable --now fleet.timer || exit 41; fi
+  rm -f "$d/fleet.timer" "$d/fleet.service"
+  systemctl --user daemon-reload || exit 41
+  echo removed
+fi
 `;
 
 // launchd
@@ -93,7 +161,23 @@ echo enabled
 /** What the timer finds programs on: the agents' own install directories first, since it has no shell profile. */
 const LAUNCHD_PATH = ["$HOME/.local/bin", ...binDirs().map((dir) => `$HOME/${dir}`), "/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(":");
 
-const PLIST = `<?xml version="1.0" encoding="UTF-8"?>
+/** One entry of a `StartCalendarInterval` array. An omitted `Hour` matches every hour, as today's minute entries do. */
+const calendarEntry = (hour: number | null, minute: number): string => `    <dict>${hour === null ? "" : `<key>Hour</key><integer>${hour}</integer>`}<key>Minute</key><integer>${minute}</integer></dict>`;
+
+/**
+ * The `StartCalendarInterval` entries for a schedule: minutes of every hour for the short ones, and for a
+ * whole number of hours the hours it divides the day into, each at minute 0. `1h` leaves `Hour` out, which
+ * matches every hour; `24h` is hour 0, once a day.
+ */
+export function calendarEntries(schedule: ActiveSchedule): string {
+  const n = Number(schedule.slice(0, -1));
+  if (schedule.endsWith("m")) return Array.from({ length: 60 / n }, (_, i) => calendarEntry(null, i * n)).join("\n");
+  if (n === 1) return calendarEntry(null, 0);
+  return Array.from({ length: 24 / n }, (_, i) => calendarEntry(i * n, 0)).join("\n");
+}
+
+/** The plist body, `$HOME` still to fill in, as the shell that writes the file does. */
+const plist = (schedule: ActiveSchedule): string => `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
@@ -108,8 +192,7 @@ const PLIST = `<?xml version="1.0" encoding="UTF-8"?>
   <true/>
   <key>StartCalendarInterval</key>
   <array>
-    <dict><key>Minute</key><integer>0</integer></dict>
-    <dict><key>Minute</key><integer>30</integer></dict>
+${calendarEntries(schedule)}
   </array>
   <key>EnvironmentVariables</key>
   <dict>
@@ -123,17 +206,68 @@ const PLIST = `<?xml version="1.0" encoding="UTF-8"?>
 </dict>
 </plist>`;
 
+/** The plist as it sits on a host: `$HOME` filled in and one newline at the end, the way the script writes it. */
+export function plistFor(schedule: ActiveSchedule, home: string): string {
+  return `${plist(schedule).replaceAll("$HOME", home)}\n`;
+}
+
+/**
+ * Runs after the `fleet apply` it was started by has exited, outside the job: `launchctl bootout` of a running
+ * job terminates the job's whole process group, `sh` and `fleet apply` included, so a reload done inline by
+ * an apply the agent itself started would kill the apply before `bootstrap` ran and leave the Mac with no
+ * agent. Arguments: the apply's pid, the service, the domain, the plist, and what to do once it is gone
+ * (`reload` or `remove`). A bootstrap that fails is retried; an apply that never exits is not waited on
+ * forever, and the agent is then left loaded as it was.
+ */
+const DEFERRED_RELOAD = `
+pid="$1"; svc="$2"; dom="$3"; p="$4"; what="$5"
+n=0
+while kill -0 "$pid" 2>/dev/null; do
+  n=$((n+1)); [ "$n" -gt 600 ] && { echo "fleet: the apply did not exit; the timer was left as it was"; exit 1; }
+  sleep 1
+done
+if [ "$what" = remove ]; then
+  launchctl bootout "$svc" && rm -f "$p" && echo "fleet: removed the timer" && exit 0
+  echo "fleet: could not boot the timer out; ${LAUNCHD_PLIST} is left for the next apply"; exit 1
+fi
+launchctl bootout "$svc"
+n=0
+until launchctl bootstrap "$dom" "$p"; do
+  n=$((n+1)); [ "$n" -ge 5 ] && { echo "fleet: could not load the timer again; log in again or run fleet apply to load it"; exit 1; }
+  sleep 1
+done
+echo "fleet: reloaded the timer"
+`;
+
+/**
+ * Starts the reload as a process of its own, in a session (`setsid`) or at least a process group (`set -m`,
+ * for a Mac, which has no `setsid`) that launchd's termination of the job does not reach, with no pipe of
+ * the caller held open. `what` is `reload` or `remove`; the caller's `$svc`, `$dom` and `$p` are used.
+ */
+const detachedReload = (afterPid: number, what: "reload" | "remove"): string => `
+log="$HOME/${LAUNCHD_LOG}"
+if command -v setsid >/dev/null 2>&1; then
+  setsid nohup sh -c '${DEFERRED_RELOAD}' sh ${afterPid} "$svc" "$dom" "$p" ${what} </dev/null >>"$log" 2>&1 &
+else
+  set -m 2>/dev/null
+  nohup sh -c '${DEFERRED_RELOAD}' sh ${afterPid} "$svc" "$dom" "$p" ${what} </dev/null >>"$log" 2>&1 &
+fi
+echo "reload scheduled after this apply exits"
+`;
+
 /**
  * Written with `bootstrap`, not the deprecated `load`, into the `gui/<uid>` domain, which exists only while
  * the user is logged in at the desktop. Over a plain ssh login with no desktop session it does not, and the
- * script says so (exit 43) instead of falling back to a domain it has not proven.
+ * script says so (exit 43) instead of falling back to a domain it has not proven. With `afterPid`, an apply
+ * that the agent itself started is asking: a loaded agent is then reloaded by `detachedReload` once that
+ * process has exited, never from inside the job.
  */
-const LAUNCHD_INSTALL = `
+const LAUNCHD_INSTALL = (schedule: ActiveSchedule, afterPid: number | null): string => `
 case "$HOME" in *[\\&\\<\\>\\"]*) echo "HOME contains a character that cannot go in a property list" >&2; exit ${UNSAFE_HOME};; esac
 d="$HOME/Library/LaunchAgents"; p="$HOME/${LAUNCHD_PLIST}"
 mkdir -p "$d" "$HOME/Library/Logs"
 cat > "$p.tmp" <<PLIST_EOF
-${PLIST}
+${plist(schedule)}
 PLIST_EOF
 wrote=0
 if [ -f "$p" ] && cmp -s "$p" "$p.tmp"; then rm -f "$p.tmp"; else mv "$p.tmp" "$p" && wrote=1 && echo "wrote ${LAUNCHD_LABEL}.plist" || exit 41; fi
@@ -143,25 +277,62 @@ launchctl print "$dom" >/dev/null 2>&1 || { echo "there is no $dom login session
 was=0
 launchctl print "$svc" >/dev/null 2>&1 && was=1
 if [ "$was" = 1 ] && [ "$wrote" = 0 ]; then exit 0; fi
-if [ "$was" = 1 ]; then launchctl bootout "$svc" || exit 41; fi
+${
+  afterPid === null
+    ? `if [ "$was" = 1 ]; then launchctl bootout "$svc" || exit 41; fi`
+    : `if [ "$was" = 1 ]; then${detachedReload(afterPid, "reload")}exit 0; fi`
+}
 launchctl bootstrap "$dom" "$p" || exit 41
 launchctl print "$svc" >/dev/null 2>&1 || exit 42
 echo enabled
 `;
 
+/**
+ * Boots the agent out and deletes its plist; with no session to ask, there is nothing loaded, so only the file
+ * goes. From an apply the agent itself started (`afterPid`), a loaded agent is booted out after that process
+ * has exited, and the plist goes with it, so a reload that fails leaves the file for the next apply to retry.
+ */
+const LAUNCHD_REMOVE = (afterPid: number | null): string => `
+p="$HOME/${LAUNCHD_PLIST}"
+if [ -f "$p" ]; then
+  command -v launchctl >/dev/null 2>&1 || { echo "launchctl is not installed" >&2; exit 40; }
+  dom="gui/$(id -u)"; svc="$dom/${LAUNCHD_LABEL}"
+  if launchctl print "$dom" >/dev/null 2>&1; then
+    if launchctl print "$svc" >/dev/null 2>&1; then
+${
+  afterPid === null
+    ? `      launchctl bootout "$svc" || exit 41`
+    : `${detachedReload(afterPid, "remove")}      exit 0`
+}
+    fi
+  fi
+  rm -f "$p"
+  echo removed
+fi
+`;
+
 export type Scheduler = {
   name: SchedulerName;
-  /** The body of the `timer` init step, for `sh`. Prints `enabled` or `wrote ...` when it changed something. */
-  install: (q: (text: string) => string) => string;
-  /** The sentence for a failed install script, from its exit status and first stderr line. Null when it is not one of its codes. */
+  /**
+   * The body of the `timer` init step and of apply's timer change, for `sh`. Prints `enabled` or `wrote ...` when it changed something.
+   * `afterPid` is the pid of an apply that the timer itself started, which a reload must wait out instead of stopping.
+   */
+  install: (q: (text: string) => string, schedule: ActiveSchedule, afterPid?: number | null) => string;
+  /** The body that stops the timer and deletes its files, for `sh`. Prints `removed` when there was something to take off. */
+  remove: (afterPid?: number | null) => string;
+  /** The sentence for a failed script, from its exit status and first stderr line. Null when it is not one of its codes. */
   explain: (host: string, status: number | null, stderr: string) => string | null;
   /** What `init` tells the user when it is done. */
-  done: (host: string) => string;
+  done: (host: string, schedule: Schedule) => string;
 };
+
+const timerOff = (host: string): string =>
+  `${host} is on fleet without a timer: 'fleet apply' runs when you run it, and 'fleet push' still reaches ${host} over ssh. Set 'timer:' in its host file to turn the timer back on.`;
 
 const systemd: Scheduler = {
   name: "systemd",
   install: SYSTEMD_INSTALL,
+  remove: () => SYSTEMD_REMOVE,
   explain: (host, status, stderr) => {
     if (status === NO_MANAGER) return `fleet: ${host}: systemctl is not installed, so the timer could not be installed; run 'fleet apply' by hand or from cron`;
     if (status === MANAGER_FAILED) {
@@ -170,12 +341,14 @@ const systemd: Scheduler = {
     if (status === NOT_ACTIVE) return `fleet: ${host}: fleet.timer is not active after enabling it; see systemctl --user status fleet.timer`;
     return null;
   },
-  done: (host) => `${host} is on fleet: fleet.timer runs 'fleet apply' every 30 minutes (journalctl --user -u fleet).`,
+  done: (host, schedule) =>
+    schedule === "off" ? timerOff(host) : `${host} is on fleet: fleet.timer runs 'fleet apply' ${scheduleWord(schedule)} (journalctl --user -u fleet).`,
 };
 
 const launchd: Scheduler = {
   name: "launchd",
-  install: () => LAUNCHD_INSTALL,
+  install: (_q, schedule, afterPid = null) => LAUNCHD_INSTALL(schedule, afterPid),
+  remove: (afterPid = null) => LAUNCHD_REMOVE(afterPid),
   explain: (host, status, stderr) => {
     if (status === NO_MANAGER) return `fleet: ${host}: launchctl is not installed, so the timer could not be installed`;
     if (status === MANAGER_FAILED) return `fleet: ${host}: launchctl failed (${stderr || "no message"}); the agent is ~/${LAUNCHD_PLIST}. Then run 'fleet init ${host}' again`;
@@ -186,13 +359,29 @@ const launchd: Scheduler = {
     if (status === UNSAFE_HOME) return `fleet: ${host}: ${stderr || "the home directory cannot go in a property list"}`;
     return null;
   },
-  done: (host) => `${host} is on fleet: ${LAUNCHD_LABEL} runs 'fleet apply' at login and every 30 minutes (log: ~/${LAUNCHD_LOG}).`,
+  done: (host, schedule) =>
+    schedule === "off" ? timerOff(host) : `${host} is on fleet: ${LAUNCHD_LABEL} runs 'fleet apply' at login and ${scheduleWord(schedule)} (log: ~/${LAUNCHD_LOG}).`,
 };
 
 export const schedulerFor = (os: Os): Scheduler => (os === "darwin" ? launchd : systemd);
 
 /** The OS this process runs on, for commands that run on the host itself. */
 export const thisOs = (): Os => (process.platform === "darwin" ? "darwin" : "linux");
+
+/**
+ * The OS of the host fleet runs on, as that host's own `uname -s` reports it (the same source `init` reads
+ * over ssh), so a host that reports itself a Mac is managed as one. `process.platform` when uname cannot be
+ * asked, which on a real host agrees with it.
+ */
+export function hostOs(home: string = homedir()): Os {
+  const uname = findTool("uname", process.env, home);
+  if (uname !== null) {
+    const r = spawnSync(uname, ["-s"], { encoding: "utf8", timeout: 5000, stdio: ["ignore", "pipe", "ignore"] });
+    const os = r.error ? null : parseOs(r.stdout ?? "");
+    if (os !== null) return os;
+  }
+  return thisOs();
+}
 
 /**
  * Which scheduler `fleet status` asks on this host. A LaunchAgent that is installed is asked about whatever

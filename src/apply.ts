@@ -28,9 +28,11 @@ import type { SourceMode } from "./sources.ts";
 import { readState, writeState } from "./state.ts";
 import { placeTool } from "./toolclone.ts";
 import type { AppliedState, KeyRecord, LinkRecord } from "./state.ts";
+import { planTimer, runTimer, timerText } from "./timerplan.ts";
+import type { TimerChange } from "./timerplan.ts";
 
 /** `notInstalled` names the agents fleet applied config for and cannot find now; `warnings` says so for each. */
-type Plan = { links: LinkPlan; keys: KeyPlan; warnings: string[]; notInstalled: AgentId[]; pin: AgentId[] | null };
+type Plan = { links: LinkPlan; keys: KeyPlan; warnings: string[]; notInstalled: AgentId[]; pin: AgentId[] | null; timer: TimerChange | null };
 type Planned = { host: string; plan: Plan; state: AppliedState | null };
 
 const conflictsOf = (plan: Plan) => [...plan.keys.conflicts, ...plan.links.conflicts];
@@ -67,7 +69,7 @@ function prepare(configDir: string, home: string, sources: SourceMode, repoConfl
     const state = readState(home);
     // A source that could not be put in place hides its skills, so planning would only invent removals.
     const repos = [...repoConflicts, ...config.conflicts];
-    if (repos.length > 0) return { host, plan: { links: { ...emptyPlan(), conflicts: repos }, keys: emptyKeyPlan(), warnings: [], notInstalled: [], pin: config.pin }, state };
+    if (repos.length > 0) return { host, plan: { links: { ...emptyPlan(), conflicts: repos }, keys: emptyKeyPlan(), warnings: [], notInstalled: [], pin: config.pin, timer: null }, state };
     const secrets = resolveSecrets(configDir, host, home, config.secrets);
     const rendered = renderKeys(config.keys, secrets);
     // What an agent that is not on the host has is left as it is: not planned, so never removed, and kept in the applied state.
@@ -84,6 +86,7 @@ function prepare(configDir: string, home: string, sources: SourceMode, repoConfl
       keys,
       notInstalled,
       pin: config.pin,
+      timer: planTimer(home, config.timer),
       warnings: [
         ...AGENTS.filter((a) => notInstalled.includes(a.id)).map(notInstalledWarning),
         ...config.notes,
@@ -120,6 +123,10 @@ function report(plan: Plan, verbs: Verbs, color: boolean): Result {
   for (const c of links.creates) lines.push(`${green(verbs.create)} ${c.target} -> ${c.source}`);
   for (const r of links.removes) lines.push(`${green(verbs.remove)} ${r.target}`);
   for (const f of links.forgets) lines.push(`${green(verbs.forget)} ${f.target} (already gone)`);
+  if (plan.timer !== null) {
+    const verb = plan.timer.change === "create" ? verbs.create : plan.timer.change === "update" ? verbs.update : verbs.remove;
+    lines.push(`${green(verb)} ${timerText(plan.timer)}`);
+  }
   for (const c of conflicts) lines.push(`${paint(color, "yellow", "conflict")} ${c.path}: ${c.detail}`, `  fix: ${c.fix}`);
   if (lines.length === 0) lines.push("nothing to do");
   for (const warning of plan.warnings) lines.push(`${paint(color, "yellow", "warning")} ${warning}`);
@@ -140,6 +147,7 @@ function report(plan: Plan, verbs: Verbs, color: boolean): Result {
       unchanged: [...keys.noops.map(keyName), ...links.noops.map((n) => n.target)],
       warnings: plan.warnings,
       conflicts,
+      timer: plan.timer,
     },
   };
 }
@@ -229,7 +237,8 @@ export function apply(toolDir: string, configDir: string, color: boolean, home: 
     const planned = prepare(configDir, home, "apply", synced.conflicts);
     if (isResult(planned)) return planned;
     const { host, plan, state } = planned;
-    const result = report(plan, { create: "created", update: "updated", remove: "removed", forget: "forgot" }, color);
+    const verbs = { create: "created", update: "updated", remove: "removed", forget: "forgot" } as const;
+    const result = report(plan, verbs, color);
     if (conflictsOf(plan).length > 0) return result;
 
     const links = new Map<string, string>((state?.links ?? []).map((l) => [l.target, l.source]));
@@ -277,10 +286,10 @@ export function apply(toolDir: string, configDir: string, color: boolean, home: 
       }
     }
 
-    // What the write stage will do, so a reader can show `n of`: one step per settings file, per `claude` call, per link.
+    // What the write stage will do, so a reader can show `n of`: one step per settings file, per `claude` call, per link, and the timer.
     const directFiles = mergedFiles().filter((file) => !writtenByBinary({ file }));
     const settingsFiles = directFiles.filter((file) => plan.keys.removes.some((k) => k.file === file) || [...plan.keys.creates, ...plan.keys.updates].some((k) => k.file === file));
-    const of = settingsFiles.length + claudeRemoves.length + claudeSets.length + plan.links.creates.length + plan.links.removes.length;
+    const of = settingsFiles.length + claudeRemoves.length + claudeSets.length + plan.links.creates.length + plan.links.removes.length + (plan.timer === null ? 0 : 1);
     let n = 0;
     const done = (step: string, target: string) => send({ event: "step", host: name, step, target, n: ++n, of });
     send({ event: "stage", host: name, stage: "write", of });
@@ -325,8 +334,16 @@ export function apply(toolDir: string, configDir: string, color: boolean, home: 
       save();
       done("remove-link", remove.target);
     }
+    let outcome = result;
+    if (plan.timer !== null) {
+      const warning = runTimer(plan.timer, host, home);
+      // The scripts ask systemd or launchd, which a host can fail to reach with the config still applied, so a
+      // failure is a warning and the state is still saved. `init`'s timer step is the one that stops for a scheduler it cannot ask.
+      if (warning !== null) outcome = report({ ...plan, warnings: [...plan.warnings, warning] }, verbs, color);
+      else done("timer", "timer");
+    }
     if (snapshot(configSha ?? state?.repos?.config ?? null) !== before) save();
-    return result;
+    return outcome;
   } finally {
     unlock();
   }

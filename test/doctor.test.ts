@@ -532,6 +532,16 @@ test("a stopped timer always fails, even on a host that uses no secrets and has 
   assert.deepEqual(doc.checks.map((c) => [c.name, c.result]), [["timer", "problem"], ["age-key", "ok"], ["skill-links", "ok"]]);
 });
 
+test("a host whose config turns the timer off has no timer problem", () => {
+  const s = setup("", { hosts: { laptop: "timer: off\n" }, timer: "inactive" });
+  const { r, doc } = s.json();
+  assert.equal(r.code, EXIT.ok, r.stderr);
+  const timer = doc.checks.find((c) => c.name === "timer")!;
+  assert.equal(timer.result, "ok");
+  assert.match(timer.detail!, /off in the config/);
+  assert.match(s.run().stdout, /^ {2}timer: ok \(off in the config, so apply runs only when asked\)$/m);
+});
+
 test("a timer that systemd cannot be asked about, in a shell with no user session, is unknown and not a problem", { skip: linuxOnly }, () => {
   const s = setup("", { timer: "active" });
   // What `systemctl --user` does after `sudo -iu`: no bus to connect to, nothing on stdout.

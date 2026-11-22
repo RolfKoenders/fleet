@@ -13,6 +13,8 @@ import { findSkills, placeSource } from "./sources.ts";
 import type { SourceMode } from "./sources.ts";
 import { managedToolDir } from "./dirs.ts";
 import { readPin } from "./pin.ts";
+import { DEFAULT_SCHEDULE, parseSchedule, SCHEDULE_VALUES } from "./scheduler.ts";
+import type { Schedule } from "./scheduler.ts";
 import { probedNode } from "./tools.ts";
 import { fillVars, hasSecretRef, secretNames } from "./template.ts";
 import { isObject, isStringList, parseFile } from "./yamlfile.ts";
@@ -48,6 +50,8 @@ export type Config = {
   agents: Registered[];
   /** The agents the host file or the defaults name in `agents`, or null when they name none. */
   pin: AgentId[] | null;
+  /** The apply timer's schedule: the host file's `timer:`, else the defaults', else every 30 minutes. */
+  timer: Schedule;
   /** What an agent on this host leaves out of its MCP file, one line per agent, for diff and apply to say. */
   notes: string[];
 };
@@ -67,10 +71,10 @@ export type LoadOptions = {
 
 type UnresolvedRecord = { source: string; target: string };
 
-const SHARED_KEYS = ["vars", "bundles", "exclude", "mcp", "settings", "files", "agents"];
+const SHARED_KEYS = ["vars", "bundles", "exclude", "mcp", "settings", "files", "agents", "timer"];
 const HOST_ONLY_KEYS = ["ssh", "age", "admin"];
 
-type Checked = { records: UnresolvedRecord[]; declared: Declared[]; vars: Record<string, string>; agents: AgentId[] | null };
+type Checked = { records: UnresolvedRecord[]; declared: Declared[]; vars: Record<string, string>; agents: AgentId[] | null; timer: Schedule | null };
 
 function checkFile(path: string, doc: Obj, hostFile: boolean, problems: string[]): Checked {
   const allowed = hostFile ? [...SHARED_KEYS, ...HOST_ONLY_KEYS] : SHARED_KEYS;
@@ -78,7 +82,7 @@ function checkFile(path: string, doc: Obj, hostFile: boolean, problems: string[]
     if (!allowed.includes(key)) problems.push(`${path}: unknown key '${key}'`);
   }
 
-  const { vars, bundles, exclude, mcp, settings, files, agents, ssh, age, admin } = doc;
+  const { vars, bundles, exclude, mcp, settings, files, agents, ssh, age, admin, timer: timerValue } = doc;
   const ownVars: Record<string, string> = {};
   if (vars !== undefined) {
     if (!isObject(vars) || !Object.values(vars).every((v) => typeof v === "string")) {
@@ -112,6 +116,11 @@ function checkFile(path: string, doc: Obj, hostFile: boolean, problems: string[]
     else if (unknown.length > 0) problems.push(`${path}: 'agents' names ${unknown.map((id) => `'${id}'`).join(", ")}, which fleet does not know (${AGENT_IDS.join(", ")})`);
     else pin = AGENT_IDS.filter((id) => agents.includes(id));
   }
+  let timer: Schedule | null = null;
+  if (timerValue !== undefined) {
+    timer = parseSchedule(timerValue);
+    if (timer === null) problems.push(`${path}: 'timer' must be ${SCHEDULE_VALUES}`);
+  }
   const declared: Declared[] = [];
   if (settings !== undefined) {
     if (!isObject(settings)) {
@@ -130,10 +139,10 @@ function checkFile(path: string, doc: Obj, hostFile: boolean, problems: string[]
   if (admin !== undefined && typeof admin !== "boolean") problems.push(`${path}: 'admin' must be true or false`);
 
   const records: UnresolvedRecord[] = [];
-  if (files === undefined) return { records, declared, vars: ownVars, agents: pin };
+  if (files === undefined) return { records, declared, vars: ownVars, agents: pin, timer };
   if (!Array.isArray(files)) {
     problems.push(`${path}: 'files' must be a list`);
-    return { records, declared, vars: ownVars, agents: pin };
+    return { records, declared, vars: ownVars, agents: pin, timer };
   }
   const seen = new Set<string>();
   files.forEach((entry, i) => {
@@ -160,7 +169,7 @@ function checkFile(path: string, doc: Obj, hostFile: boolean, problems: string[]
     seen.add(target);
     records.push({ source, target });
   });
-  return { records, declared, vars: ownVars, agents: pin };
+  return { records, declared, vars: ownVars, agents: pin, timer };
 }
 
 const listOf = (doc: Obj | null, key: string): string[] => (doc && isStringList(doc[key]) ? (doc[key] as string[]) : []);
@@ -215,7 +224,7 @@ export function loadConfig(configDir: string, host: string, options: LoadOptions
   const catalog = parseCatalog(configDir, problems, overlay);
   readPin(configDir, problems, overlay);
 
-  const empty: Checked = { records: [], declared: [], vars: {}, agents: null };
+  const empty: Checked = { records: [], declared: [], vars: {}, agents: null, timer: null };
   const checkedDefaults = defaults ? checkFile(defaultsPath, defaults, false, problems) : empty;
   const checkedHost = own ? checkFile(hostPath, own, true, problems) : empty;
   const vars = { ...checkedDefaults.vars, ...checkedHost.vars, HOME: home };
@@ -239,6 +248,7 @@ export function loadConfig(configDir: string, host: string, options: LoadOptions
 
   // A host file's list replaces the defaults', as every shared key does.
   const pin = checkedHost.agents ?? checkedDefaults.agents;
+  const timer = checkedHost.timer ?? checkedDefaults.timer ?? DEFAULT_SCHEDULE;
   const on = options.agents === undefined ? [...AGENTS] : hostAgents(pin, options.agents);
   const keep = (path: string): boolean => !leftAlone(path, on);
   const notes = having("mcp", on).flatMap((a) => leftOutNote(a, pickedServers) ?? []);
@@ -295,5 +305,25 @@ export function loadConfig(configDir: string, host: string, options: LoadOptions
   if (problems.length > 0) throw new InvalidConfigError(problems);
   const kept = keys.filter((key) => keep(key.file));
   const secrets = [...new Set(kept.flatMap((key) => secretNames(key.value)))].sort();
-  return conflicts.length > 0 ? { files: [], keys: [], conflicts, secrets: [], skills: [], agents: on, pin, notes } : { files, keys: kept, conflicts, secrets, skills, agents: on, pin, notes };
+  return conflicts.length > 0
+    ? { files: [], keys: [], conflicts, secrets: [], skills: [], agents: on, pin, timer, notes }
+    : { files, keys: kept, conflicts, secrets, skills, agents: on, pin, timer, notes };
+}
+
+/**
+ * The host's `timer:` value read on its own: the host file's, else the defaults', else every 30 minutes.
+ * The full loader checks the key with everything else; this is for `init`'s timer step, which runs after the
+ * config has already been read whole, and for `status`, which shows the schedule even when the rest of the
+ * plan cannot be made. Problems are appended, not thrown; null when the files cannot be read at all.
+ */
+export function readSchedule(configDir: string, host: string, problems: string[]): Schedule | null {
+  const defaultsPath = join(configDir, "hosts/_defaults.yaml");
+  const hostPath = join(configDir, "hosts", `${host}.yaml`);
+  const defaults = parseFile(defaultsPath, true, problems);
+  const own = parseFile(hostPath, false, problems);
+  if (own === null) return null;
+  for (const [path, doc] of [[defaultsPath, defaults], [hostPath, own]] as const) {
+    if (doc !== null && doc.timer !== undefined && parseSchedule(doc.timer) === null) problems.push(`${path}: 'timer' must be ${SCHEDULE_VALUES}`);
+  }
+  return parseSchedule(own.timer) ?? parseSchedule(defaults?.timer) ?? DEFAULT_SCHEDULE;
 }

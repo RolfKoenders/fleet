@@ -18,7 +18,7 @@ A machine gets the agents installed on it, and fleet found none of `<agent>` alt
 
 ## When does a change reach a machine?
 
-`fleet push` applies it straight away on every machine with an `ssh:` line in its host file. Every machine also pulls and applies every 30 minutes, so one that was offline catches up. A machine with no `ssh:` line gets changes only this way.
+`fleet push` applies it straight away on every machine with an `ssh:` line in its host file. Every machine also pulls and applies on its own timer, every 30 minutes by default, so one that was offline catches up. `timer:` in `hosts/_defaults.yaml` changes the schedule for every machine and in a host file for that one; `timer: off` leaves a machine to `fleet push` and manual applies, and apply installs, changes and removes the timer to match. A machine with no `ssh:` line gets changes only this way.
 
 ## What does the install script do?
 

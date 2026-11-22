@@ -3,9 +3,13 @@
 # How the two combine:
 #   bundles, mcp.include   the host's list is added to this one
 #   exclude, mcp.exclude   taken off after everything is added
-#   agents                 the host's list replaces this one
+#   agents, timer          the host's value replaces this one
 #   settings, vars         merged key by key; the host's value wins at the same key
 #   files                  a host record with the same `target` replaces this one
+
+# How often the timer runs 'fleet apply' on every host: 5m, 10m, 15m, 20m, 30m, a whole
+# hour 1h to 24h, or off to apply only with 'fleet push' or by hand. Unset means 30m.
+# timer: 30m
 
 # Variables for {{ vars.NAME }} in the catalog. A host file can set its own value.
 vars:

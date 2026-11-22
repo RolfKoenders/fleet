@@ -113,11 +113,14 @@ test("adopt mcp is a no-op for the next apply and diff when nothing else is pend
   const adopted = s.state();
   const r = s.run(["apply"]);
   assert.equal(r.code, EXIT.ok, r.stderr);
-  assert.equal(r.stdout.trim(), "nothing to do");
+  // The only thing the first apply does is install the timer, which no adoption covers.
+  assert.equal(r.stdout.trim(), "created timer: every 30 minutes");
   // The first apply records which config commit it saw; it changes nothing else.
   assert.deepEqual({ ...s.state(), appliedAt: "", repos: {} }, { ...adopted, appliedAt: "", repos: {} });
   const stateBefore = s.read(STATE);
-  assert.equal(s.run(["apply"]).code, EXIT.ok);
+  const again = s.run(["apply"]);
+  assert.equal(again.code, EXIT.ok);
+  assert.equal(again.stdout.trim(), "nothing to do");
   assert.equal(s.read(STATE), stateBefore);
   assert.deepEqual(claudeCalls(s.home), []);
   assert.equal(s.run(["adopt", "mcp", "stats"]).code, EXIT.ok);

@@ -24,6 +24,7 @@ create ~/.claude/rules -> <CONFIG>/config/rules
 create ~/.claude/skills/review -> <HOME>/.local/share/fleet/sources/mine/skills/review
 create ~/.claude/skills/debug -> <HOME>/.local/share/fleet/sources/mine/skills/debug
 create ~/.claude/skills/notes -> <HOME>/.local/share/fleet/sources/mine/skills/notes
+create timer: every 30 minutes
 --- stderr
 
 $ fleet diff --json
@@ -133,7 +134,12 @@ exit 0
   "forgotten": [],
   "unchanged": [],
   "warnings": [],
-  "conflicts": []
+  "conflicts": [],
+  "timer": {
+    "change": "create",
+    "schedule": "30m",
+    "from": null
+  }
 }
 --- stderr
 
@@ -163,6 +169,7 @@ created ~/.claude/rules -> <CONFIG>/config/rules
 created ~/.claude/skills/review -> <HOME>/.local/share/fleet/sources/mine/skills/review
 created ~/.claude/skills/debug -> <HOME>/.local/share/fleet/sources/mine/skills/debug
 created ~/.claude/skills/notes -> <HOME>/.local/share/fleet/sources/mine/skills/notes
+created timer: every 30 minutes
 --- stderr
 fleet: running from <CONFIG>, not the managed fleet clone, so the config's pinned tool commit was not enforced
 
@@ -483,6 +490,7 @@ exit 0
     "config": "<SHA>"
   },
   "timer": "active",
+  "schedule": "30m",
   "pending": 0,
   "conflicts": 0,
   "conflictList": [],
