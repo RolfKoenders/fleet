@@ -154,33 +154,33 @@ files:
 <p>Names the agents this host gets, instead of detecting them. The values are <code>claude</code>, <code>opencode</code> and <code>antigravity</code>; an unknown id or an empty list is an error. A named agent is set up whether or not it is installed. Without the key, a host gets the agents it has, and config for an agent that is not installed is not applied. See <a href="../setting-up-machines/#which-agents-a-machine-gets">which agents a machine gets</a>.</p>
 <pre class="doc-code"><code>agents: [claude, opencode]</code></pre>
 <h3 id="timer"><code>timer</code></h3>
-<p>Type: string. Default: <code>30m</code>. Added in: not yet released.</p>
+<p>Type: string. Default: <code>30m</code>. Added in: 2.7.0.</p>
 <p>How often the timer runs <code>fleet apply</code> on a machine: <code>5m</code>, <code>10m</code>, <code>15m</code>, <code>20m</code>, <code>30m</code>, a whole number of hours <code>1h</code> to <code>24h</code>, or <code>off</code>, which removes the timer so the host applies only on <code>fleet push</code> or by hand. Any other value is an error that lists these. See <a href="../setting-up-machines/#the-timers-schedule">the timer's schedule</a>.</p>
 <pre class="doc-code"><code>timer: 1h</code></pre>
 <h3 id="notify"><code>notify</code></h3>
-<p>Type: map, or <code>off</code>. Default: none, which means no alerts. Added in: not yet released.</p>
+<p>Type: map, or <code>off</code>. Default: none, which means no alerts. Added in: 2.7.0.</p>
 <p>Where a machine sends an alert when an apply its timer started stops, or recovers: a new conflict, an apply that stops with an error, and back to ok. Each machine alerts about itself, and only after a timer run; <code>fleet push</code>, a manual <code>fleet apply</code> and <code>fleet init</code> show their result on screen. A machine that sets no <code>notify:</code> sends nothing. In a host file, <code>notify: off</code> turns all alerts off for that machine, whatever the defaults say. The fields below are merged one at a time with the defaults'. See <a href="../setting-up-machines/#alerts">alerts</a>.</p>
 <pre class="doc-code"><code>notify:
   desktop: true
   ntfy: secret:NTFY_URL</code></pre>
 <h3 id="notify-desktop"><code>notify.desktop</code></h3>
-<p>Type: boolean. Default: <code>false</code>. Added in: not yet released.</p>
+<p>Type: boolean. Default: <code>false</code>. Added in: 2.7.0.</p>
 <p>Shows a desktop notification: <code>notify-send</code> on Linux, <code>osascript</code> on a Mac. A machine with no desktop session, or without the program, skips it without an error.</p>
 <pre class="doc-code"><code>notify:
   desktop: true</code></pre>
 <h3 id="notify-ntfy"><code>notify.ntfy</code></h3>
-<p>Type: string. Default: none. Added in: not yet released.</p>
+<p>Type: string. Default: none. Added in: 2.7.0.</p>
 <p>The full URL of an <a href="https://ntfy.sh">ntfy</a> topic, on ntfy.sh or your own server. Fleet posts the alert there: a problem at high priority with a warning tag, back to ok at default priority. Anyone who knows the topic can read it, so keep it in a secret: <code>secret:NAME</code> is replaced from the machine's encrypted secrets when the alert is sent. Any other value must be an <code>http</code> or <code>https</code> URL.</p>
 <pre class="doc-code"><code>notify:
   ntfy: secret:NTFY_URL</code></pre>
 <h3 id="notify-ntfy-token"><code>notify.ntfy_token</code></h3>
-<p>Type: string. Default: none. Added in: not yet released.</p>
+<p>Type: string. Default: none. Added in: 2.7.0.</p>
 <p>The access token for an ntfy server that needs a login, sent as a bearer token. Put it in a secret: <code>secret:NAME</code> is replaced from the machine's encrypted secrets when the alert is sent.</p>
 <pre class="doc-code"><code>notify:
   ntfy: secret:NTFY_URL
   ntfy_token: secret:NTFY_TOKEN</code></pre>
 <h3 id="notify-webhook"><code>notify.webhook</code></h3>
-<p>Type: string. Default: none. Added in: not yet released.</p>
+<p>Type: string. Default: none. Added in: 2.7.0.</p>
 <p>A URL that gets a POST of a small JSON body, <code>{ "v": 1, "host", "event": "conflict" | "failed" | "ok", "message", "conflict": { "kind", "path" } | null, "time", "fleet" }</code>. <code>fleet</code> is the short commit of the machine's fleet clone. New fields may be added later, so a receiver should ignore the ones it does not know. A webhook URL often holds its own secret: keep it in <code>secret:NAME</code>. Any other value must be an <code>http</code> or <code>https</code> URL.</p>
 <pre class="doc-code"><code>notify:
   webhook: secret:FLEET_WEBHOOK</code></pre>
@@ -198,7 +198,7 @@ files:
 <p>Marks the machine you work from. Exactly one host file has <code>admin: true</code>. Its key can read every secrets file, and it is the host that runs <code>fleet init</code> for the others. The admin host also needs an <code>age</code> key.</p>
 <pre class="doc-code"><code>admin: true</code></pre>
 <h3 id="unmanaged"><code>unmanaged</code></h3>
-<p>Type: list of strings. Default: none. Added in: not yet released.</p>
+<p>Type: list of strings. Default: none. Added in: 2.7.0.</p>
 <p>The MCP servers and skills on this machine that <code>fleet capture</code> and <code>fleet status</code> leave alone: each item is <code>mcp:&lt;name&gt;</code> or <code>skill:&lt;name&gt;</code>. An ignored item is not listed by capture, not counted as "not from config", and never touched: fleet only writes this list, it does not change the machine. A host file may have it; the defaults may not, because what one machine has by hand says nothing about another. <code>fleet capture mcp &lt;name&gt; --ignore</code> and the Ignore button of the Capture screen add to it. See <a href="../capture/">Capture</a>.</p>
 <pre class="doc-code"><code>unmanaged: [mcp:scratch-server, skill:my-notes]</code></pre>
 <h2 id="see-also">See also</h2>
