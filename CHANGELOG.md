@@ -4,6 +4,12 @@ What changed in fleet, newest first. Each version lists what you can do now, wha
 
 ## Unreleased
 
+## 2.7.1 - 2026-11-23
+
+### Fixed
+
+- The site's header no longer wraps its links onto two lines on the changelog page at laptop widths. The links stay on one line, with tighter spacing below 1360px, and below 1140px only Changelog, Get started, Docs and GitHub are shown.
+
 ## 2.7.0 - 2026-11-23
 
 ### Added
