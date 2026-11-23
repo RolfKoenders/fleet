@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node
 import { dirname, join } from "node:path";
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { gitEnv, installFakeTool, makeClone, makeHome, NODE, publish, runFleet, toolCalls, writeExecutable } from "./helpers.ts";
+import { gitEnv, installFakeTool, makeClone, makeHome, NODE, publish, runFleet, toolCalls, writeExecutable, linuxOnly } from "./helpers.ts";
 import { binDirs } from "../src/agents/index.ts";
 import { EXIT } from "../src/exit.ts";
 import {
@@ -32,7 +32,7 @@ import { planTimer, timerText } from "../src/timerplan.ts";
 
 function world(o: { defaults?: string; host?: string } = {}) {
   const { clone } = makeClone();
-  const home = makeHome("laptop");
+  const home = makeLinux(makeHome("laptop"));
   const write = (rel: string, text: string) => {
     mkdirSync(dirname(join(clone, rel)), { recursive: true });
     writeFileSync(join(clone, rel), text);
@@ -47,6 +47,15 @@ function world(o: { defaults?: string; host?: string } = {}) {
 const units = (home: string) => join(home, ".config/systemd/user");
 const plistPath = (home: string) => join(home, LAUNCHD_PLIST);
 const lines = (home: string, name: string) => toolCalls(home, name);
+
+/**
+ * Makes the home report itself as Linux, the way a host's own `uname -s` does, so the systemd tests are systemd
+ * tests on a Mac runner too. `makeMac` writes over it.
+ */
+function makeLinux(home: string): string {
+  writeExecutable(join(home, ".local/bin/uname"), `#!/bin/sh\nif [ "$1" = "-s" ]; then echo Linux; else exec /usr/bin/uname "$@"; fi\n`);
+  return home;
+}
 
 /** Makes the home report itself as a Mac, the way a host's own `uname -s` does. */
 function makeMac(home: string): void {
@@ -233,7 +242,7 @@ test("a Mac's changed schedule boots the old agent out and the new one in, and o
 });
 
 test("planTimer reads the host: matching files are a no-op, missing ones a create, and off a remove", () => {
-  const home = makeHome("laptop");
+  const home = makeLinux(makeHome("laptop"));
   assert.deepEqual(planTimer(home, "30m"), { change: "create", schedule: "30m", from: null });
   mkdirSync(units(home), { recursive: true });
   writeFileSync(join(units(home), "fleet.service"), `${SYSTEMD_SERVICE}\n`);
@@ -251,16 +260,24 @@ test("the timer line names the schedule it goes to, and off names nothing but th
   assert.equal(timerText({ change: "remove", schedule: "off", from: "30m" }), "timer");
 });
 
-test("status shows the schedule next to the timer's state, in text and in --json", () => {
+test("status --json carries the schedule", () => {
   const w = world({ host: "timer: 1h\n" });
   assert.equal(w.run("apply").code, EXIT.ok);
-  const doc = JSON.parse(w.run("status", "--json").stdout);
-  assert.equal(doc.schedule, "1h");
-  assert.match(w.run("status").stdout, /^timer: active, every hour$/m);
+  assert.equal(JSON.parse(w.run("status", "--json").stdout).schedule, "1h");
 
   const off = world({ host: "timer: off\n" });
   off.run("apply");
   assert.equal(JSON.parse(off.run("status", "--json").stdout).schedule, "off");
+});
+
+// On a Mac `fleet status` asks launchd whatever the home's uname says, so the timer's state in text is systemd's only on Linux.
+test("status shows the schedule next to the timer's state in text", { skip: linuxOnly }, () => {
+  const w = world({ host: "timer: 1h\n" });
+  assert.equal(w.run("apply").code, EXIT.ok);
+  assert.match(w.run("status").stdout, /^timer: active, every hour$/m);
+
+  const off = world({ host: "timer: off\n" });
+  off.run("apply");
   assert.match(off.run("status").stdout, /^timer: inactive, off$/m, "the word for the timer is what the fake systemd said: nothing is installed");
 });
 
@@ -345,7 +362,7 @@ test("the LaunchAgent fleet init wrote before this change, and an apply with no 
 });
 
 test("an installed timer is read in systemd's own spelling and in fleet's: 30min, 30m, 6h", () => {
-  const home = makeHome("laptop");
+  const home = makeLinux(makeHome("laptop"));
   mkdirSync(units(home), { recursive: true });
   writeFileSync(join(units(home), "fleet.service"), OLD_SERVICE);
   for (const [text, schedule] of [["30min", "30m"], ["30m", "30m"], ["10min", "10m"], ["6h", "6h"], ["1h", "1h"]] as const) {
