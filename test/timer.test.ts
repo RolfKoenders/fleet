@@ -32,7 +32,7 @@ import { planTimer, timerText } from "../src/timerplan.ts";
 
 function world(o: { defaults?: string; host?: string } = {}) {
   const { clone } = makeClone();
-  const home = makeHome("laptop");
+  const home = makeLinux(makeHome("laptop"));
   const write = (rel: string, text: string) => {
     mkdirSync(dirname(join(clone, rel)), { recursive: true });
     writeFileSync(join(clone, rel), text);
@@ -47,6 +47,15 @@ function world(o: { defaults?: string; host?: string } = {}) {
 const units = (home: string) => join(home, ".config/systemd/user");
 const plistPath = (home: string) => join(home, LAUNCHD_PLIST);
 const lines = (home: string, name: string) => toolCalls(home, name);
+
+/**
+ * Makes the home report itself as Linux, the way a host's own `uname -s` does, so the systemd tests are systemd
+ * tests on a Mac runner too. `makeMac` writes over it.
+ */
+function makeLinux(home: string): string {
+  writeExecutable(join(home, ".local/bin/uname"), `#!/bin/sh\nif [ "$1" = "-s" ]; then echo Linux; else exec /usr/bin/uname "$@"; fi\n`);
+  return home;
+}
 
 /** Makes the home report itself as a Mac, the way a host's own `uname -s` does. */
 function makeMac(home: string): void {
@@ -233,7 +242,7 @@ test("a Mac's changed schedule boots the old agent out and the new one in, and o
 });
 
 test("planTimer reads the host: matching files are a no-op, missing ones a create, and off a remove", () => {
-  const home = makeHome("laptop");
+  const home = makeLinux(makeHome("laptop"));
   assert.deepEqual(planTimer(home, "30m"), { change: "create", schedule: "30m", from: null });
   mkdirSync(units(home), { recursive: true });
   writeFileSync(join(units(home), "fleet.service"), `${SYSTEMD_SERVICE}\n`);
@@ -345,7 +354,7 @@ test("the LaunchAgent fleet init wrote before this change, and an apply with no 
 });
 
 test("an installed timer is read in systemd's own spelling and in fleet's: 30min, 30m, 6h", () => {
-  const home = makeHome("laptop");
+  const home = makeLinux(makeHome("laptop"));
   mkdirSync(units(home), { recursive: true });
   writeFileSync(join(units(home), "fleet.service"), OLD_SERVICE);
   for (const [text, schedule] of [["30min", "30m"], ["30m", "30m"], ["10min", "10m"], ["6h", "6h"], ["1h", "1h"]] as const) {
