@@ -179,7 +179,7 @@ agents: [claude, opencode]
 
 ### `timer`
 
-Type: string. Default: `30m`. Added in: not yet released.
+Type: string. Default: `30m`. Added in: 2.7.0.
 
 How often the timer runs `fleet apply` on a machine: `5m`, `10m`, `15m`, `20m`, `30m`, a whole number of hours `1h` to `24h`, or `off`, which removes the timer so the host applies only on `fleet push` or by hand. Any other value is an error that lists these. See [the timer's schedule](setting-up-machines.md#the-timers-schedule).
 
@@ -189,7 +189,7 @@ timer: 1h
 
 ### `notify`
 
-Type: map, or `off`. Default: none, which means no alerts. Added in: not yet released.
+Type: map, or `off`. Default: none, which means no alerts. Added in: 2.7.0.
 
 Where a machine sends an alert when an apply its timer started stops, or recovers: a new conflict, an apply that stops with an error, and back to ok. Each machine alerts about itself, and only after a timer run; `fleet push`, a manual `fleet apply` and `fleet init` show their result on screen. A machine that sets no `notify:` sends nothing. In a host file, `notify: off` turns all alerts off for that machine, whatever the defaults say. The fields below are merged one at a time with the defaults'. See [alerts](setting-up-machines.md#alerts).
 
@@ -201,7 +201,7 @@ notify:
 
 ### `notify.desktop`
 
-Type: boolean. Default: `false`. Added in: not yet released.
+Type: boolean. Default: `false`. Added in: 2.7.0.
 
 Shows a desktop notification: `notify-send` on Linux, `osascript` on a Mac. A machine with no desktop session, or without the program, skips it without an error.
 
@@ -212,7 +212,7 @@ notify:
 
 ### `notify.ntfy`
 
-Type: string. Default: none. Added in: not yet released.
+Type: string. Default: none. Added in: 2.7.0.
 
 The full URL of an [ntfy](https://ntfy.sh) topic, on ntfy.sh or your own server. Fleet posts the alert there: a problem at high priority with a warning tag, back to ok at default priority. Anyone who knows the topic can read it, so keep it in a secret: `secret:NAME` is replaced from the machine's encrypted secrets when the alert is sent. Any other value must be an `http` or `https` URL.
 
@@ -223,7 +223,7 @@ notify:
 
 ### `notify.ntfy_token`
 
-Type: string. Default: none. Added in: not yet released.
+Type: string. Default: none. Added in: 2.7.0.
 
 The access token for an ntfy server that needs a login, sent as a bearer token. Put it in a secret: `secret:NAME` is replaced from the machine's encrypted secrets when the alert is sent.
 
@@ -235,7 +235,7 @@ notify:
 
 ### `notify.webhook`
 
-Type: string. Default: none. Added in: not yet released.
+Type: string. Default: none. Added in: 2.7.0.
 
 A URL that gets a POST of a small JSON body, `{ "v": 1, "host", "event": "conflict" | "failed" | "ok", "message", "conflict": { "kind", "path" } | null, "time", "fleet" }`. `fleet` is the short commit of the machine's fleet clone. New fields may be added later, so a receiver should ignore the ones it does not know. A webhook URL often holds its own secret: keep it in `secret:NAME`. Any other value must be an `http` or `https` URL.
 
@@ -278,7 +278,7 @@ admin: true
 
 ### `unmanaged`
 
-Type: list of strings. Default: none. Added in: not yet released.
+Type: list of strings. Default: none. Added in: 2.7.0.
 
 The MCP servers and skills on this machine that `fleet capture` and `fleet status` leave alone: each item is `mcp:<name>` or `skill:<name>`. An ignored item is not listed by capture, not counted as "not from config", and never touched: fleet only writes this list, it does not change the machine. A host file may have it; the defaults may not, because what one machine has by hand says nothing about another. `fleet capture mcp <name> --ignore` and the Ignore button of the Capture screen add to it. See [Capture](capture.md).
 
