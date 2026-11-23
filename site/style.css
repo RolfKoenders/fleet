@@ -63,10 +63,10 @@ code { font-family: var(--mono); font-size: .88em; color: var(--brand-bright); }
   transition: border-color .3s;
 }
 .nav.scrolled { border-bottom-color: var(--border-soft); }
-.brand { display: flex; align-items: center; gap: 10px; text-decoration: none; font: 700 20px var(--mono); letter-spacing: -.02em; }
+.brand { flex: none; margin-right: 24px; display: flex; align-items: center; gap: 10px; text-decoration: none; font: 700 20px var(--mono); letter-spacing: -.02em; }
 .brand svg { width: 34px; height: 24px; }
 .nav nav { display: flex; align-items: center; gap: 26px; font-size: 15px; }
-.nav nav a { text-decoration: none; color: var(--sub); transition: color .2s; }
+.nav nav a { text-decoration: none; color: var(--sub); transition: color .2s; white-space: nowrap; }
 .nav nav a:hover { color: var(--text); }
 .gh { display: inline-flex; align-items: center; gap: 7px; padding: 6px 12px; border: 1px solid var(--border); border-radius: 999px; }
 .gh svg { width: 16px; height: 16px; }
@@ -306,6 +306,16 @@ footer {
 }
 footer a { color: var(--sub); text-decoration: none; }
 footer a:hover { color: var(--text); }
+
+/* Nine links and the logo need tighter spacing on a laptop, and below this width they do not fit at all: keep the pages and the way in. */
+@media (max-width: 1360px) {
+  .nav nav { gap: 18px; font-size: 14px; }
+  .brand { margin-right: 16px; }
+}
+
+@media (max-width: 1140px) {
+  .nav nav a[href*="#"]:not([href$="#start"]) { display: none; }
+}
 
 @media (max-width: 900px) {
   .nav nav a:not(.gh) { display: none; }
