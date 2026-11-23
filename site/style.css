@@ -485,3 +485,13 @@ footer a:hover { color: var(--text); }
   .doc-side.open { display: block; position: static; margin-bottom: 26px; }
   .doc-home ul { grid-template-columns: 1fr; }
 }
+
+/* fleet card */
+.share-cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; }
+.share-cards figure { margin: 0; }
+.share-cards img { display: block; width: 100%; height: auto; border-radius: var(--radius); border: 1px solid var(--border); box-shadow: 0 30px 80px -30px rgba(0,0,0,.9); }
+.share-cards figcaption { margin-top: 12px; color: var(--muted); font-size: 14px; text-align: center; }
+.share-badge { max-width: 700px; margin: 40px auto 0; text-align: center; }
+.share-badge img { display: inline-block; margin-bottom: 16px; }
+.share-badge p { margin: 0 0 22px; color: var(--muted); font-size: 15px; }
+@media (max-width: 900px) { .share-cards { grid-template-columns: minmax(0, 1fr); } }

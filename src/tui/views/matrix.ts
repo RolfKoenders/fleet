@@ -152,7 +152,7 @@ export function drawMatrix(c: Canvas, state: State): void {
         const said = hl.why === null ? (hl.note ?? "") : `${hl.why.words}${hl.why.protocol ? `, protocol ${hl.why.protocol}` : ""}${hl.why.detail ? ` (${hl.why.detail})` : ""}`;
         body.push([[`${g} `, gs], [hl.health === "neutral" ? "needs a login: " : hl.health === "unknown" ? "unknown: " : "doctor: ", s.sub], [said, s.sub]]);
         if (hl.why !== null && hl.why.secrets.length > 0) {
-          body.push([["set a new value with `fleet secrets` or in the Secrets screen of `fleet ui`", s.sub]]);
+          body.push([["replace it with `fleet secrets rotate` or in the Secrets screen of `fleet ui`", s.sub]]);
         }
       }
     }

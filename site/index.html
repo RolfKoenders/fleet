@@ -176,25 +176,25 @@
       <div class="section-head">
         <p class="kicker">fleet ui</p>
         <h2>Or click it, in your browser.</h2>
-        <p><code>fleet ui</code> opens a page for your whole fleet. Every click is an edit to the same YAML files, with your comments kept, and you see the diff before anything is written. Nothing changes on a machine until you push.</p>
+        <p><code>fleet ui</code> opens a page for your whole fleet. Every click is an edit to the same YAML files, with your comments kept, and you see the diff before anything is written. Nothing changes on a machine until you push. <a href="docs/ui/">The page</a> covers each screen.</p>
       </div>
 
       <div class="window">
         <div class="window-bar">
           <span class="lights"><i></i><i></i><i></i></span>
           <div class="tabs ui-tabs" role="tablist">
-            <button role="tab" data-shot="matrix" aria-selected="true">Matrix</button>
-            <button role="tab" data-shot="edit" aria-selected="false">Edit</button>
+            <button role="tab" data-shot="fleet" aria-selected="true">Fleet</button>
+            <button role="tab" data-shot="matrix" aria-selected="false">Matrix</button>
           </div>
           <span class="window-title">127.0.0.1 · fleet ui</span>
         </div>
-        <img class="ui-shot" data-shot="matrix" src="ui-matrix.webp" width="1600" height="1000" loading="lazy" alt="The Matrix in fleet ui: skill bundles and MCP servers as rows, the hosts laptop, devbox and server as columns. Two cells are changed and waiting on To push, and the pane on the right shows the YAML diff of hosts/server.yaml.">
-        <img class="ui-shot" data-shot="edit" src="ui-edit.webp" width="1600" height="1000" loading="lazy" hidden alt="The Edit dialog for the MCP server docs. The command's version is changed from 1.0.0 to 1.4.0, and the pane on the right shows that one line changed in catalog/mcp.yaml.">
+        <img class="ui-shot" data-shot="fleet" src="ui-fleet.webp" width="1600" height="1000" loading="lazy" alt="The Fleet screen of fleet ui: a card for each host. Laptop and devbox are ok, server has 1 conflict with a Show the fix button. Below, the startup context of each host and agent as bars on one scale.">
+        <img class="ui-shot" data-shot="matrix" src="ui-matrix.webp" width="1600" height="1000" loading="lazy" hidden alt="The Matrix in fleet ui: skill bundles and MCP servers as rows, the hosts laptop, devbox and server as columns. Two cells are changed and waiting on To push, and the pane on the right shows the YAML diff of hosts/server.yaml.">
       </div>
-      <p class="caption" id="ui-caption">Click a cell to give a host a bundle or a server, or take it away. The pane shows the change to its host file.</p>
+      <p class="caption" id="ui-caption">Every host with its status, its first conflict and its startup context. The page asks each host when it opens and shows what it last saw until they answer.</p>
 
       <ul class="feat-strip ui-strip">
-        <li><span class="feat-ic">▦</span><b>See every host</b>Every bundle and server against every host, with a search that finds a skill inside its bundle.</li>
+        <li><span class="feat-ic">▦</span><b>See every host</b>Each host's status and startup context, and every bundle and server against every host, with a search that finds a skill inside its bundle.</li>
         <li><span class="feat-ic">✎</span><b>Add, edit, remove</b>MCP servers, skill sources, bundles and hosts. Only the lines you change are written.</li>
         <li><span class="feat-ic">↑</span><b>Review &amp; push</b>Checks every host still loads, commits, and runs the real <code>fleet push</code> with live progress.</li>
         <li><span class="feat-ic">⚿</span><b>Only you</b>Listens on <code>127.0.0.1</code>, needs the token in the URL it prints, stops when no page is open.</li>
@@ -206,7 +206,7 @@
       <div class="section-head">
         <p class="kicker">What it keeps in line</p>
         <h2>Everything your agents need. Nothing they shouldn't.</h2>
-        <p>How it works shows what fleet manages. These are the parts that keep it safe to run on every machine.</p>
+        <p>How it works shows what fleet manages. These parts keep it safe to run on every machine and get a machine's setup into your config.</p>
       </div>
       <div class="grid">
         <article class="feat wide accent">
@@ -233,6 +233,18 @@
             <p>Before your first prompt, each agent has already loaded your instructions, the descriptions of your skills and the tool definitions of your MCP servers. <code>fleet context</code> draws that as bars, in estimated tokens, with every host on one scale, so you see which machine and which server weighs the most. It only reads files and starts no server.</p>
           </div>
           <pre class="block term" id="context-bars" tabindex="0" role="group" aria-label="Startup context of each host, as bars"></pre>
+        </article>
+        <article class="feat wide">
+          <div>
+            <div class="feat-ic">⇣</div>
+            <h3>Capture</h3>
+            <p>Set something up on one machine first, with <code>claude mcp add</code> or a skill folder. Then <code>fleet capture</code> turns the servers and skills that machine has and your config does not into config. It asks about each one, writes the catalog and the host files, and commits. A token in a server's env or headers moves into sops on the way, and no value is ever printed. It reads only the machine it runs on. <a href="docs/capture/">Capture</a> has the details.</p>
+          </div>
+          <pre class="mini"><span class="g">$</span> fleet capture
+<span class="w">[h]ost / [a]ll hosts / [i]gnore / [s]kip / [q]uit:</span> h
+<span class="w">ISSUES_API_KEY becomes the secret ISSUES_API_KEY.</span>
+<span class="w">Press enter, or type another name:</span>
+<span class="w">Push now? [y/N]</span></pre>
         </article>
         <ul class="feat-strip">
           <li><span class="feat-ic">⚿</span><b>Encrypted secrets</b>sops and age. Each host decrypts only its own.</li>
@@ -303,6 +315,30 @@
       </div>
     </section>
 
+    <!-- fleet card: images rendered from fleet demo's made-up hosts (never a real fleet). -->
+    <section class="share" id="card">
+      <div class="section-head">
+        <p class="kicker">fleet card</p>
+        <h2>Show your fleet.</h2>
+        <p><code>fleet card</code> writes <code>fleet-card.svg</code>, an image of your fleet to share in a post, a README or a GitHub discussion: the counts of machines, agents, skills and MCP servers, each machine with its agents and OS, and a year of changes. Hosts are called <code>host 1</code>, <code>host 2</code> unless you add <code>--names</code>. No server, skill, skill source or secret name is ever on it.</p>
+      </div>
+      <div class="share-cards">
+        <figure>
+          <img src="card-machines.webp" width="1200" height="630" loading="lazy" alt="A fleet card in the machines style: 3 machines, 2 agents, 4 skills and 2 MCP servers, a row for each of devbox, laptop and server with claude and opencode on linux, an activity grid for 12 months, and 48 changes in the last year.">
+          <figcaption><code>fleet card</code>, the default style: <code>machines</code></figcaption>
+        </figure>
+        <figure>
+          <img src="card-map.webp" width="1200" height="630" loading="lazy" alt="A fleet card in the map style: the config repo in the middle, with devbox, laptop and server around it, each ok with claude and opencode, and 4 skills, 2 MCP servers, 48 changes and 2 pushes below.">
+          <figcaption><code>fleet card --style map</code></figcaption>
+        </figure>
+      </div>
+      <div class="share-badge">
+        <img src="fleet-badge.svg" width="222" height="20" loading="lazy" alt="A badge: fleet, 3 machines, 2 agents">
+        <p><code>fleet card --badge</code> writes a small <code>fleet-badge.svg</code> for your README. <code>fleet ui</code> has a Card screen with the same styles, Save PNG, Copy image and a button that opens a new discussion with a short text filled in. The cards above are made from <code>fleet demo</code>'s made-up hosts.</p>
+        <a class="btn" href="https://github.com/RolfKoenders/fleet/discussions/categories/show-and-tell" data-umami-event="fleet-showandtell-click">Show and tell on GitHub <span aria-hidden="true">→</span></a>
+      </div>
+    </section>
+
     <!-- What changed lately: generated from CHANGELOG.md by 'npm run site:changelog'. -->
     <section class="whats-new" id="whats-new">
       <div class="section-head">
@@ -348,7 +384,7 @@
           <div class="step-n">1</div>
           <div class="step-body">
             <h3>Install fleet</h3>
-            <p>No runtime dependencies beyond Node, git and sops.</p>
+            <p>No runtime dependencies beyond Node, git and sops. <a href="docs/getting-started/">Getting started</a> has every step.</p>
             <div class="cmd small" data-copy="curl -fsSL https://raw.githubusercontent.com/RolfKoenders/fleet/main/install.sh | sh"><span class="prompt">$</span><code>curl -fsSL …/install.sh | sh</code><button type="button" class="copy" data-umami-event="fleet-install-copy" data-umami-event-where="start">copy</button></div>
           </div>
         </li>
@@ -356,7 +392,7 @@
           <div class="step-n">2</div>
           <div class="step-body">
             <h3>Create your config</h3>
-            <p>A commented example repo. Edit it yourself, or ask your agent to run <code>fleet agent</code> and follow the onboarding recipe.</p>
+            <p>A commented example repo. Edit it yourself, or ask your agent to run <code>fleet agent</code> and follow the onboarding recipe. Every key is in the <a href="docs/reference-hosts/">config reference</a>.</p>
             <div class="cmd small" data-copy="fleet new ~/fleet-config"><span class="prompt">$</span><code>fleet new ~/fleet-config</code><button type="button" class="copy">copy</button></div>
           </div>
         </li>
@@ -364,7 +400,7 @@
           <div class="step-n">3</div>
           <div class="step-body">
             <h3>Set up this machine</h3>
-            <p>Init prints an age key once. Save it in your password manager.</p>
+            <p>Init prints an age key once. Save it in your password manager. <a href="docs/setting-up-machines/">Setting up machines</a> says what each machine needs.</p>
             <div class="cmd small" data-copy="fleet init laptop"><span class="prompt">$</span><code>fleet init laptop</code><button type="button" class="copy">copy</button></div>
           </div>
         </li>
@@ -386,8 +422,8 @@
         <div class="cmdrow"><code>fleet context</code><span>What each agent loads at startup, as bars</span></div>
         <div class="cmdrow"><code>fleet skills update --review</code><span>Read what a skill source changed before its pin moves</span></div>
         <div class="cmdrow"><code>fleet doctor</code><span>Start each MCP server and check it answers</span></div>
-        <div class="cmdrow"><code>fleet secrets</code><span>Edit, set or rekey encrypted secrets</span></div>
-        <div class="cmdrow"><code>fleet adopt</code><span>Take ownership of what already matches</span></div>
+        <div class="cmdrow"><code>fleet capture</code><span>Turn what a machine has into config</span></div>
+        <div class="cmdrow"><code>fleet secrets</code><span>Edit, set, rekey or rotate encrypted secrets</span></div>
         <div class="cmdrow"><code>fleet agent</code><span>What an agent needs to know</span></div>
       </div>
     </section>

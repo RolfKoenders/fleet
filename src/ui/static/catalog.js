@@ -478,7 +478,7 @@ export function checkLines(c) {
   if (c.result === "auth-needed") return { tone: "warn", lines: ["It started and wants a login: log in once with /mcp in the tool. Fleet only writes the entry.", ...notes] };
   if (c.result === "bad-auth") {
     const refs = c.secrets.map((s) => `${s.name} in ${s.file === "host" ? "this host's secrets file" : "secrets/shared.enc.yaml"}${s.lastSet ? `, set ${s.lastSet.slice(0, 10)}` : ""}`);
-    return { tone: "bad", lines: ["The server rejected a configured secret.", ...(refs.length > 0 ? [`Check ${refs.join("; ")}.`] : []), "Set a new value under Secrets or with `fleet secrets`.", ...notes] };
+    return { tone: "bad", lines: ["The server rejected a configured secret.", ...(refs.length > 0 ? [`Check ${refs.join("; ")}.`] : []), "Replace it under Secrets or with `fleet secrets rotate`.", ...notes] };
   }
   return { tone: "bad", lines: [`It did not start well: ${c.result}${c.detail ? ` (${c.detail})` : ""}.`, ...notes] };
 }

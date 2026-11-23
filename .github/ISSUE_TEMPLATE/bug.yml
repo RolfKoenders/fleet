@@ -7,14 +7,14 @@ body:
   - type: markdown
     attributes:
       value: |
-        Thanks for taking the time to report a bug.
+        Fill in every field. A bug is fixed fastest with the smallest config that shows it.
 
   - type: input
     id: fleet-version
     attributes:
       label: Fleet version
-      description: Copy the version shown by `fleet status`.
-      placeholder: "fleet 2.6.0"
+      description: Copy the sha under `fleet clone` in `fleet status`, or `tool.commit` from your `fleet.yaml`.
+      placeholder: "6e418bdead988d60ebbb6cda9a2d0a58c0fb6aff"
     validations:
       required: true
 

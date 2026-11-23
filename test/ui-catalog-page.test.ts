@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { bundleDraft, checkLines, cloneKey, COMMAND_SECRET, confirmText, opWarnings, secretsOf, serverDraft, shownAgents, skillChoices, sourceDraft, splitCommand, takeBack, typedSkills, unpinned } from "../src/ui/static/catalog.js";
 import { clickCell, opLabel, suggestMessage } from "../src/ui/static/matrix.js";
 
-const server = (over: Record<string, unknown> = {}) => ({ name: "linear", kind: "command", command: "npx -y @linear/mcp-server@0.4.1", url: "", rows: [], agents: { claude: true, opencode: true }, ...over }) as any;
+const server = (over: Record<string, unknown> = {}) => ({ name: "issues", kind: "command", command: "npx -y @issues/mcp-server@0.4.1", url: "", rows: [], agents: { claude: true, opencode: true }, ...over }) as any;
 
 test("a command is split like a shell would, quotes included, and an open quote is no command", () => {
   assert.deepEqual(splitCommand("npx -y  @a/b@1.0.0"), ["npx", "-y", "@a/b@1.0.0"]);
@@ -25,11 +25,11 @@ test("npx and uvx with no version are unpinned, and a version, a path or another
 });
 
 test("a server form becomes the edit it holds: a command, a URL, plain and secret environment, and the agents", () => {
-  const d = serverDraft(server({ rows: [{ key: "LINEAR_API_KEY", mode: "secret", value: "" }, { key: "REGION", mode: "plain", value: "eu" }, { key: "", mode: "plain", value: "" }], agents: { claude: false, opencode: true } }), ["docs"]);
+  const d = serverDraft(server({ rows: [{ key: "ISSUES_API_KEY", mode: "secret", value: "" }, { key: "REGION", mode: "plain", value: "eu" }, { key: "", mode: "plain", value: "" }], agents: { claude: false, opencode: true } }), ["docs"]);
   assert.deepEqual(d.problems, []);
-  assert.deepEqual(d.op, { op: "addServer", name: "linear", entry: { command: ["npx", "-y", "@linear/mcp-server@0.4.1"], env: { LINEAR_API_KEY: "secret:LINEAR_API_KEY", REGION: "eu" }, only: ["opencode"] } });
+  assert.deepEqual(d.op, { op: "addServer", name: "issues", entry: { command: ["npx", "-y", "@issues/mcp-server@0.4.1"], env: { ISSUES_API_KEY: "secret:ISSUES_API_KEY", REGION: "eu" }, only: ["opencode"] } });
   assert.deepEqual(d.warnings, []);
-  assert.deepEqual(secretsOf(d.op), ["LINEAR_API_KEY"]);
+  assert.deepEqual(secretsOf(d.op), ["ISSUES_API_KEY"]);
   const net = serverDraft(server({ name: "tracker", kind: "sse", url: " https://t.example/mcp ", rows: [{ key: "Authorization", mode: "plain", value: "Bearer secret:TOKEN" }, { key: "X-Key", mode: "secret", value: "KEY" }] }), []);
   assert.deepEqual(net.op, { op: "addServer", name: "tracker", entry: { transport: "sse", url: "https://t.example/mcp", headers: { Authorization: "Bearer secret:TOKEN", "X-Key": "secret:KEY" } } });
   assert.deepEqual(secretsOf(net.op), ["TOKEN", "KEY"]);
@@ -40,7 +40,7 @@ test("an unpinned command is a warning and the edit is still held", () => {
   assert.notEqual(d.op, null);
   assert.equal(d.warnings.length, 1);
   assert.match(d.warnings[0]!, /no version/);
-  assert.deepEqual(opWarnings(d.op!), [`linear: ${d.warnings[0]}`]);
+  assert.deepEqual(opWarnings(d.op!), [`issues: ${d.warnings[0]}`]);
   assert.deepEqual(opWarnings({ op: "addBundle", name: "b", skills: ["a"] }), []);
 });
 
@@ -57,7 +57,7 @@ test("a server form says what is missing, and nothing is held until it is right"
   const problems = (over: Record<string, unknown>, taken: string[] = []) => serverDraft(server(over), taken).problems.join("|");
   assert.match(problems({ name: "" }), /give it a name/);
   assert.match(problems({ name: "has.dot" }), /letters, digits, '_' or '-'/);
-  assert.match(problems({}, ["linear"]), /'linear' is already in the catalog/);
+  assert.match(problems({}, ["issues"]), /'issues' is already in the catalog/);
   assert.match(problems({ command: "" }), /enter the command/);
   assert.match(problems({ command: `node "x` }), /quote that is not closed/);
   assert.match(problems({ kind: "http", url: "ftp://x" }), /http or https address/);
@@ -134,20 +134,20 @@ test("taking back an addition takes back the picks of it too, and nothing else",
 });
 
 test("catalog additions have words, a commit message, and never get in the way of a click on a cell", () => {
-  const server = { op: "addServer", name: "linear", entry: {} } as any;
+  const server = { op: "addServer", name: "issues", entry: {} } as any;
   const source = { op: "addSource", name: "mine", entry: {} } as any;
   const bundle = { op: "addBundle", name: "extra", skills: [] } as any;
-  assert.equal(opLabel(server), "add server linear to the catalog");
+  assert.equal(opLabel(server), "add server issues to the catalog");
   assert.equal(opLabel(source), "add skill source mine to the catalog");
   assert.equal(opLabel(bundle), "add bundle extra to the catalog");
-  assert.equal(suggestMessage([server]), "Add server linear");
-  assert.equal(suggestMessage([server, source, bundle]), "Add server linear; add skill source mine; add bundle extra");
-  const pick = { op: "add", host: "box", kind: "mcp", name: "linear" } as any;
-  assert.equal(suggestMessage([server, pick]), "Add server linear; give box linear");
+  assert.equal(suggestMessage([server]), "Add server issues");
+  assert.equal(suggestMessage([server, source, bundle]), "Add server issues; add skill source mine; add bundle extra");
+  const pick = { op: "add", host: "box", kind: "mcp", name: "issues" } as any;
+  assert.equal(suggestMessage([server, pick]), "Add server issues; give box issues");
   assert.equal(suggestMessage([{ op: "addServer", name: "a-quite-long-server-name", entry: {} }, { op: "addServer", name: "another-long-server-name", entry: {} }, source, bundle] as any), "Add 4 catalog entries");
   const cell = { on: false, picked: null, excluded: null };
-  assert.equal(clickCell([server, bundle], "box", "mcp", "linear", cell).length, 3);
-  assert.deepEqual(clickCell([server, pick], "box", "mcp", "linear", cell), [server]);
+  assert.equal(clickCell([server, bundle], "box", "mcp", "issues", cell).length, 3);
+  assert.deepEqual(clickCell([server, pick], "box", "mcp", "issues", cell), [server]);
 });
 
 test("agents no host has are hidden from the form but still count: hiding never narrows a server's only", () => {
@@ -167,7 +167,7 @@ test("agents no host has are hidden from the form but still count: hiding never 
   assert.deepEqual(serverDraft(f({ agents: { claude: false, opencode: false, other: false } }), []).problems, ["pick at least one agent"]);
 
   // An edit: an agent the file leaves out stays out while hidden, and one it names stays in.
-  const base = { command: ["npx", "-y", "@linear/mcp-server@0.4.1"], only: ["claude", "opencode"] };
+  const base = { command: ["npx", "-y", "@issues/mcp-server@0.4.1"], only: ["claude", "opencode"] };
   const edit = f({ agents: { claude: true, opencode: true, other: false } });
   assert.deepEqual(serverDraft(edit, [], [], base).unchanged, true, "an untouched form is no edit, hidden agents or not");
   assert.deepEqual(shownAgents(agents, edit).map((a) => a.id), ["claude", "other"], "an unused agent the form has switched off is drawn, so what the file leaves out can be seen");

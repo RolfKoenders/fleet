@@ -209,7 +209,7 @@ const warn = (color: boolean, text: string) => paint(color, "yellow", text);
 const isLogin = (s: ServerCheck): boolean => s.result === "auth-needed" && !s.fails;
 const shownResult = (s: ServerCheck): string => (isLogin(s) ? "login" : s.result);
 const LOGIN_NOTE = "login: the server wants a login, and doctor cannot see login state";
-const BAD_AUTH_NOTE = "bad-auth: the server rejected a configured secret; set a new value with `fleet secrets` or in the Secrets screen of `fleet ui`";
+const BAD_AUTH_NOTE = "bad-auth: the server rejected a configured secret; replace it with `fleet secrets rotate` or in the Secrets screen of `fleet ui`";
 
 function secretFileLabel(file: SecretFile, host: string): string {
   return file === "host" ? `secrets/${host}.enc.yaml` : "secrets/shared.enc.yaml";

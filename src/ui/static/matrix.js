@@ -103,7 +103,7 @@ export function opLabel(op) {
 const list = (/** @type {string[]} */ names) => (names.length <= 2 ? names.join(" and ") : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`);
 
 /**
- * A commit message from the edits: `Add server linear; give box linear`, `Give box extra and tracker; take docs from server`.
+ * A commit message from the edits: `Add server issues; give box issues`, `Give box extra and tracker; take docs from server`.
  * A long one falls back to a count.
  * @param {Op[]} ops
  */

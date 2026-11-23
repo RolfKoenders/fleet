@@ -2,7 +2,7 @@
 
 `fleet bridge` opens a full-screen view of every host: a card each, the matrix of what each host gets, conflicts, the config's git history, secret names, the catalog, and each host's startup context. It needs a terminal.
 
-It reads, and the cards fill at once from what the last run saw, labelled "seen 2h ago, not live" until the host answers. That memory is `~/.local/state/fleet/bridge-hosts.json`, which only the bridge reads and which holds no secrets. It keeps each host's startup context next to its status, cut to the fields the context screen shows.
+The cards fill at once from what the last run saw, labelled "seen 2h ago, not live" until the host answers. That memory is `~/.local/state/fleet/bridge-hosts.json`, which only the bridge reads and which holds no secrets. It keeps each host's startup context next to its status, cut to the fields the context screen shows.
 
 ## Opening on a screen or a host
 
@@ -10,7 +10,7 @@ It reads, and the cards fill at once from what the last run saw, labelled "seen 
 fleet bridge --view matrix --host server
 ```
 
-`--view` opens on a screen: `home` (the default), `matrix`, `conflicts`, `timeline`, `secrets`, `catalog`, `push` or `context`. These are the tabs, so a screen that gets a tab later gets a view. `--host` selects a host on that screen: its card on Home, its column in the Matrix, and its conflicts first on Conflicts. `--host` alone opens Home on that host's card. Both work in `fleet demo`'s bridge.
+`--view` opens on a screen: `home` (the default), `matrix`, `conflicts`, `timeline`, `secrets`, `catalog`, `push` or `context`. These are the tabs. `--host` selects a host on that screen: its card on Home, its column in the Matrix, and its conflicts first on Conflicts. `--host` alone opens Home on that host's card. Both work in `fleet demo`'s bridge.
 
 A name that is not one is refused with exit 2 before the screen is taken over, and the valid names are listed. `--view push` opens the push screen the way the `7` key does: nothing is reviewed or started until you press `P`.
 
@@ -73,7 +73,7 @@ The conflicts screen lists every host's conflicts, read with `fleet status --con
 
 ## Look
 
-The look is dark first. `FLEET_THEME=light` selects a best-effort palette for light terminals; it is less polished, and `NO_COLOR` and `FLEET_NO_MOTION` are honoured.
+The bridge is dark. `FLEET_THEME=light` selects a palette for light terminals, which is less polished. `NO_COLOR` and `FLEET_NO_MOTION` are honoured.
 
 ## Trying it on made-up hosts
 
