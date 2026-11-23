@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node
 import { dirname, join } from "node:path";
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { gitEnv, installFakeTool, makeClone, makeHome, NODE, publish, runFleet, toolCalls, writeExecutable } from "./helpers.ts";
+import { gitEnv, installFakeTool, makeClone, makeHome, NODE, publish, runFleet, toolCalls, writeExecutable, linuxOnly } from "./helpers.ts";
 import { binDirs } from "../src/agents/index.ts";
 import { EXIT } from "../src/exit.ts";
 import {
@@ -260,16 +260,24 @@ test("the timer line names the schedule it goes to, and off names nothing but th
   assert.equal(timerText({ change: "remove", schedule: "off", from: "30m" }), "timer");
 });
 
-test("status shows the schedule next to the timer's state, in text and in --json", () => {
+test("status --json carries the schedule", () => {
   const w = world({ host: "timer: 1h\n" });
   assert.equal(w.run("apply").code, EXIT.ok);
-  const doc = JSON.parse(w.run("status", "--json").stdout);
-  assert.equal(doc.schedule, "1h");
-  assert.match(w.run("status").stdout, /^timer: active, every hour$/m);
+  assert.equal(JSON.parse(w.run("status", "--json").stdout).schedule, "1h");
 
   const off = world({ host: "timer: off\n" });
   off.run("apply");
   assert.equal(JSON.parse(off.run("status", "--json").stdout).schedule, "off");
+});
+
+// On a Mac `fleet status` asks launchd whatever the home's uname says, so the timer's state in text is systemd's only on Linux.
+test("status shows the schedule next to the timer's state in text", { skip: linuxOnly }, () => {
+  const w = world({ host: "timer: 1h\n" });
+  assert.equal(w.run("apply").code, EXIT.ok);
+  assert.match(w.run("status").stdout, /^timer: active, every hour$/m);
+
+  const off = world({ host: "timer: off\n" });
+  off.run("apply");
   assert.match(off.run("status").stdout, /^timer: inactive, off$/m, "the word for the timer is what the fake systemd said: nothing is installed");
 });
 
